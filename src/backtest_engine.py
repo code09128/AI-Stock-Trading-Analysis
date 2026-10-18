@@ -1,0 +1,203 @@
+"""
+交易策略回測分析引擎 (backtest_engine.py)
+核心標準：
+1. 防偷看未來數據 (Zero Look-Ahead Bias): 當日訊號成立，強制以下一根 K 棒開盤價 (Next Bar Open) 成交
+2. 四大核心指標計算: 勝率、獲利因子 (Profit Factor)、最大回撤 (MDD)、交易次數與平均報酬
+3. 真實摩擦成本扣除 (台股 0.1425% 手續費與 0.3% 證交稅 / 美股規費)
+4. 樣本數 < 30 筆過度擬合警告
+5. 提取前 5 大虧損交易背景
+"""
+
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+from src.market_rules import calculate_friction_cost
+
+@dataclass
+class Bar:
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+@dataclass
+class Trade:
+    trade_id: int
+    signal_date: str
+    entry_date: str
+    entry_price: float
+    exit_date: str
+    exit_price: float
+    shares: int
+    gross_pnl: float
+    net_pnl: float
+    return_pct: float
+    holding_bars: int
+    entry_cost: float
+    exit_cost: float
+
+class BacktestEngine:
+    def __init__(self, market: str = "TW", initial_capital: float = 1_000_000.0, commission_discount: float = 1.0):
+        self.market = market
+        self.initial_capital = initial_capital
+        self.commission_discount = commission_discount
+
+    def run(self, bars: List[Bar], signals: List[int]) -> Dict[str, Any]:
+        """
+        執行回測。
+        signals: 長度與 bars 相同的整數陣列。
+          1: 買進信號
+         -1: 賣出信號
+          0: 無信號
+
+        注意：當 index i 產生信號時，必須在 index i + 1 的 open 價進行撮合成交。
+        """
+        if len(bars) != len(signals):
+            raise ValueError("Bars and signals must have the same length")
+
+        trades: List[Trade] = []
+        in_position = False
+        entry_idx = -1
+        signal_idx = -1
+        current_trade_id = 1
+        
+        # 逐日回測迴圈
+        for i in range(len(bars)):
+            # 1. 檢查是否需要執行前一日產生的信號 (Next Bar Open 撮合)
+            if i > 0 and signals[i - 1] != 0:
+                prev_sig = signals[i - 1]
+                
+                # 買進執行
+                if prev_sig == 1 and not in_position:
+                    in_position = True
+                    entry_idx = i
+                    signal_idx = i - 1
+                
+                # 賣出執行
+                elif prev_sig == -1 and in_position:
+                    in_position = False
+                    exit_idx = i
+                    
+                    entry_bar = bars[entry_idx]
+                    exit_bar = bars[exit_idx]
+                    
+                    # 以當根 Open 成交
+                    entry_price = entry_bar.open
+                    exit_price = exit_bar.open
+                    
+                    # 假設每次操作 1 張 (台股 1,000 股) 或自訂單位
+                    shares = 1000 if self.market.upper() == "TW" else 100
+                    
+                    entry_costs = calculate_friction_cost(
+                        self.market, "BUY", entry_price, shares, self.commission_discount
+                    )
+                    exit_costs = calculate_friction_cost(
+                        self.market, "SELL", exit_price, shares, self.commission_discount
+                    )
+                    
+                    gross_pnl = (exit_price - entry_price) * shares
+                    net_pnl = gross_pnl - entry_costs["total_cost"] - exit_costs["total_cost"]
+                    return_pct = round((net_pnl / (entry_price * shares)) * 100, 2)
+                    
+                    trade = Trade(
+                        trade_id=current_trade_id,
+                        signal_date=bars[signal_idx].timestamp,
+                        entry_date=entry_bar.timestamp,
+                        entry_price=entry_price,
+                        exit_date=exit_bar.timestamp,
+                        exit_price=exit_price,
+                        shares=shares,
+                        gross_pnl=round(gross_pnl, 2),
+                        net_pnl=round(net_pnl, 2),
+                        return_pct=return_pct,
+                        holding_bars=exit_idx - entry_idx,
+                        entry_cost=entry_costs["total_cost"],
+                        exit_cost=exit_costs["total_cost"]
+                    )
+                    trades.append(trade)
+                    current_trade_id += 1
+
+        # 計算績效指標
+        return self._calculate_metrics(trades)
+
+    def _calculate_metrics(self, trades: List[Trade]) -> Dict[str, Any]:
+        total_trades = len(trades)
+        if total_trades == 0:
+            return {
+                "total_trades": 0,
+                "win_rate": 0.0,
+                "profit_factor": 0.0,
+                "max_drawdown": 0.0,
+                "avg_return": 0.0,
+                "total_net_pnl": 0.0,
+                "sample_size_warning": True,
+                "trades": [],
+                "worst_5_trades": []
+            }
+
+        winning_trades = [t for t in trades if t.net_pnl > 0]
+        losing_trades = [t for t in trades if t.net_pnl < 0]
+
+        win_rate = round((len(winning_trades) / total_trades) * 100, 2)
+        total_profit = sum(t.net_pnl for t in winning_trades)
+        total_loss = abs(sum(t.net_pnl for t in losing_trades))
+
+        if total_loss == 0:
+            profit_factor = 999.0 if total_profit > 0 else 0.0
+        else:
+            profit_factor = round(total_profit / total_loss, 2)
+
+        total_net_pnl = sum(t.net_pnl for t in trades)
+        avg_return = round(sum(t.return_pct for t in trades) / total_trades, 2)
+
+        # 計算權益曲線與最大回撤 (MDD)
+        equity = self.initial_capital
+        peak = equity
+        max_dd = 0.0
+
+        for t in trades:
+            equity += t.net_pnl
+            if equity > peak:
+                peak = equity
+            dd = (peak - equity) / peak if peak > 0 else 0.0
+            if dd > max_dd:
+                max_dd = dd
+
+        # 找出虧損最大的前 5 筆
+        sorted_by_loss = sorted(trades, key=lambda t: t.net_pnl)
+        worst_5 = [
+            {
+                "trade_id": t.trade_id,
+                "entry_date": t.entry_date,
+                "exit_date": t.exit_date,
+                "net_pnl": t.net_pnl,
+                "return_pct": f"{t.return_pct}%",
+                "holding_bars": t.holding_bars
+            }
+            for t in sorted_by_loss if t.net_pnl < 0
+        ][:5]
+
+        return {
+            "total_trades": total_trades,
+            "win_rate": f"{win_rate}%",
+            "profit_factor": profit_factor,
+            "max_drawdown": f"{round(max_dd * 100, 2)}%",
+            "avg_return": f"{avg_return}%",
+            "total_net_pnl": round(total_net_pnl, 2),
+            "sample_size_warning": total_trades < 30,
+            "sample_size_note": "交易次數 < 30 筆，統計顯著性不足，請注意過度擬合 (Overfitting) 風險！" if total_trades < 30 else "樣本數充足 (>=30)",
+            "worst_5_trades": worst_5,
+            "trades_detail": [
+                {
+                    "trade_id": t.trade_id,
+                    "entry_date": t.entry_date,
+                    "entry_price": t.entry_price,
+                    "exit_date": t.exit_date,
+                    "exit_price": t.exit_price,
+                    "net_pnl": t.net_pnl,
+                    "return_pct": t.return_pct
+                }
+                for t in trades
+            ]
+        }

@@ -1,0 +1,2312 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台美股 AI 交易分析系統 — 開發藍圖與檢核主控台 (模組 1～5)</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+      background-color: #0b0f19;
+      color: #e2e8f0;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      backdrop-filter: blur(8px);
+    }
+    .active-tab {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #ffffff;
+      border-color: #3b82f6;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+    .module-active {
+      background: rgba(37, 99, 235, 0.16);
+      border-color: #3b82f6;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-blue-600 selection:text-white">
+
+  <!-- Toast Notification -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 hidden">
+    <div class="bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-xl border border-emerald-400/30 flex items-center gap-2.5 text-sm font-medium">
+      <span id="toastIcon">✓</span>
+      <span id="toastMessage">已複製到剪貼簿</span>
+    </div>
+  </div>
+
+  <!-- Reset Confirmation Modal -->
+  <div id="resetModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="glass-card rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-700">
+      <h3 class="text-lg font-bold text-white mb-2">確定要重置所有開發與驗證進度嗎？</h3>
+      <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+        這將會清除你在第 1～5 模組中勾選的所有「開發檢查清單」、「驗證通過狀態」以及自訂待辦事項，恢復為初始預設狀態。
+      </p>
+      <div class="flex items-center justify-end gap-3">
+        <button type="button" id="cancelResetBtn" class="px-4 py-2 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 transition">
+          取消
+        </button>
+        <button type="button" id="confirmResetBtn" class="px-4 py-2 rounded-lg text-sm font-medium bg-rose-600 hover:bg-rose-500 text-white transition">
+          確認重置進度
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Markdown Modal -->
+  <div id="exportModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="glass-card rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-700 flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="text-lg font-bold text-white">匯出系統開發與檢核報告 (Markdown)</h3>
+          <p class="text-xs text-slate-400">包含目前五大模組進度、台美股設定與未完成項目，可直接貼入 Notion、GitHub Issues 或 Obsidian</p>
+        </div>
+        <button type="button" id="closeExportModalBtn" class="text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800 text-sm">✕</button>
+      </div>
+      <textarea id="exportTextarea" readonly class="w-full flex-1 min-h-[300px] bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs mono text-slate-200 focus:outline-none"></textarea>
+      <div class="flex items-center justify-end gap-3 mt-4">
+        <button type="button" id="copyExportContentBtn" class="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition">
+          複製整份 Markdown 報告
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Header -->
+  <header class="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <!-- Brand & Title -->
+        <div class="flex items-start sm:items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/20 shrink-0">
+            AI
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">台美股 AI 交易分析系統 — 開發與檢核主控台</h1>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30 font-medium">模組 1 ～ 5 完整規格</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">涵蓋環境與雙市場資料設定 (Setup) ➔ 開發列表檢查 (Checklist) ➔ 驗收與防幻覺驗證 (Verification) ➔ 提示詞沙盒</p>
+          </div>
+        </div>
+
+        <!-- Global Controls: Market Filter & Tech Stack -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Market Scope Switcher -->
+          <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex items-center text-xs">
+            <button type="button" id="mktAllBtn" class="px-2.5 py-1.5 rounded-lg font-medium transition bg-blue-600 text-white">🌐 台美雙市場</button>
+            <button type="button" id="mktTwBtn" class="px-2.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white">🇹🇼 台股重點</button>
+            <button type="button" id="mktUsBtn" class="px-2.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white">🇺🇸 美股重點</button>
+          </div>
+
+          <!-- Tech Stack Switcher -->
+          <div class="bg-slate-900 p-1 rounded-xl border border-slate-800 flex items-center text-xs">
+            <button type="button" id="stackPythonBtn" class="px-2.5 py-1.5 rounded-lg font-medium transition bg-indigo-600 text-white">🐍 Python 全端自建</button>
+            <button type="button" id="stackAgentBtn" class="px-2.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white">⚡ No-Code / Agent</button>
+          </div>
+
+          <!-- Export & Reset -->
+          <button type="button" id="openExportBtn" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+            📄 匯出進度
+          </button>
+          <button type="button" id="openResetBtn" class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-slate-800 transition" title="重置所有勾選狀態">
+            ↺ 重置
+          </button>
+        </div>
+      </div>
+
+      <!-- Overall Progress & Main Navigation Bar -->
+      <div class="mt-3 pt-3 border-t border-slate-800/70 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <!-- Main Navigation Tabs -->
+        <nav class="flex flex-wrap items-center gap-1.5">
+          <button type="button" id="navTabOverview" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-transparent transition active-tab">
+            🗺️ 流程架構＆交接總覽
+          </button>
+          <button type="button" id="navTabModules" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-slate-800 bg-slate-900/70 text-slate-300 hover:text-white transition">
+            🛠️ 模組開發主控台 (1～5)
+          </button>
+          <button type="button" id="navTabMarkets" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-slate-800 bg-slate-900/70 text-slate-300 hover:text-white transition">
+            ⚖️ 台美股底層規格對照
+          </button>
+          <button type="button" id="navTabMasterList" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-slate-800 bg-slate-900/70 text-slate-300 hover:text-white transition">
+            📋 全域檢查與驗收總表
+          </button>
+          <button type="button" id="navTabArchitecture" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-slate-800 bg-slate-900/70 text-slate-300 hover:text-white transition">
+            🚀 系統架構與落地路線圖
+          </button>
+        </nav>
+
+        <!-- Real-Time Progress Meters -->
+        <div class="flex items-center gap-4 text-xs bg-slate-900/90 px-3.5 py-1.5 rounded-xl border border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">開發清單:</span>
+            <span id="headerDevCount" class="mono font-semibold text-blue-400">0/0</span>
+          </div>
+          <div class="h-3 w-px bg-slate-700"></div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">驗證通過:</span>
+            <span id="headerVerCount" class="mono font-semibold text-emerald-400">0/0</span>
+          </div>
+          <div class="h-3 w-px bg-slate-700"></div>
+          <div class="flex items-center gap-2 min-w-[110px]">
+            <div class="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div id="headerProgressBar" class="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <span id="headerTotalPct" class="mono font-bold text-white">0%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+
+    <!-- ==================== VIEW 0: EXECUTIVE FLOWCHART & TEAM HANDOFF OVERVIEW ==================== -->
+    <section id="viewOverview" class="space-y-6">
+      <!-- Part 1: Why 2 Tech Routes (Python vs No-Code Agent) -->
+      <div class="glass-card rounded-2xl p-5 sm:p-6">
+        <div class="border-b border-slate-800 pb-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">核心設計原因</span>
+            <h2 class="text-lg sm:text-xl font-bold text-white mt-1">1. 為什麼分成「🐍 Python 全端自建」與「⚡ No-Code Agent」兩種路線？</h2>
+          </div>
+          <span class="text-xs text-slate-400">並非要你做兩套，而是依「團隊角色」與「開發階段」選擇最適合的落地方式</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-slate-900/90 rounded-xl p-4 border border-amber-500/30">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-bold text-amber-300">⚡ 路線 A：No-Code / AI Agent（快速驗證 MVP）</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 mono">1～3 天上線</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed mb-3">
+              使用現成的 AI 平台（Gemini Gems / ChatGPT GPTs）搭配自動化串接工具（n8n / Make / Dify）與 Google Sheets。<strong>不需要寫複雜後端程式</strong>，適合先確認提示詞分析準不準。
+            </p>
+            <div class="text-xs text-slate-400 space-y-1 bg-slate-950/80 p-3 rounded-lg border border-slate-800">
+              <div><strong class="text-slate-200">適合對象：</strong>交易研究員、PM、或不打算維護伺服器的個人投資者。</div>
+              <div><strong class="text-slate-200">最適合模組：</strong>模組 2（新聞轉策略）、模組 5（交易日誌檢討）。</div>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/90 rounded-xl p-4 border border-indigo-500/30">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-bold text-indigo-300">🐍 路線 B：Python 全端自建（精準量化與自動化產品）</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 mono">2～4 週開發</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed mb-3">
+              因為<strong>大型語言模型（LLM）不擅長算數學</strong>（直接問 AI 均線或過去 5 年回測勝率會產生嚴重幻覺），必須先用 Python 算好 100% 精確的指標、回測數據與相關係數，再餵給 AI 做邏輯推論。
+            </p>
+            <div class="text-xs text-slate-400 space-y-1 bg-slate-950/80 p-3 rounded-lg border border-slate-800">
+              <div><strong class="text-slate-200">適合對象：</strong>軟體工程師、量化開發者、或準備打造正式看盤系統的團隊。</div>
+              <div><strong class="text-slate-200">最適合模組：</strong>模組 1（技術指標計算）、模組 3（回測）、模組 4（風控矩陣）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part 2: Visual System Architecture Flowchart -->
+      <div class="glass-card rounded-2xl p-5 sm:p-6">
+        <div class="border-b border-slate-800 pb-3 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">系統全局視角</span>
+            <h2 class="text-lg sm:text-xl font-bold text-white mt-1">2. 台美股 AI 交易分析系統 — 流程架構圖 (System Flow Diagram)</h2>
+          </div>
+          <span class="text-xs text-slate-400">從「資料輸入 ➔ 計算引擎 ➔ 五大 AI 模組 ➔ 交易閉環」的四層執行架構</span>
+        </div>
+
+        <div class="space-y-3">
+          <!-- Layer 1 -->
+          <div class="bg-slate-900/90 rounded-xl p-4 border border-slate-700/80">
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">【第一層：台美股雙市場資料輸入層 (Data Ingestion)】</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div class="bg-slate-950 p-3 rounded-lg border border-blue-500/30">
+                <div class="font-bold text-blue-300 mb-1">🇹🇼 台股資料源 (TWSE/TPEx)</div>
+                <div class="text-slate-400">FinMind / 永豐 Shioaji / 富邦 API（日週還權 K 線）、公開資訊觀測站 MOPS 與鉅亨網新聞</div>
+              </div>
+              <div class="bg-slate-950 p-3 rounded-lg border border-emerald-500/30">
+                <div class="font-bold text-emerald-300 mb-1">🇺🇸 美股資料源 (NYSE/NASDAQ)</div>
+                <div class="text-slate-400">Polygon.io / Alpaca / yfinance（含盤前盤後報價與拆股還原）、SEC 8-K/10-Q 財報與外電快訊</div>
+              </div>
+              <div class="bg-slate-950 p-3 rounded-lg border border-purple-500/30">
+                <div class="font-bold text-purple-300 mb-1">👤 個人帳戶資料 (User Data)</div>
+                <div class="text-slate-400">目前台美股庫存持倉比例、個人風險承受度設定、最近 20 筆實盤進出對帳單 CSV</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-center text-slate-500 text-sm font-bold">⬇️ 傳入標準化中介層（先算好數學，禁止 AI 瞎猜價格） ⬇️</div>
+
+          <!-- Layer 2 -->
+          <div class="bg-slate-900/90 rounded-xl p-4 border border-indigo-500/40">
+            <div class="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">【第二層：雙市場規則標準化與量化計算層 (Pre-Calculation Engine)】</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                <strong class="text-white block">1. 代號與單位對齊</strong>
+                台股 1張=1000股 & Tick 階梯跳動；美股 1股 & $0.01 跳動
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                <strong class="text-white block">2. 技術指標預先計算</strong>
+                預先算出精確 MA5/20/60、RSI14、MACD、ATR 與高低點
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                <strong class="text-white block">3. 稅費與回測引擎</strong>
+                台股 0.3% 證交稅+手續費；美股規費+滑價；算出勝率與 MDD
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                <strong class="text-white block">4. 匯率與相關性矩陣</strong>
+                USD/TWD 動態換算總市值，計算 252 日報酬相關係數與 Beta
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-center text-slate-500 text-sm font-bold">⬇️ 將精確數據注入結構化 Prompt，驅動五大 AI 模組 ⬇️</div>
+
+          <!-- Layer 3: The 5 Core AI Modules Grouped by Stage (1 to 5) -->
+          <div class="bg-slate-900/90 rounded-xl p-4 border border-blue-500/40">
+            <div class="text-xs font-bold text-blue-300 uppercase tracking-wider mb-3">【第三層：五大 AI 核心功能模組（依交易生命週期分類 1～5）】</div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold">階段 A：盤前選股與催化</span>
+                  <div class="font-bold text-white text-sm mt-2">模組 1：自動化技術分析</div>
+                  <p class="text-slate-400 mt-1">拆解日／週線支撐壓力、均線與動能，輸出買進／觀望／賣出決策流。</p>
+                  <div class="font-bold text-white text-sm mt-3">模組 2：新聞轉交易策略</div>
+                  <p class="text-slate-400 mt-1">區分利多是否已反映（Priced-in），給出波動區間與策略失效條件。</p>
+                </div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold">階段 B：歷史數據驗證</span>
+                  <div class="font-bold text-white text-sm mt-2">模組 3：交易策略回測分析</div>
+                  <p class="text-slate-400 mt-1">檢驗策略過去表現，呈現勝率、獲利因子、最大回撤 (MDD)、交易次數，並由 AI 提出濾網改進方向。</p>
+                </div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">階段 C：部位配置與風控</span>
+                  <div class="font-bold text-white text-sm mt-2">模組 4：投資組合風險管理</div>
+                  <p class="text-slate-400 mt-1">揪出跨市場隱藏相關性（如台積電+輝達過度集中），提供再平衡比例與大盤跌 20% 避險方案。</p>
+                </div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">階段 D：盤後復盤與糾偏</span>
+                  <div class="font-bold text-white text-sm mt-2">模組 5：交易日誌分析師</div>
+                  <p class="text-slate-400 mt-1">診斷最近 20 筆交易的重複錯誤、賣飛機會與行為偏誤，制定 3 條個人化鐵律。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-center text-emerald-400 text-sm font-bold">🔄 閉環回饋：模組 5 產出的「3 條個人化鐵律」自動回寫至模組 1 & 4 成為下次下單前的強制檢查項</div>
+        </div>
+      </div>
+
+      <!-- Part 3: Classification, Key Features & Testing Orientation Table -->
+      <div class="glass-card rounded-2xl p-5 sm:p-6">
+        <div class="border-b border-slate-800 pb-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">團隊執行規格總表</span>
+            <h2 class="text-lg sm:text-xl font-bold text-white mt-1">3. 五大模組分類、重點功能說明與測試方向（測向）一覽表</h2>
+          </div>
+          <span class="text-xs text-slate-400">點擊右側按鈕可直接跳轉該模組的詳細開發清單與沙盒</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-700 bg-slate-900/90 text-slate-300">
+                <th class="py-3 px-3.5 font-semibold">階段分類與模組</th>
+                <th class="py-3 px-3.5 font-semibold">重點功能說明（這個模組要做什麼）</th>
+                <th class="py-3 px-3.5 font-semibold text-emerald-300">核心測試方向／測向（怎麼驗證才算合格）</th>
+                <th class="py-3 px-3.5 font-semibold text-right">快速跳轉</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/80 text-slate-300">
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-3.5">
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 font-semibold block w-fit mb-1">盤前選股</span>
+                  <strong class="text-white">1. 自動化技術分析師</strong>
+                </td>
+                <td class="py-3.5 px-3.5">輸入台美股代號，自動拉取日線／週線資料，依序輸出「支撐壓力、趨勢線、關鍵均線、動能指標」，最後給出「買進／觀望／賣出」條件與委託建議（ROD/IOC）。</td>
+                <td class="py-3.5 px-3.5">
+                  <strong>1. 數值零誤差：</strong>均線、RSI 與看盤軟體誤差 &lt; 0.05%。<br>
+                  <strong>2. 零價格幻覺：</strong>禁止 AI 背出過期股價，且台股價位符合 Tick 跳動檔位。
+                </td>
+                <td class="py-3.5 px-3.5 text-right">
+                  <button type="button" data-jump-mod="1" class="jump-mod-btn px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-xs font-medium transition">進入模組 1 ➔</button>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-3.5">
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 font-semibold block w-fit mb-1">消息催化</span>
+                  <strong class="text-white">2. 新聞轉交易策略</strong>
+                </td>
+                <td class="py-3.5 px-3.5">抓取法說會、財報或產業新聞，結合事件前股價漲跌幅，輸出「短長期影響、預期波動區間、已反映 vs. 未反映因素、部位方向与判斷失效條件」。</td>
+                <td class="py-3.5 px-3.5">
+                  <strong>1. 利多出盡盲測：</strong>事件前若已大漲，必須能識別 Priced-in 風險。<br>
+                  <strong>2. 強制失效條件：</strong>100% 必須給出明確的停損／邏輯失效價位，不可模稜兩可。
+                </td>
+                <td class="py-3.5 px-3.5 text-right">
+                  <button type="button" data-jump-mod="2" class="jump-mod-btn px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-xs font-medium transition">進入模組 2 ➔</button>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-3.5">
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-semibold block w-fit mb-1">策略驗證</span>
+                  <strong class="text-white">3. 交易策略回測分析師</strong>
+                </td>
+                <td class="py-3.5 px-3.5">針對指定策略（如均線交叉、RSI 背離）在還權歷史資料上回測，呈現「勝率、獲利因子、最大回撤、交易次數與平均報酬」，並提出具體改進濾網。</td>
+                <td class="py-3.5 px-3.5">
+                  <strong>1. 防偷看未來數據：</strong>訊號成立後一律以隔日開盤價成交。<br>
+                  <strong>2. 真實稅費壓力測試：</strong>台股必須扣除 0.3% 證交稅與手續費，驗算公式零誤差。
+                </td>
+                <td class="py-3.5 px-3.5 text-right">
+                  <button type="button" data-jump-mod="3" class="jump-mod-btn px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-xs font-medium transition">進入模組 3 ➔</button>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-3.5">
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-semibold block w-fit mb-1">部位風控</span>
+                  <strong class="text-white">4. 投資組合風險管理</strong>
+                </td>
+                <td class="py-3.5 px-3.5">輸入台美股持倉代號與比例，自動換算匯率並找出「組合弱點、過度曝險部位、標的間隱藏相關性」，提供「再平衡方案」與「大盤跌 20% 避險策略」。</td>
+                <td class="py-3.5 px-3.5">
+                  <strong>1. 穿透式集中度測試：</strong>能抓出跨市場同題材（如 2330+NVDA+QQQ）高度正相關。<br>
+                  <strong>2. 權重守恆驗收：</strong>再平衡後的目標配置比例總和必須嚴格等於 100%。
+                </td>
+                <td class="py-3.5 px-3.5 text-right">
+                  <button type="button" data-jump-mod="4" class="jump-mod-btn px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-xs font-medium transition">進入模組 4 ➔</button>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-3.5">
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 font-semibold block w-fit mb-1">盤後復盤</span>
+                  <strong class="text-white">5. 交易日誌分析師</strong>
+                </td>
+                <td class="py-3.5 px-3.5">匯入最近 20 筆進出場與損益紀錄，分析「反覆出現的錯誤、錯過的機會、行為偏誤（如處置效應／凹單）」，最後制定「3 條可立即執行的個人化規則」。</td>
+                <td class="py-3.5 px-3.5">
+                  <strong>1. 證據綁定測試：</strong>指出錯誤時必須點名具體的交易編號（如 #08、#12）。<br>
+                  <strong>2. 規則可量化性：</strong>3 條規則必須包含明確數字或時段門檻，可直接當下單前檢查表。
+                </td>
+                <td class="py-3.5 px-3.5 text-right">
+                  <button type="button" data-jump-mod="5" class="jump-mod-btn px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-xs font-medium transition">進入模組 5 ➔</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 1: MODULE WORKBENCH (MODULES 1 TO 5) ==================== -->
+    <section id="viewModules" class="hidden space-y-6">
+      <!-- Module Selector Strip (1 to 5) -->
+      <div id="moduleSelectorGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+        <!-- Populated dynamically by JS -->
+      </div>
+
+      <!-- Active Module Detail Area -->
+      <div class="glass-card rounded-2xl p-5 sm:p-6 shadow-xl">
+        <!-- Module Header Banner -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-800">
+          <div>
+            <div class="flex flex-wrap items-center gap-2.5 mb-1.5">
+              <span id="modBadge" class="px-2.5 py-0.5 rounded-md text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 mono">MODULE 01</span>
+              <h2 id="modTitle" class="text-xl sm:text-2xl font-bold text-white">1. 自動化技術分析師</h2>
+            </div>
+            <p id="modSubtitle" class="text-sm text-slate-300">用日線與週線拆解趨勢和關鍵價位，自動輸出「買進／觀望／賣出」判斷流程與逐步理由。</p>
+          </div>
+
+          <!-- Module Specific Progress Card -->
+          <div class="flex flex-wrap items-center gap-3 bg-slate-900/90 p-3 rounded-xl border border-slate-800 shrink-0">
+            <div class="text-right">
+              <div class="text-xs text-slate-400">本模組開發＆驗證完成度</div>
+              <div class="flex items-center justify-end gap-2 mt-0.5">
+                <span id="modProgressText" class="text-sm font-bold mono text-white">0 / 10 項完成</span>
+                <span id="modProgressPct" class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 mono font-semibold">0%</span>
+              </div>
+            </div>
+            <button type="button" id="checkAllCurrentModuleBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+              ✓ 全部標記完成
+            </button>
+          </div>
+        </div>
+
+        <!-- Sub-navigation inside the active module -->
+        <div class="flex flex-wrap items-center justify-between gap-3 my-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="subTabAll" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-white border border-slate-600 transition">
+              📑 完整檢視 (設定 + 檢查 + 驗證 + 提示詞)
+            </button>
+            <button type="button" id="subTabSetup" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800 transition">
+              1️⃣ 怎麼設定 (Setup)
+            </button>
+            <button type="button" id="subTabChecklist" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800 transition">
+              2️⃣ 開發列表檢查 (Checklist)
+            </button>
+            <button type="button" id="subTabVerify" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800 transition">
+              3️⃣ 怎麼驗證 (Verification)
+            </button>
+            <button type="button" id="subTabPrompt" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800 transition">
+              4️⃣ 提示詞與測試沙盒
+            </button>
+          </div>
+          <div id="activeModeIndicator" class="text-xs text-slate-400">
+            目前顯示：<span class="text-blue-300 font-medium">台美雙市場</span> · <span class="text-indigo-300 font-medium">Python 全端自建</span>
+          </div>
+        </div>
+
+        <!-- Module Sections Container -->
+        <div class="space-y-6 mt-4">
+
+          <!-- BLOCK 1: SETUP (怎麼設定) -->
+          <div id="sectionSetup" class="bg-slate-900/60 rounded-xl p-5 border border-slate-800/90 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold mono">1</span>
+                <h3 class="text-base font-bold text-white">第一階段：怎麼設定（環境、雙市場資料源與架構配置）</h3>
+              </div>
+              <span id="setupStackBadge" class="text-xs px-2.5 py-1 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-medium">
+                🐍 Python 全端自建配置
+              </span>
+            </div>
+
+            <!-- Market Data Sources Grid (TW vs US) -->
+            <div id="setupMarketGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Populated by JS based on active module & market filter -->
+            </div>
+
+            <!-- Implementation Steps & Schema -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+              <div class="bg-slate-950/80 rounded-xl p-4 border border-slate-800">
+                <h4 id="setupStepsTitle" class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-3">⚙️ 關鍵設定步驟與環境變數</h4>
+                <ul id="setupStepsList" class="space-y-2.5 text-xs sm:text-sm text-slate-300">
+                  <!-- Populated by JS -->
+                </ul>
+              </div>
+
+              <div class="bg-slate-950/80 rounded-xl p-4 border border-slate-800 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                  <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400">📦 結構化輸入／輸出資料規格 (JSON Schema)</h4>
+                  <button type="button" id="copySchemaBtn" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                    複製規格
+                  </button>
+                </div>
+                <pre id="setupSchemaCode" class="text-xs mono text-slate-300 overflow-x-auto bg-slate-900/90 p-3 rounded-lg border border-slate-800/80 flex-1 leading-relaxed"></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- BLOCK 2: DEV CHECKLIST (開發列表檢查) -->
+          <div id="sectionChecklist" class="bg-slate-900/60 rounded-xl p-5 border border-slate-800/90 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-bold mono">2</span>
+                <div>
+                  <h3 class="text-base font-bold text-white">第二階段：開發列表檢查（Development Checklist）</h3>
+                  <p class="text-xs text-slate-400">逐項點擊即可打勾記錄進度，確保台股與美股的資料前處理、指標邏輯與防呆機制皆已實作</p>
+                </div>
+              </div>
+              <div class="text-xs mono text-amber-300 bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/20" id="modChecklistStats">
+                已完成 0 / 6
+              </div>
+            </div>
+
+            <div id="devChecklistContainer" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- BLOCK 3: VERIFICATION (怎麼驗證) -->
+          <div id="sectionVerify" class="bg-slate-900/60 rounded-xl p-5 border border-slate-800/90 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold mono">3</span>
+                <div>
+                  <h3 class="text-base font-bold text-white">第三階段：怎麼驗證與驗收（Verification & QA Protocol）</h3>
+                  <p class="text-xs text-slate-400">上線實盤前必做的交叉比對測試、防幻覺驗證與極端行情壓力測試，點擊可切換「通過」狀態</p>
+                </div>
+              </div>
+              <div class="text-xs mono text-emerald-300 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20" id="modVerifyStats">
+                驗證通過 0 / 4
+              </div>
+            </div>
+
+            <div id="verifyListContainer" class="space-y-3">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- BLOCK 4: PROMPT BUILDER & SANDBOX (提示詞與測試沙盒) -->
+          <div id="sectionPrompt" class="bg-slate-900/60 rounded-xl p-5 border border-slate-800/90 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs font-bold mono">4</span>
+                <div>
+                  <h3 class="text-base font-bold text-white">第四階段：提示詞模板與雙市場實測沙盒（Prompt Sandbox）</h3>
+                  <p class="text-xs text-slate-400">保留原貼文完整提示詞，並提供「工程化強化版 Prompt」，可一鍵載入台積電 (2330) 或輝達 (NVDA) 測試參數</p>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="loadTwPresetBtn" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition">
+                  🇹🇼 帶入台股範例 (2330 台積電)
+                </button>
+                <button type="button" id="loadUsPresetBtn" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition">
+                  🇺🇸 帶入美股範例 (NVDA 輝達)
+                </button>
+              </div>
+            </div>
+
+            <!-- Interactive Parameter Input Form -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div class="lg:col-span-5 bg-slate-950/70 rounded-xl p-4 border border-slate-800 space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">動態參數填入區</span>
+                  <div class="flex items-center gap-1.5 text-xs">
+                    <button type="button" id="promptModeOriginalBtn" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white transition">原版精簡提示詞</button>
+                    <button type="button" id="promptModeEngineeredBtn" class="px-2 py-0.5 rounded bg-purple-600 text-white font-medium transition">系統開發強化版</button>
+                  </div>
+                </div>
+                <div id="promptInputFields" class="space-y-3">
+                  <!-- Populated by JS -->
+                </div>
+              </div>
+
+              <!-- Live Generated Prompt Preview -->
+              <div class="lg:col-span-7 bg-slate-950/90 rounded-xl p-4 border border-slate-800 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-bold text-purple-300">即時合成提示詞預覽（可直接複製至 API 或 ChatGPT / Gemini 驗證）</span>
+                  <button type="button" id="copyPromptBtn" class="px-3 py-1 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition shadow">
+                    📋 複製完整提示詞
+                  </button>
+                </div>
+                <pre id="generatedPromptPreview" class="text-xs sm:text-sm mono text-slate-200 whitespace-pre-wrap bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 leading-relaxed"></pre>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: TW vs US DUAL-MARKET SPECS ==================== -->
+    <section id="viewMarkets" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-5 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-xl font-bold text-white">⚖️ 台股 (TWSE/TPEx) vs. 美股 (NYSE/NASDAQ) 系統底層規格對照表</h2>
+            <p class="text-xs sm:text-sm text-slate-400 mt-1">
+              要讓第 1～5 模組同時支援台美股，資料處理層（Data Adapter）與回測／風控引擎必須先統一處理以下 8 大制度差異：
+            </p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-700 bg-slate-900/90 text-slate-300">
+                <th class="py-3 px-4 font-semibold">系統設計維度</th>
+                <th class="py-3 px-4 font-semibold text-blue-300">🇹🇼 台股規格 (TW Market)</th>
+                <th class="py-3 px-4 font-semibold text-emerald-300">🇺🇸 美股規格 (US Market)</th>
+                <th class="py-3 px-4 font-semibold text-amber-300">🛠️ 開發實作與防呆處理規範</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/80 text-slate-300">
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">1. 標的代號與正規化</td>
+                <td class="py-3.5 px-4">純數字 4～6 碼（如 <code class="mono text-blue-300">2330</code>、<code class="mono text-blue-300">0050</code>），跨國 API 需加後綴 <code class="mono">.TW</code>（上市）或 <code class="mono">.TWO</code>（上櫃）。</td>
+                <td class="py-3.5 px-4">英文字母 1～5 碼（如 <code class="mono text-emerald-300">NVDA</code>、<code class="mono text-emerald-300">AAPL</code>、<code class="mono text-emerald-300">BRK.B</code>）。</td>
+                <td class="py-3.5 px-4">建立 <code class="mono text-amber-200">normalize_symbol()</code>：輸入純數字自動查詢上市櫃清單補上後綴，並綁定中文／英文公司名稱供模組 2 新聞檢索使用。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">2. 交易單位與部位計算</td>
+                <td class="py-3.5 px-4">整張為 <strong>1,000 股</strong>，盤中／盤後零股為 1～999 股；價格跳動單位（Tick Size）隨股價區間階梯式變動（如 1000 元以上每檔 5 元）。</td>
+                <td class="py-3.5 px-4">標準以 <strong>1 股</strong>為單位（多數券商亦支援小數點碎股 Fractional Shares）；股價 ≥ $1 時最小跳動固定為 $0.01。</td>
+                <td class="py-3.5 px-4">模組 1 計算支撐壓力價位與模組 4 再平衡股數時，台股需套用 Tick Size 階梯函數對齊有效委託價（如台積電 2420、2425 元），避免算出無效委託價。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">3. 交易時段與時區對齊</td>
+                <td class="py-3.5 px-4">台北時間 <code class="mono">Asia/Taipei (UTC+8)</code> 09:00–13:30（無午休，13:25–13:30 集合競價收盤）。</td>
+                <td class="py-3.5 px-4">美東時間 <code class="mono">America/New_York</code> 09:30–16:00（對應台灣夏令 21:30–04:00、冬令 22:30–05:00），且財報常於盤前(04:00起)或盤後(16:00–20:00)公布。</td>
+                <td class="py-3.5 px-4">資料庫全面以 <strong>UTC 時間戳記</strong>儲存，模組 2 抓取美股財報新聞時必須納入盤前／盤後報價（Extended Hours），避免隔日開盤大幅跳空誤判。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">4. 漲跌幅限制與極端波動</td>
+                <td class="py-3.5 px-4">每日漲跌幅限制 <strong>±10%</strong>（新股掛牌首五日無漲跌幅限制），觸及漲跌停可能出現流動性鎖死（買不到／賣不掉）。</td>
+                <td class="py-3.5 px-4"><strong>無每日漲跌幅限制</strong>（單日可暴漲或暴跌 30%+），僅有大盤指數熔斷（7%/13%/20%）與個股 LULD 5 分鐘暫停交易機制。</td>
+                <td class="py-3.5 px-4">模組 3 回測台股時，若當日最高價＝最低價＝漲跌停價，應禁止假設在該價位能 100% 成交；美股則需在模組 2 與模組 4 加入財報跳空風險緩衝。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">5. 交易稅費與摩擦成本</td>
+                <td class="py-3.5 px-4">買賣雙邊手續費定價 0.1425%（常有 2.8～6 折優惠）＋賣出時課徵 <strong>證交稅 0.3%</strong>（現股當沖減半為 0.15%，ETF 為 0.1%）。</td>
+                <td class="py-3.5 px-4">主流美股券商（IBKR/Firstrade/Schwab）免交易佣金（或每股 $0.005），僅賣出時收取極低 SEC/FINRA 規費；複委託則有 0.1%～0.25% 手續費。</td>
+                <td class="py-3.5 px-4">模組 3 回測分析師必須依市場載入不同成本模板（台股一買一賣約摩擦成本 0.4%～0.58%，高頻進出極易被稅費侵蝕獲利因子）。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">6. 委託有效條件 (ROD/IOC/FOK)</td>
+                <td class="py-3.5 px-4">支援 <strong>ROD</strong>（當日有效）、<strong>IOC</strong>（立即成交否則取消，允許部分成交）、<strong>FOK</strong>（全部成交否則取消）；搭配限價或市價。</td>
+                <td class="py-3.5 px-4">支援 <strong>DAY</strong>（等同 ROD）、<strong>GTC</strong>（取消前有效，最長 60～90 天）、<strong>IOC</strong>、<strong>FOK</strong>，且支援原生停損限價單（Stop-Limit）與移動停損（Trailing Stop）。</td>
+                <td class="py-3.5 px-4">模組 1 與模組 5 在產出進出場執行建議時，台股無原生跨日 GTC 單，需透過券商智慧單／雲端條件單或每日開盤前重送 ROD 單。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">7. 除權息與拆合股還權處理</td>
+                <td class="py-3.5 px-4">每年密集除權息（配息與配股），未還權日線圖會出現假性跳空下跌缺口。</td>
+                <td class="py-3.5 px-4">多為季配息，且科技股常見股票分割（Stock Split，如 1 拆 10）或反向合股。</td>
+                <td class="py-3.5 px-4">模組 1 計算長天期均線（MA60/MA200）與模組 3 進行歷史回測時，強制規定使用<strong>還權後股價（Adjusted OHLC）</strong>。</td>
+              </tr>
+              <tr class="hover:bg-slate-900/40">
+                <td class="py-3.5 px-4 font-semibold text-white">8. 投資組合跨幣別匯率風險</td>
+                <td class="py-3.5 px-4">新台幣（TWD）計價，交割制度為 T+2。</td>
+                <td class="py-3.5 px-4">美元（USD）計價，交割制度自 2024 年起已改為 <strong>T+1</strong>。</td>
+                <td class="py-3.5 px-4">模組 4 同時分析台美股持倉時，需自動抓取最新 <code class="mono">USD/TWD</code> 匯率統一折算為基準貨幣（TWD 或 USD），並將美元匯率波動納入曝險分析。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: MASTER CHECKLIST & VERIFICATION KANBAN ==================== -->
+    <section id="viewMasterList" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-5 sm:p-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-xl font-bold text-white">📋 全域開發檢查與驗證總表 (Master Tracker)</h2>
+            <p class="text-xs sm:text-sm text-slate-400 mt-1">
+              一次檢視第 1～5 點所有模組的開發項目與驗收測試，亦可新增你自己的專屬待辦事項（例如串接特定券商帳戶）
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="filterAllItemsBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white transition">全部項目</button>
+            <button type="button" id="filterPendingItemsBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition">僅看未完成</button>
+            <button type="button" id="filterDoneItemsBtn" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition">已完成項目</button>
+          </div>
+        </div>
+
+        <!-- Add Custom Task Bar -->
+        <div class="mt-4 bg-slate-900/80 p-3.5 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <select id="customTaskModuleSelect" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <option value="1">歸屬：1. 自動化技術分析師</option>
+            <option value="2">歸屬：2. 新聞轉交易策略</option>
+            <option value="3">歸屬：3. 交易策略回測分析師</option>
+            <option value="4">歸屬：4. 投資組合風險管理</option>
+            <option value="5">歸屬：5. 交易日誌分析師</option>
+          </select>
+          <select id="customTaskTypeSelect" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <option value="dev">類型：開發檢查項目</option>
+            <option value="verify">類型：驗收測試標準</option>
+          </select>
+          <input id="customTaskInput" type="text" placeholder="輸入自訂開發或驗證項目（例如：串接永豐 Shioaji 模擬環境測試下單回報）..." class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+          <button type="button" id="addCustomTaskBtn" class="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition shrink-0">
+            ＋ 新增檢核項
+          </button>
+        </div>
+
+        <!-- Master Grouped List -->
+        <div id="masterListContainer" class="mt-5 space-y-5">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 4: ARCHITECTURE & EXECUTION ROADMAP ==================== -->
+    <section id="viewArchitecture" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-5 sm:p-6 space-y-6">
+        <div class="border-b border-slate-800 pb-4">
+          <h2 class="text-xl font-bold text-white">🚀 系統架構與四階段落地開發路線圖 (Execution Roadmap)</h2>
+          <p class="text-xs sm:text-sm text-slate-400 mt-1">
+            將第 1～5 點串聯成一個閉環系統：<strong>技術面篩選 (模組 1) ＋ 消息面催化 (模組 2) ➔ 歷史數據回測驗證 (模組 3) ➔ 部位比例與避險配置 (模組 4) ➔ 實盤紀錄與行為糾偏 (模組 5)</strong>
+          </p>
+        </div>
+
+        <!-- 4-Phase Execution Plan -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <span class="text-xs font-bold mono text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded border border-blue-500/20">PHASE 1 · 第 1 週</span>
+              <h3 class="text-base font-bold text-white mt-3">雙市場資料層與正規化底座</h3>
+              <ul class="mt-2.5 space-y-2 text-xs text-slate-300 leading-relaxed">
+                <li>• 建立統一的 <code class="mono text-blue-300">MarketDataService</code>，自動判別台股（FinMind / yfinance）與美股（Polygon / Alpaca）。</li>
+                <li>• 完成日線／週線還權 K 線、技術指標（MA、RSI、MACD、ATR）與匯率（USD/TWD）自動快取。</li>
+                <li>• 驗證：隨意輸入 <code class="mono">2330</code> 與 <code class="mono">NVDA</code> 皆能回傳相同欄位格式的 JSON。</li>
+              </ul>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-400">優先對應：模組 1、模組 3 底層</div>
+          </div>
+
+          <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <span class="text-xs font-bold mono text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/20">PHASE 2 · 第 2 週</span>
+              <h3 class="text-base font-bold text-white mt-3">技術分析與新聞策略 AI 引擎</h3>
+              <ul class="mt-2.5 space-y-2 text-xs text-slate-300 leading-relaxed">
+                <li>• 將計算好的精確技術指標與支撐壓力價位注入模組 1 Prompt（禁止讓 LLM 自己心算均線）。</li>
+                <li>• 串接台股鉅亨網／MOPS 與美股 SEC／新聞 API，實作模組 2「已反映 vs. 未反映」與「失效條件」結構化輸出。</li>
+                <li>• 驗證：通過價格幻覺測試與歷史財報新聞盲測。</li>
+              </ul>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-400">優先對應：模組 1、模組 2 上線</div>
+          </div>
+
+          <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <span class="text-xs font-bold mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">PHASE 3 · 第 3 週</span>
+              <h3 class="text-base font-bold text-white mt-3">量化回測與投組風控引擎</h3>
+              <ul class="mt-2.5 space-y-2 text-xs text-slate-300 leading-relaxed">
+                <li>• 以 Python（VectorBT / Backtesting.py）實作模組 3 回測核心，套用台美股真實稅費與滑價，由 AI 解讀四項指標並提出改進。</li>
+                <li>• 實作模組 4 持倉相關係數矩陣（Correlation Matrix）與大盤下跌 20% Beta 壓力測試。</li>
+                <li>• 驗證：手動驗算 5 筆交易確認無偷看未來數據。</li>
+              </ul>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-400">優先對應：模組 3、模組 4 上線</div>
+          </div>
+
+          <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <span class="text-xs font-bold mono text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20">PHASE 4 · 第 4 週</span>
+              <h3 class="text-base font-bold text-white mt-3">交易日誌閉環與自動化看板</h3>
+              <ul class="mt-2.5 space-y-2 text-xs text-slate-300 leading-relaxed">
+                <li>• 建立台美股對帳單 CSV 匯入器，自動截取最近 20 筆進出場紀錄送入模組 5 診斷行為偏誤。</li>
+                <li>• 將模組 5 產出的「3 條個人化規則」設為下次下單前的強制檢核條件，形成完整交易閉環。</li>
+                <li>• 驗證：植入連虧凹單測試集，確認能精準抓出錯誤。</li>
+              </ul>
+            </div>
+            <div class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-400">優先對應：模組 5 與全系統整合</div>
+          </div>
+        </div>
+
+        <!-- Ready-to-Use Project Structure & Boilerplate Code -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+          <div class="bg-slate-950 rounded-xl p-4 border border-slate-800 flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-bold text-white">📁 建議專案資料夾結構 (Python + LLM 雙市場架構)</h3>
+              <button type="button" id="copyFolderTreeBtn" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                複製結構
+              </button>
+            </div>
+            <pre id="folderTreeCode" class="text-xs mono text-slate-300 bg-slate-900/90 p-3.5 rounded-lg border border-slate-800 overflow-x-auto flex-1 leading-relaxed">ai-trading-copilot/
+├── config/
+│   ├── settings.py            # API 金鑰、台美股稅費常數、時區設定
+│   └── prompts_v1.yaml        # 集中管理第 1～5 模組 System & User Prompts
+├── data_adapters/
+│   ├── market_router.py       # 自動識別台股 (.TW/.TWO) 與美股代號
+│   ├── tw_adapter.py          # FinMind / Shioaji / MOPS 台股資料與新聞
+│   ├── us_adapter.py          # Polygon / yfinance / SEC 美股資料與新聞
+│   └── fx_service.py          # USD/TWD 即時匯率轉換
+├── engines/
+│   ├── mod1_technical.py      # 日線/週線 MA、RSI、MACD 與支撐壓力計算
+│   ├── mod2_news_strategy.py  # 新聞去重、情緒與失效條件結構化解析
+│   ├── mod3_backtester.py     # 含台美股稅費滑價之回測與四大指標計算
+│   ├── mod4_portfolio_risk.py # 權重、相關係數矩陣、再平衡與 -20% 壓力測試
+│   └── mod5_journal_coach.py  # 最近 20 筆交易統計與行為偏誤診斷
+├── schemas/
+│   └── models.py              # Pydantic 強制驗證 AI 輸出 JSON 結構
+├── tests/                     # 對應第三階段 Verification 驗收測試腳本
+│   ├── test_no_lookahead.py
+│   └── test_tw_us_fees.py
+└── app.py                     # Streamlit / FastAPI 互動式看盤與檢核主控台</pre>
+          </div>
+
+          <div class="bg-slate-950 rounded-xl p-4 border border-slate-800 flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-bold text-white">🐍 雙市場底層自動路由核心範本 (<code class="mono text-blue-300">market_router.py</code>)</h3>
+              <button type="button" id="copyBoilerplateBtn" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                複製程式碼
+              </button>
+            </div>
+            <pre id="boilerplateCode" class="text-xs mono text-slate-300 bg-slate-900/90 p-3.5 rounded-lg border border-slate-800 overflow-x-auto flex-1 leading-relaxed">from dataclasses import dataclass
+import re
+
+@dataclass
+class MarketConfig:
+    market: str          # "TW" or "US"
+    symbol: str          # 正規化代號 e.g. "2330.TW" or "NVDA"
+    currency: str        # "TWD" or "USD"
+    lot_size: int        # 1000 (台股整張) or 1 (美股)
+    commission_rate: float
+    tax_rate: float      # 台股證交稅 0.003 / 美股規費 ~0.00002
+
+def resolve_market_symbol(raw_ticker: str) -> MarketConfig:
+    clean = raw_ticker.strip().upper()
+    # 判斷是否為台股代號 (4~6碼數字，或結尾為 .TW / .TWO)
+    if re.match(r"^\d{4,6}(\.TW|\.TWO)?$", clean):
+        sym = clean if "." in clean else f"{clean}.TW"
+        return MarketConfig(
+            market="TW", symbol=sym, currency="TWD",
+            lot_size=1000, commission_rate=0.001425 * 0.6, tax_rate=0.003
+        )
+    # 預設歸類為美股標的
+    return MarketConfig(
+        market="US", symbol=clean, currency="USD",
+        lot_size=1, commission_rate=0.0, tax_rate=0.00002
+    )</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/80 bg-slate-950 py-4 px-4 sm:px-6 text-center text-xs text-slate-500 mt-8">
+    台美股 AI 交易分析系統開發藍圖 · 涵蓋編號 1～5 完整設定、開發檢核與驗收標準（所有勾選進度自動保存在瀏覽器本地端）
+  </footer>
+
+  <script>
+    // ==================== COMPLETE MODULE DATA (MODULES 1 TO 5) ====================
+    const MODULES_DATA = [
+      {
+        id: 1,
+        code: "MODULE 01",
+        shortName: "1. 自動化技術分析師",
+        title: "1. 自動化技術分析師 (Automated Technical Analyst)",
+        subtitle: "用日線與週線拆解趨勢和關鍵價位，依序整理支撐壓力、趨勢線、關鍵均線與動能指標，並提供「買進／觀望／賣出」的判斷流程與逐步理由。",
+        originalPromptTemplate: `請使用日線圖與週線圖分析【{ticker}】，並依序整理：
+→ 支撐與壓力區間
+→ 主要趨勢線
+→ 關鍵移動平均線
+→ 動能指標的變化
+最後提供「買進／觀望／賣出」的判斷流程，並逐步說明理由。`,
+        engineeredPromptTemplate: `你是一位專精於台股與美股的資深量化技術分析師。請根據以下系統傳入的【{ticker}】（市場：{market}）最新日線（Daily）與週線（Weekly）客觀數據進行結構化拆解：
+
+【系統注入之客觀行情與指標數據】
+- 最新收盤價與近期高低點：{price_context}
+- 關鍵移動平均線（MA5 / MA20 / MA60 / MA200）：{ma_context}
+- 動能與波動指標（RSI14 / MACD / KD / ATR）：{momentum_context}
+
+請嚴格依據上述數據（禁止自行捏造未提供的價位），依序輸出：
+1. 【支撐與壓力區間】：分別列出週線級別（中期）與日線級別（短期）的 2 道關鍵支撐區間與 2 道壓力區間，並說明該區間是由前波高低點、跳空缺口或均線共振所形成。
+2. 【主要趨勢線】：判定目前週線與日線處於「上升趨勢、下降趨勢或區間盤整」，並標出趨勢線破壞的關鍵價位。
+3. 【關鍵移動平均線】：分析目前股價與短中長期均線的排列關係（多頭排列／空頭排列／糾結）、乖離率是否過大，以及均線扣抵方向。
+4. 【動能指標的變化】：解讀 RSI、MACD 柱狀體與 KD 是否出現黃金／死亡交叉、高檔鈍化或頂底背離訊號。
+5. 【買進／觀望／賣出 判斷流程】：給出明確的決策樹（Decision Tree）——
+   - 觸發「買進」的確切價位條件與建議委託方式（台股請註明限價 ROD 或突破 IOC；美股請註明 Limit 或 Stop-Limit）
+   - 維持「觀望」的震盪區間範圍
+   - 觸發「賣出／停損」的防守價位，並逐步說明每一步的邏輯理由。`,
+        presets: {
+          tw: {
+            ticker: "2330.TW 台積電",
+            market: "台股 TWSE (整張 1000 股 / 最小跳動 5 元)",
+            price_context: "現價 2420 元（今日下跌 20 元 / -0.82%），近 20 日高點 2485 元、近 20 日低點 2360 元；週線前波頸線支撐 2350 元",
+            ma_context: "日線 MA5=2432、MA20=2405、MA60=2310、MA200=2080；週線 20MA=2290（均線呈多頭排列但短線跌破 5 日線）",
+            momentum_context: "日線 RSI(14)=54.2（自 68 回落）、MACD 紅柱收斂接近零軸、ATR(14)=38 元；週線 MACD 維持多頭開口"
+          },
+          us: {
+            ticker: "NVDA (NVIDIA Corp.)",
+            market: "美股 NASDAQ (最小單位 1 股 / 最小跳動 $0.01)",
+            price_context: "現價 $138.60，盤前高點 $140.20，前波歷史高點壓力 $143.71，近期缺口支撐 $131.50～$133.00",
+            ma_context: "日線 EMA20=$134.10、SMA50=$126.80、SMA200=$108.40；週線守穩 10 週均線 ($130.50) 之上",
+            momentum_context: "日線 RSI(14)=61.8，MACD 快線於零軸上方再次黃金交叉，日均 ATR(14)=$4.65"
+          }
+        },
+        inputFields: [
+          { key: "ticker", label: "標的／代號" },
+          { key: "market", label: "市場與交易規則註記" },
+          { key: "price_context", label: "近期高低點與現價數據" },
+          { key: "ma_context", label: "關鍵移動平均線數值 (日線/週線)" },
+          { key: "momentum_context", label: "動能指標數值 (RSI/MACD/ATR)" }
+        ],
+        setup: {
+          twSources: [
+            "歷史與日週 K 線：FinMind API (TaiwanStockPriceAdjusted 還權股價)、yfinance (2330.TW)",
+            "即時五檔與分時報價：永豐金 Shioaji API、富邦新一代 API 或 Fugle 富果行情 API",
+            "台股特殊設定：需載入證交所股價升降單位表（Tick Size，如 1000 元以上每檔 5 元）與除權息還權因子"
+          ],
+          usSources: [
+            "歷史與日週 K 線：Polygon.io REST API、Alpaca Market Data API 或 yfinance",
+            "盤前／盤後與即時報價：Alpaca WebSocket 或 TradingView Webhook 訊號串接",
+            "美股特殊設定：必須開啟 Adjusted=True（自動處理拆股與配息），並支援盤前 (Pre-market) 與盤後高低點標記"
+          ],
+          pythonSteps: [
+            "安裝 pandas-ta 或 TA-Lib，先在 Python 端用還權日 K 與週 K 算出精確的 MA(5, 20, 60, 200)、RSI(14)、MACD(12, 26, 9) 與樞軸點 (Pivot Points)。",
+            "切勿只把股票代號丟給 LLM 讓它憑記憶猜價格！務必先由 Python 算出最新數值 JSON，再填入 Prompt 模板送交 OpenAI / Gemini API。",
+            "使用 Pydantic Structured Outputs 強制模型回傳包含 support_zones、resistance_zones 與 decision_tree 的結構化 JSON。"
+          ],
+          agentSteps: [
+            "在 Dify / n8n 或 Make 建立工作流：Node 1 為 HTTP Request 節點，呼叫 Yahoo Finance 或 FinMind 取得最近 250 根日線與 52 根週線資料。",
+            "Node 2 使用內建 Code 節點計算最近 20 日高低點、MA20/MA60 與 RSI14 數值摘要。",
+            "Node 3 將數值摘要綁定至 LLM 節點（設定 Temperature = 0.1 降低隨機性），輸出標準化技術分析報告。"
+          ],
+          schema: `{
+  "symbol": "2330.TW",
+  "market": "TW",
+  "timeframes": {
+    "weekly_trend": "BULLISH",
+    "daily_trend": "PULLBACK_IN_UPTREND"
+  },
+  "support_zones": [
+    {"level": "2400-2405", "basis": "日線 MA20 與整數關卡"},
+    {"level": "2350-2360", "basis": "週線頸線與前波低點"}
+  ],
+  "resistance_zones": [
+    {"level": "2450-2485", "basis": "前波高點套牢區"}
+  ],
+  "moving_averages": {"ma5": 2432, "ma20": 2405, "ma60": 2310},
+  "momentum": {"rsi14": 54.2, "macd_signal": "BULLISH_CONVERGING"},
+  "decision_flow": {
+    "buy_trigger": "回測 2405 元守穩且出量，或帶量突破 2435 元",
+    "hold_zone": "2405-2430 元量縮整理區間",
+    "sell_trigger": "日線收盤跌破 2395 元且 MACD 翻黑"
+  }
+}`
+        },
+        devChecklist: [
+          { id: "m1_d1", market: "ALL", title: "實作日線 (Daily) 與週線 (Weekly) 還權 K 線資料自動同步與快取機制" },
+          { id: "m1_d2", market: "ALL", title: "在程式碼端預先算好 MA(5/20/60/200)、RSI(14)、MACD 與 ATR，禁止讓 AI 心算指標" },
+          { id: "m1_d3", market: "ALL", title: "實作近期波段高低點 (Swing High/Low) 與成交量密集區自動識別演算法，作為支撐壓力基準" },
+          { id: "m1_d4", market: "TW", title: "【台股專屬】加入台股 Tick Size 價格對齊器（例如股價 ≥1000 元時，支撐壓力價位自動取 5 元倍數）" },
+          { id: "m1_d5", market: "US", title: "【美股專屬】整合美股盤前／盤後跳空缺口 (Gap) 偵測，並支援 200MA (機構年線) 關鍵位判斷" },
+          { id: "m1_d6", market: "ALL", title: "完成「買進／觀望／賣出」三階段條件式決策樹輸出介面，明確綁定觸發價位與委託單型態 (ROD/IOC)" }
+        ],
+        verifications: [
+          {
+            id: "m1_v1",
+            market: "ALL",
+            title: "指標數值零誤差交叉驗證 (Indicator Accuracy Check)",
+            method: "隨機抽樣台股 (2330、2603) 與美股 (NVDA、AAPL) 各 3 檔，比對系統算出的日／週線 MA20、MA60、RSI14 與 TradingView 或券商看盤軟體數值。",
+            passCriteria: "均線誤差 < 0.05%，RSI 誤差 < 0.5，且週線收盤價與看盤軟體完全一致。"
+          },
+          {
+            id: "m1_v2",
+            market: "ALL",
+            title: "AI 價格幻覺防禦測試 (Anti-Hallucination Check)",
+            method: "檢查 AI 輸出的支撐區間、壓力區間與均線價位，是否 100% 落在系統傳入的歷史高低點範圍內，有無憑空捏造過期股價（例如把台積電報成兩年前的 600 元）。",
+            passCriteria: "連續 10 次生成報告中，所有提及之價位與輸入數據 100% 吻合，無任何記憶殘留價格。"
+          },
+          {
+            id: "m1_v3",
+            market: "TW",
+            title: "【台股驗證】除權息跳空與 Tick 檔位測試",
+            method: "選取剛除權息的台股標的，驗證系統是否因使用「未還權股價」而誤判為暴跌破線；並檢查給出的進出場價是否符合台股跳動檔位。",
+            passCriteria: "除權息日趨勢線與均線平滑無假性斷崖，且建議委託價皆為合法 Tick 價位。"
+          },
+          {
+            id: "m1_v4",
+            market: "ALL",
+            title: "決策流程可執行性驗收 (Actionability Check)",
+            method: "檢視最終輸出的「買進／觀望／賣出」判斷流程，是否具備明確的「若股價觸及 X 元且成交量 > Y 則執行 Z」條件，而非模稜兩可的廢話。",
+            passCriteria: "買進、觀望、賣出三個分支皆包含具體價位門檻與逐步推論理由。"
+          }
+        ]
+      },
+      {
+        id: 2,
+        code: "MODULE 02",
+        shortName: "2. 新聞轉交易策略",
+        title: "2. 新聞轉交易策略 (News-to-Strategy Converter)",
+        subtitle: "把公司或產業的最新消息轉換成可研究的市場影響，涵蓋短長期影響、預期波動區間、市場已反映與未反映因素、部位配置與失效條件。",
+        originalPromptTemplate: `請整理【{target}】的最新消息，並分析它可能帶來的交易影響。
+請提供：
+→ 短期與長期可能影響
+→ 預期價格波動區間
+→ 市場可能已反映與尚未反映的因素
+→ 可考慮的部位配置方向，以及判斷失效的條件。`,
+        engineeredPromptTemplate: `你是一位宏觀與產業事件驅動（Event-Driven）交易策略師。請根據以下【{target}】（市場：{market}）的最新消息與當前盤面數據，轉換為可執行的交易研究報告：
+
+【輸入新聞與事件摘要】
+{news_summary}
+
+【事件發生前之股價位階與波動率基準】
+{market_context}
+
+請嚴格依序提供以下 4 個維度的深度分析：
+1. 【短期與長期可能影響】：
+   - 短期（1～5 個交易日）：情緒面衝擊、隔日開盤跳空方向、短線資金輪動效應。
+   - 長期（1～4 個季度）：對公司營收成長率、毛利率、EPS 或產業競爭格局的實質結構性影響。
+2. 【預期價格波動區間】：
+   - 結合事件前 ATR（真實波動幅度）與歷史同類事件反應，給出短期預期的「上檔目標區間」與「下檔測試區間」（需標明百分比與具體價位）。
+3. 【市場可能已反映 (Priced-in) 與尚未反映 (Not Priced-in) 的因素】：
+   - 已反映因素：對照事件前 10 日股價漲跌幅與市場共識，哪些利多／利空早已被提前卡位？（提防利多出盡 Sell the news）
+   - 尚未反映因素：新聞細節中哪些二階效應（如供應鏈外溢、毛利率隱憂、後續資本支出）市場還沒意識到？
+4. 【可考慮的部位配置方向，以及判斷失效的條件】：
+   - 部位配置方向：偏多分批布局／拉回買進／逢高減碼／事件觀望，並建議分批比例。
+   - 判斷失效的條件（Invalidation Criteria）：明確列出當「股價跌破／突破某關鍵價位」或「後續出現某基本面反證」時，代表此新聞交易邏輯失效，必須立即停損或退場。`,
+        presets: {
+          tw: {
+            ticker: "2330.TW 台積電 / CoWoS 先進封裝產業",
+            target: "2330 台積電（法說會上修全年營收展望與資本支出）",
+            market: "台股 TWSE (需留意隔日開盤跳空與外資期現貨動向)",
+            news_summary: "台積電最新法說會公布單季毛利率超越財測高標，並宣布上調今年美元營收成長預期至近 30%，同時指出 AI 晶片需求強勁，CoWoS 產能至明年仍供不應求，但提到海外廠初期量產將稀釋毛利率約 2%~3%。",
+            market_context: "法說會前 10 個交易日股價已先上漲 6.5% 至 2420 元；目前日均 ATR 為 38 元（約 1.57%），外資法說前連買 4 日。"
+          },
+          us: {
+            ticker: "NVDA 輝達 / AI 伺服器產業",
+            target: "NVDA 輝達（發布最新一季財報 8-K 與下季財測指引）",
+            market: "美股 NASDAQ (留意盤後交易波動與選擇權隱含波動率 IV Crush)",
+            news_summary: "NVIDIA 公布最新財報，資料中心營收年增 112% 優於華爾街預期，下季營收指引中位數亦高於市場共識 15 億美元，但低於部分買方機構（Whisper Number）最高預期的 25 億美元，且新一代晶片初期毛利率略降至 73%。",
+            market_context: "財報公布前股價收在 $138.60，近一個月已大漲 18%；選擇權市場隱含財報當週波動幅度（Implied Move）為 ±7.5%（約 $128.20 ～ $149.00）。"
+          }
+        },
+        inputFields: [
+          { key: "target", label: "公司／產業名稱與事件主題" },
+          { key: "market", label: "所屬市場與交易特性" },
+          { key: "news_summary", label: "最新消息／法說會／財報重點原文" },
+          { key: "market_context", label: "事件前股價位階與波動率基準 (ATR / 近期漲跌幅)" }
+        ],
+        setup: {
+          twSources: [
+            "官方重大訊息：公開資訊觀測站 (MOPS) 重大訊息 RSS、證交所法說會行事曆與月營收公告（每月 10 日前）",
+            "財經新聞源：鉅亨網 (cnyes) 台股新聞 API、經濟日報／工商時報產業新聞、PChome 股市新聞",
+            "產業供應鏈映射：建立台股概念股關聯字典（如 CoWoS 供應鏈：2330、3131 弘塑、3583 辛耘），支援單一新聞連動分析"
+          ],
+          usSources: [
+            "官方申報文件：SEC EDGAR API 即時抓取 8-K（重大事件）、10-Q（季報）、10-K（年報）與 Earnings Call 逐字稿",
+            "即時快訊 API：Polygon.io Ticker News API、Finnhub News API、Benzinga 新聞流",
+            "市場預期基準：整合財報市場共識 (Consensus EPS/Revenue) 與近 10 日股價超額報酬，供 AI 判斷是否已 Priced-in"
+          ],
+          pythonSteps: [
+            "實作新聞抓取與去重管道（以標題相似度或 URL Hash 過濾重複轉載新聞），並強制附上精確發布時間（精確至分鐘，區分盤中／盤後）。",
+            "在把新聞送給 AI 前，自動由股價 API 撈出該標的「過去 5 日與 20 日漲跌幅」與「14 日 ATR 波動值」一併傳入 Prompt。",
+            "強制要求輸出必須包含「失效價位 (Invalidation Level)」與「失效事件條件」，若模型未給出具體失效條件則自動退回重跑。"
+          ],
+          agentSteps: [
+            "在 n8n / Make 設定排程或 RSS Trigger，監聽指定自選股（如 2330、NVDA）的最新新聞。",
+            "加入搜尋節點（如 Perplexity API 或 Google News Search）彙整過去 24 小時同主題的正反方市場觀點。",
+            "將新聞內容與近期股價漲跌幅傳入 Gemini / GPT 節點，輸出結構化卡片至 Notion、Telegram 或 Line Notify。"
+          ],
+          schema: `{
+  "target": "2330.TW 台積電",
+  "news_timestamp_utc": "2026-10-18T06:00:00Z",
+  "impact_analysis": {
+    "short_term_1_to_5_days": "法說利多帶動跳空開高，但前波已漲 6.5% 需防短線獲利了結",
+    "long_term_1_to_4_quarters": "AI 需求與先進封裝定價權確立，長線 EPS 上修趨勢明確"
+  },
+  "expected_volatility_range": {
+    "upside_range": "2460 - 2500 (+1.6% ~ +3.3%)",
+    "downside_range": "2380 - 2400 (-0.8% ~ -1.6%)"
+  },
+  "market_pricing": {
+    "already_priced_in": ["Q3 毛利率優於預期", "AI 需求強勁"],
+    "not_yet_priced_in": ["明年資本支出進一步上修對設備廠的二階拉貨效應", "海外廠毛利稀釋幅度小於預期"]
+  },
+  "strategy": {
+    "position_direction": "開高不追高，待回測缺口上緣分 2 批布局",
+    "invalidation_conditions": [
+      "突破缺口被完全回補且收盤跌破 2380 元",
+      "外資於法說後連續 3 日大額賣超逾 2 萬張"
+    ]
+  }
+}`
+        },
+        devChecklist: [
+          { id: "m2_d1", market: "ALL", title: "建立新聞時間戳記正規化與去重機制（嚴格區分「盤前、盤中、盤後」發布之消息）" },
+          { id: "m2_d2", market: "ALL", title: "自動在新聞分析前注入「事件前 5 日／20 日股價漲跌幅」，讓 AI 有客觀依據判斷是否已提前反映 (Priced-in)" },
+          { id: "m2_d3", market: "ALL", title: "結合個股 ATR（真實波動區間）計算合理的「預期價格波動區間」，避免 AI 隨意瞎猜漲跌幅" },
+          { id: "m2_d4", market: "TW", title: "【台股專屬】串接每月 10 日前月營收公告與法說會重訊，並建立台股上下游供應鏈代號映射表" },
+          { id: "m2_d5", market: "US", title: "【美股專屬】串接 SEC 8-K / 財報指引數據，並納入盤後股價反應與選擇權隱含波動率 (Implied Move) 參考" },
+          { id: "m2_d6", market: "ALL", title: "在輸出解析器強制檢查「判斷失效的條件 (Invalidation Criteria)」欄位不可為空" }
+        ],
+        verifications: [
+          {
+            id: "m2_v1",
+            market: "ALL",
+            title: "歷史重大新聞回溯盲測 (Historical Event Blind Test)",
+            method: "遮蔽公司後續走勢，輸入過去 3 則已知結果的重大財報／法說新聞（含「利多出盡下跌」案例），檢查系統能否在「已反映因素」中提出警示。",
+            passCriteria: "當事件前 10 日股價已大漲超過 10% 時，系統必須在『已反映因素』標示利多出盡風險。"
+          },
+          {
+            id: "m2_v2",
+            market: "ALL",
+            title: "失效條件具體性驗證 (Invalidation Specificity Check)",
+            method: "檢查系統產出的「判斷失效條件」是否包含明確可量化的價位或時間條件（例如『跌破法說低點 X 元』），而非『若市場情緒轉差』等模糊詞彙。",
+            passCriteria: "100% 測試案例皆產出至少 1 條價格失效條件與 1 條基本面／籌碼失效條件。"
+          },
+          {
+            id: "m2_v3",
+            market: "ALL",
+            title: "預期波動區間合理性驗證 (Volatility Bounds Check)",
+            method: "比對系統給出的短期預期價格波動區間，是否符合該市場規則（例如台股單日不可超過 ±10% 漲跌停限制）。",
+            passCriteria: "台股單日預期波動區間嚴格受限於 ±10% 內，美股波動區間與近期 ATR 倍數相符。"
+          }
+        ]
+      },
+      {
+        id: 3,
+        code: "MODULE 03",
+        shortName: "3. 交易策略回測分析師",
+        title: "3. 交易策略回測分析師 (Strategy Backtest Analyst)",
+        subtitle: "用數據檢查策略是否真的具有優勢，完整呈現勝率、獲利因子、最大回撤、交易次數與平均報酬，並提出可提高策略優勢的具體改進方向。",
+        originalPromptTemplate: `請針對【{strategy_name}】在【{target_asset}】過去【{time_period}】的表現進行回測。
+請呈現：
+→ 勝率
+→ 獲利因子
+→ 最大回撤
+→ 交易次數與平均報酬
+最後提出可提高策略優勢的具體改進方向。`,
+        engineeredPromptTemplate: `你是一位嚴謹的量化策略回測分析師。請針對以下策略回測設定與回測引擎統計數據，進行深度績效診斷與優化分析：
+
+【回測設定參數】
+- 測試交易策略：{strategy_name}
+- 測試標的／指數：{target_asset}（市場與摩擦成本：{market}）
+- 回測時間區間：{time_period}
+- 回測引擎產出之原始數據摘要：{backtest_metrics}
+
+請嚴格依序呈現並診斷以下項目：
+1. 【勝率 (Win Rate)】：呈現總勝率、多單／空單勝率，並分析此勝率搭配目前的賺賠比是否具備正期望值（Expectancy）。
+2. 【獲利因子 (Profit Factor)】：呈現總獲利金額 ÷ 總虧損金額之比值（需扣除台美股手續費與交易稅），評估策略是否達到實盤門檻（通常需 > 1.5）。
+3. 【最大回撤 (Max Drawdown, MDD)】：呈現歷史最大淨值回落百分比與發生期間（Peak-to-Valley），以及最長創新高停滯期（Underwater Period）。
+4. 【交易次數與平均報酬】：呈現總交易筆數、平均每筆報酬率（%）、平均持倉天數，檢視樣本數是否具統計顯著性（建議至少 > 30 筆）以及是否被交易成本侵蝕。
+5. 【可提高策略優勢的具體改進方向】：
+   - 針對該策略在盤整盤或極端行情的弱點，提出 3 個可量化測試的具體改進方案（例如：加入週線級別趨勢濾網、改用 ATR 移動停損、或避開財報／除權息前後 N 日），並說明預期改善哪一項指標。`,
+        presets: {
+          tw: {
+            strategy_name: "日線 MA5 向上突破 MA20 買進，跌破 MA10 或虧損達 5% 出場（雙均線趨勢策略）",
+            target_asset: "2330.TW 台積電 / 0050 元大台灣50",
+            time_period: "過去 5 年 (2021-10 至 2026-10，共 1,220 個交易日)",
+            market: "台股 TWSE（已計入單邊手續費 0.0855% + 賣出證交稅 0.3%，以次日開盤價成交）",
+            backtest_metrics: "總交易次數 42 筆｜勝率 45.2% (19勝23敗)｜平均獲利 +8.4%、平均虧損 -3.1%｜獲利因子 (Profit Factor) = 1.98｜最大回撤 (MDD) = -16.4%（發生於 2022 年空頭盤整期）｜單筆平均淨報酬 +1.82%"
+          },
+          us: {
+            strategy_name: "日線 RSI(14) 低於 30 且股價守在 200MA 之上買進，RSI 高於 65 或停損 6% 出場（均值回歸策略）",
+            target_asset: "NVDA 輝達 / QQQ 那斯達克100 ETF",
+            time_period: "過去 5 年 (2021-10 至 2026-10)",
+            market: "美股 NASDAQ（免佣金 + 預估滑價 0.05% + SEC 規費，使用 Adjusted Close 還權資料）",
+            backtest_metrics: "總交易次數 36 筆｜勝率 63.9% (23勝13敗)｜平均獲利 +6.8%、平均虧損 -4.9%｜獲利因子 (Profit Factor) = 2.15｜最大回撤 (MDD) = -19.2%｜單筆平均淨報酬 +2.35%"
+          }
+        },
+        inputFields: [
+          { key: "strategy_name", label: "交易策略邏輯（進出場條件）" },
+          { key: "target_asset", label: "股票／指數代號" },
+          { key: "time_period", label: "回測時間區間" },
+          { key: "market", label: "市場稅費與滑價設定" },
+          { key: "backtest_metrics", label: "回測引擎計算結果摘要（或留空由 AI 生成回測腳本）" }
+        ],
+        setup: {
+          twSources: [
+            "還權歷史資料庫：FinMind `TaiwanStockPriceAdjusted` 或 TEJ / Yahoo 還權日 K（務必還原除權息，否則長線回測全錯）",
+            "台股摩擦成本參數：買進手續費 `0.1425% * 折扣`、賣出手續費 `0.1425% * 折扣` + 賣出證交稅 `0.3%`（ETF 為 `0.1%`）",
+            "流動性限制：加入台股漲跌停（±10%）無法成交限制，避免在鎖死漲停日假設買進成功"
+          ],
+          usSources: [
+            "還權歷史資料庫：Polygon.io / Tiingo / yfinance `auto_adjust=True`（自動還原歷年拆股 Stock Splits 與現金股息）",
+            "美股摩擦成本參數：每股固定滑價（Slippage 設 0.05%～0.1%）+ SEC/FINRA 賣出規費",
+            "生存者偏差防範：若回測一籃子美股，需注意下市股票（Delisted Stocks）避免高估歷史勝率"
+          ],
+          pythonSteps: [
+            "使用 Python 回測框架（推薦 `vectorbt` 或 `backtesting.py`）執行實際數值運算，切勿讓 LLM 憑空心算過去五年的勝率。",
+            "標準化計算四大指標：`Win Rate = 獲利筆數 / 總筆數`、`Profit Factor = 總毛利 / |總毛損|`、`MDD = min((Equity - Peak) / Peak)`。",
+            "將 Python 算出的回測統計表與「最大虧損前 5 筆交易明細」傳入模組 3 Prompt，由 AI 診斷虧損原因並提出濾網改進建議。"
+          ],
+          agentSteps: [
+            "若無自建資料庫，可開啟 Gemini / ChatGPT 的 **Code Interpreter（Python 程式碼執行環境）**。",
+            "先上傳目標股票的歷史 CSV 檔（或由工作流自動抓取 CSV 傳入），讓 AI 在沙盒中直接撰寫並執行 Python 回測腳本。",
+            "強制要求沙盒腳本繪出權益曲線（Equity Curve）與回撤圖，並輸出四大指標與具體改進參數。"
+          ],
+          schema: `{
+  "strategy": "MA5_CROSS_MA20",
+  "symbol": "2330.TW",
+  "period": "2021-10-01 to 2026-10-01",
+  "metrics": {
+    "win_rate_pct": 45.2,
+    "profit_factor": 1.98,
+    "max_drawdown_pct": -16.4,
+    "total_trades": 42,
+    "avg_return_per_trade_pct": 1.82
+  },
+  "optimization_proposals": [
+    {
+      "modification": "新增週線 MA20 向上且 ADX > 20 作為趨勢濾網",
+      "target_issue": "過濾 2022 年盤整期假突破造成的連續小額止損",
+      "expected_impact": "交易次數微降至約 28 筆，但勝率預計提升至 55%+，獲利因子突破 2.3"
+    }
+  ]
+}`
+        },
+        devChecklist: [
+          { id: "m3_d1", market: "ALL", title: "建立信號產生與成交時間隔離機制（當日收盤產生訊號，強制設為『隔日開盤價』或『下一根 K 棒』成交，杜絕偷看未來數據）" },
+          { id: "m3_d2", market: "ALL", title: "完成四大核心指標自動計算器：勝率、獲利因子 (Profit Factor)、最大回撤 (MDD)、交易次數與平均報酬" },
+          { id: "m3_d3", market: "TW", title: "【台股專屬】內建台股手續費折扣與 0.3% 證交稅扣除邏輯，並使用除權息還權股價 (Adjusted Price)" },
+          { id: "m3_d4", market: "US", title: "【美股專屬】處理美股歷史拆股 (Stock Split) 還原，並加入財報日跳空滑價 (Slippage) 模擬" },
+          { id: "m3_d5", market: "ALL", title: "自動提取回測中「虧損最大的前 5 筆交易」發生背景，一併交由 AI 診斷策略盲點與提出改進方案" },
+          { id: "m3_d6", market: "ALL", title: "加入樣本數過少警告（當總交易次數 < 30 筆時，自動標記統計顯著性不足，防止過度擬合 Overfitting）" }
+        ],
+        verifications: [
+          {
+            id: "m3_v1",
+            market: "ALL",
+            title: "防偷看未來數據驗收 (Zero Look-Ahead Bias Test)",
+            method: "人工抽取回測報表中的前 5 筆交易，對照歷史 K 線圖，確認進場價格是否為「訊號成立後下一根 K 棒的開盤價」，而非訊號當根 K 棒的最低價。",
+            passCriteria: "5 筆抽樣交易之進出場時點與成交價 100% 符合實盤時間先後順序。"
+          },
+          {
+            id: "m3_v2",
+            market: "ALL",
+            title: "四大指標公式數學驗收 (Metrics Math Verification)",
+            method: "將回測輸出的所有單筆損益匯出至試算表，手動驗算 `總獲利 / 總虧損` 是否等於系統顯示的獲利因子，且 MDD 計算包含未實現波段回落。",
+            passCriteria: "系統計算之勝率、獲利因子、MDD、平均報酬與手動驗算結果完全一致（誤差 0.00%）。"
+          },
+          {
+            id: "m3_v3",
+            market: "ALL",
+            title: "稅費敏感度對比測試 (Friction Cost Stress Test)",
+            method: "切換「零手續費」與「台股真實稅費 (含 0.3% 證交稅)」，驗證高頻短線策略的獲利因子與平均報酬是否如實下降。",
+            passCriteria: "開啟稅費後，每筆交易淨報酬準確扣除對應成本，不會出現忽略交易稅的虛胖績效。"
+          },
+          {
+            id: "m3_v4",
+            market: "ALL",
+            title: "AI 改進建議二次回測驗證 (Walk-Forward Improvement Check)",
+            method: "將 AI 提出的具體改進方向（例如加入 RSI 或長均線濾網）實際改寫回測參數重跑一次，並保留 20% 樣本外期間（Out-of-Sample）測試。",
+            passCriteria: "套用改進建議後，樣本外期間之獲利因子提升或最大回撤 (MDD) 實質收斂。"
+          }
+        ]
+      },
+      {
+        id: 4,
+        code: "MODULE 04",
+        shortName: "4. 投資組合風險管理",
+        title: "4. 投資組合風險管理 (Portfolio Risk Manager)",
+        subtitle: "找出過度集中與不易察覺的關聯風險，分析組合弱點、過度曝險部位與隱藏相關性，並依風險承受度提出再平衡方案與市場下跌 20% 的避險策略。",
+        originalPromptTemplate: `請分析我的投資組合：【{portfolio_holdings}】。
+請找出：
+→ 組合中的弱點
+→ 過度曝險的部位
+→ 標的之間隱藏的相關性
+再依照我的風險承受度提出再平衡方案，並提供可因應市場下跌 20% 的避險策略。`,
+        engineeredPromptTemplate: `你是一位機構級跨市場投資組合風控長（CRO）。請根據以下投資人的台美股持倉明細、風險承受度與量化相關性數據，進行全面風險體檢：
+
+【目前投資組合與配置比例】
+{portfolio_holdings}
+
+【投資人風險承受度與基準設定】
+{risk_profile}
+
+【系統計算之量化風控指標（Beta 與相關性摘要）】
+{quant_risk_context}
+
+請嚴格依序診斷並提供具體方案：
+1. 【組合中的弱點】：檢視資產類別、市值規模、現金水位、跨幣別匯率（USD/TWD）以及高 Beta 波動風險。
+2. 【過度曝險的部位】：指出單一個股權重過高（如 > 25%）或單一產業主題（如 AI 半導體硬體）合計權重超標的部位。
+3. 【標的之間隱藏的相關性】：剖析表面上看似不同市場或不同公司（例如同時持有台積電 2330、鴻海 2317、輝達 NVDA、美超微 SMCI），實則受同一宏觀因子（如北美雲端巨頭資本支出或費半指數）驅動的高度正相關風險。
+4. 【依風險承受度之再平衡方案 (Rebalancing Plan)】：
+   - 提供調整後的「目標配置比例表」（各項權重總和必須精確等於 100%），明確列出每檔標的應減碼或加碼的百分比。
+5. 【因應市場下跌 20% 的避險策略 (Tail-Risk Hedging)】：
+   - 試算若加權指數與 S&P 500 同步回檔 20%，目前組合預估最大虧損幅度。
+   - 提供可於台股（如台指期／反向 ETF 00632R／公債 ETF）與美股（如 SPY/QQQ Put 選擇權、SH/SQQQ 或長天期美債 TLT）立即執行的具體避險比例與觸發條件。`,
+        presets: {
+          tw: {
+            portfolio_holdings: "2330.TW 台積電 (45%)、2317.TW 鴻海 (25%)、2454.TW 聯發科 (20%)、現金 TWD (10%)",
+            risk_profile: "穩健偏積極型（可承受單年最大帳面回撤 15%，基準指數為台灣加權指數 / 0050）",
+            quant_risk_context: "組合整體 Beta 值 = 1.32；電子半導體與 AI 伺服器供應鏈合計佔比高達 90%；2330 與 2454 近一年日報酬相關係數達 0.74"
+          },
+          us: {
+            portfolio_holdings: "台股 2330.TW 台積電 (35%)、美股 NVDA 輝達 (30%)、美股 TSMC ADR (10%)、美股 QQQ (15%)、美元現金 (10%)",
+            risk_profile: "穩健型跨市場投資人（以新台幣為總資產計算基準，希望將大盤暴跌 20% 時的組合虧損控制在 12% 以內）",
+            quant_risk_context: "跨市場 AI 晶片曝險極度重疊（2330 + TSM + NVDA + QQQ 內含權重合計實質半導體曝險逾 80%）；美元資產佔比 65%（具 USD/TWD 匯率波動風險）；組合對費城半導體指數 (SOX) Beta 達 1.55"
+          }
+        },
+        inputFields: [
+          { key: "portfolio_holdings", label: "輸入標的代號與配置比例（支援台美股混合）" },
+          { key: "risk_profile", label: "個人風險承受度與最大可接受回撤" },
+          { key: "quant_risk_context", label: "系統計算之 Beta 與相關係數矩陣摘要" }
+        ],
+        setup: {
+          twSources: [
+            "台股產業分類與權重：證交所產業分類表（半導體、電腦及周邊、金融、航運等）與 0050 成分股 Beta 係數",
+            "台股避險工具庫：台指期（大台 TX / 小台 MTX / 微台 TMF）、台灣50反1 (00632R)、台股掛牌美債 ETF (00679B / 00687B)",
+            "持倉匯入格式：支援券商庫存匯出 CSV（自動計算各檔市值佔總資產百分比）"
+          ],
+          usSources: [
+            "美股 GICS 11 大產業分類：透過 yfinance / Polygon 取得個股 Sector & Industry（如 Information Technology - Semiconductors）",
+            "跨市場相關性計算：將台股日報酬與美股前一日收盤報酬（考量時差）計算 90 日與 252 日滾動皮爾森相關係數 (Pearson Correlation)",
+            "美股避險工具庫：SPY / QQQ Protective Put（保護性買進賣權）、反向 ETF (SH / PSQ)、短債與黃金 ETF (SGOV / GLD)"
+          ],
+          pythonSteps: [
+            "先由 Python 將台股（TWD）與美股（USD）持倉透過最新 `USD/TWD` 匯率統一換算為同幣別總市值，算出精確權重 $w_i$。",
+            "拉取所有持倉過去 252 個交易日的還權日報酬率，用 `df.pct_change().corr()` 算出相關係數矩陣與組合整體 Beta 值。",
+            "將相關係數 > 0.7 的高連動標的配對與產業集中度數據傳入 Prompt，請 AI 產出再平衡表與 -20% 壓力測試避險方案。"
+          ],
+          agentSteps: [
+            "建立 Google Sheets 持倉管理表，利用 `GOOGLEFINANCE()` 自動抓取台美股即時現價、市值佔比與 USD/TWD 匯率。",
+            "透過 Make / n8n 讀取整張持倉表，傳送給模組 4 Agent 分析隱藏相關性（如台積電與輝達的上下游連動）。",
+            "每週末固定排程產出「週度部位風控與再平衡建議書」發送至信箱。"
+          ],
+          schema: `{
+  "base_currency": "TWD",
+  "usd_twd_rate": 32.15,
+  "portfolio_beta": 1.48,
+  "weaknesses": [
+    "高達 80% 資產集中於 AI 半導體單一因子，缺乏非科技防禦部位",
+    "同時持有 2330.TW 與 TSM ADR 造成完全重複曝險"
+  ],
+  "hidden_correlations": [
+    {"pair": ["2330.TW", "NVDA"], "corr_1y": 0.78, "driver": "北美 CSP 資本支出與先進製程需求"}
+  ],
+  "rebalance_plan": [
+    {"symbol": "2330.TW", "current_pct": 45, "target_pct": 25, "action": "減碼 20%"},
+    {"symbol": "NVDA", "current_pct": 30, "target_pct": 20, "action": "減碼 10%"},
+    {"symbol": "TLT / 00679B", "current_pct": 0, "target_pct": 20, "action": "新增防禦配置 20%"},
+    {"symbol": "SPY / 0050", "current_pct": 15, "target_pct": 20, "action": "分散市值型指數 20%"},
+    {"symbol": "CASH", "current_pct": 10, "target_pct": 15, "action": "保留現金 15%"}
+  ],
+  "crash_20pct_hedge": {
+    "estimated_unhedged_drawdown_pct": -29.6,
+    "hedging_actions": [
+      "台股部位：以微台指期 (TMF) 或 00632R 建立 30% 部位對沖 Beta",
+      "美股部位：買進距現價 5% 價外之 QQQ 60 天期 Put 選擇權鎖定下檔風險"
+    ]
+  }
+}`
+        },
+        devChecklist: [
+          { id: "m4_d1", market: "ALL", title: "實作跨幣別持倉市值統一換算器（自動抓取最新 USD/TWD 匯率，將台美股與現金合併計算真實權重）" },
+          { id: "m4_d2", market: "ALL", title: "實作過去 1 年歷史日報酬率相關係數矩陣 (Correlation Matrix) 與投資組合加權 Beta 值計算" },
+          { id: "m4_d3", market: "ALL", title: "建立「穿透式曝險檢查」（例如持有 0050 或 QQQ 時，自動拆解其內含的台積電與輝達權重並與個股持倉累加）" },
+          { id: "m4_d4", market: "ALL", title: "在再平衡方案輸出端加入「權重總和 = 100%」與「台股整張／零股可買股數」自動驗算邏輯" },
+          { id: "m4_d5", market: "ALL", title: "建立大盤下跌 20% 情境壓力測試公式（依各股 Beta 與歷史股災最大回撤推算組合潛在虧損金額）" }
+        ],
+        verifications: [
+          {
+            id: "m4_v1",
+            market: "ALL",
+            title: "極端集中與跨市場隱藏相關性壓力測試",
+            method: "輸入一組「表面分散在 5 檔不同台美股，但全數為 AI 伺服器供應鏈（2330、2317、3017、NVDA、AMD）」的測試組合，檢查系統能否發出高度集中警告。",
+            passCriteria: "系統準確識別出 > 80% 曝險集中於同一產業因子，並標出高相關係數配對。"
+          },
+          {
+            id: "m4_v2",
+            market: "ALL",
+            title: "再平衡權重守恆驗證 (Weight Conservation Check)",
+            method: "檢查系統建議的「再平衡目標配置比例」加總是否嚴格等於 100.0%，且加減碼幅度完全對齊。",
+            passCriteria: "所有再平衡標的（含現金與新增避險部位）目標權重總和 = 100%，無算術誤差。"
+          },
+          {
+            id: "m4_v3",
+            market: "ALL",
+            title: "市場下跌 20% 避險工具可行性驗證",
+            method: "檢視系統針對「保守／穩健／積極」三種不同風險承受度給出的 -20% 避險策略，確認小資金散戶不會被建議門檻過高的大台指期（應建議微台指或反向 ETF）。",
+            passCriteria: "避險工具與部位規模匹配，且清楚說明避險啟動條件與避險成本。"
+          }
+        ]
+      },
+      {
+        id: 5,
+        code: "MODULE 05",
+        shortName: "5. 交易日誌分析師",
+        title: "5. 交易日誌分析師 (Trading Journal Coach)",
+        subtitle: "從最近 20 筆交易紀錄找出反覆出現的錯誤、錯過的機會與可能影響決策的行為偏誤，並制定 3 條可立即執行的個人化規則提升交易一致性。",
+        originalPromptTemplate: `請檢視我最近 20 筆交易：【{trade_logs}】。
+請分析：
+→ 反覆出現的錯誤
+→ 錯過的機會
+→ 可能影響決策的行為偏誤
+最後依照我的交易紀錄，制定 3 條可立即執行的個人化規則，幫助我提升交易一致性。`,
+        engineeredPromptTemplate: `你是一位頂尖交易心理學家與實盤績效教練。請深入檢視以下交易人最近 20 筆台美股實盤交易紀錄（包含進場、出場、持倉時間、損益結果與當下筆記）：
+
+【最近 20 筆交易明細與統計摘要】
+{trade_logs}
+
+請根據具體的交易編號與數據證據（禁止空泛說教，每個結論都必須引用對應的交易紀錄），依序分析：
+1. 【反覆出現的錯誤 (Recurring Mistakes)】：
+   - 找出至少 2～3 個導致虧損擴大的重複行為模式（例如：開盤前 15 分鐘衝動追高、跌破停損價卻改設 ROD 凹單、或在虧損後馬上加倍部位報復性交易）。
+2. 【錯過的機會 (Missed Opportunities)】：
+   - 檢視獲利交易中是否過早出場（抱不住贏家，賺 2% 就跑但後續大漲 15%），或符合系統訊號卻因恐懼而不敢進場的紀錄。
+3. 【可能影響決策的行為偏誤 (Behavioral Biases)】：
+   - 診斷交易人展現出的認知與心理偏誤，例如：處置效應（Disposition Effect：賺一點就跑、賠錢死抱）、近因偏誤（Recency Bias）、確認偏誤或錯失恐懼症（FOMO）。
+4. 【制定 3 條可立即執行的個人化規則 (3 Actionable Rules)】：
+   - 必須是「可量化、可作為下單前 Checklist 強制勾選」的硬性規定（格式：『當 [情境] 發生時，我必須執行 [具體動作]，禁止 [錯誤行為]』），直接幫助交易人提升下週的交易一致性。`,
+        presets: {
+          tw: {
+            trade_logs: `[統計摘要：近20筆台股交易｜勝率 55% (11勝9敗)，但總損益為 -48,500 元（賺小賠大：平均獲利 +6,200 元，平均虧損 -12,960 元）]
+- #01~#05 (2330/2317)：順勢波段買進，獲利達 +2.5% 時因擔心回吐立刻市價 IOC 賣出，出場後股價續漲逾 8%。
+- #08 (2603 長榮)：09:05 見早盤急拉 6% 用市價 IOC 追高買進 5 張，收盤翻黑跌破日內均線未停損，隔日續跌 -7% 才砍在最低點（單筆虧損 -42,000 元）。
+- #12 (3017 奇鋐)：原設停損價 620 元，盤中跌破時手動取消停損單並逢低攤平加碼 2 張，3 天後因大盤回檔被迫在 585 元認賠出場（單筆虧損 -51,000 元）。
+- #15~#18 (當沖單)：在 #12 大虧後隔天連續操作 4 筆高頻當沖，全數在 09:00~09:20 之間進出，因手續費與 0.15% 當沖稅連虧 4 筆。`
+          },
+          us: {
+            trade_logs: `[統計摘要：近20筆美股交易｜勝率 50% (10勝10敗)，總損益 -$1,840 USD（平均獲利 +$320，平均虧損 -$504）]
+- #02, #07, #14 (NVDA / AMD)：於財報公布前夕重倉買進賭財報，雖其中 2 次營收優於預期，但隔日開盤跳空下跌 6%～9%，造成單筆重大虧損。
+- #04, #09, #11 (TSLA / PLTR)：突破關鍵壓力位進場後，帳面獲利達 +3% 即手動平倉，錯過後續 +18% 主升段。
+- #16, #17 (SOXL 3倍槓桿半導體 ETF)：在連虧兩筆個股後，於台灣時間凌晨 03:30 精神疲勞時臨時切換買進 3 倍槓桿 ETF 想快速翻本，隔日觸發 -8% 停損。`
+          }
+        },
+        inputFields: [
+          { key: "trade_logs", label: "最近 20 筆交易紀錄（包含進場、出場、損益結果與當下操作背景）" }
+        ],
+        setup: {
+          twSources: [
+            "台股對帳單匯入：支援各大券商（元大、凱基、富邦、永豐、玉山）已實現損益與歷史委託成交明細 CSV 匯入",
+            "委託行為特徵擷取：記錄每筆交易下單時間（如是否集中在 09:00–09:15 高波動時段）、委託別（限價 ROD vs 市價 IOC 追價）與是否曾刪改停損單",
+            "出場後追蹤 (Post-Exit Tracking)：自動抓取賣出後 5 個交易日的最高價／最低價，量化「賣飛（過早出場）」錯失的潛在報酬"
+          ],
+          usSources: [
+            "美股對帳單匯入：支援 Interactive Brokers (IBKR Flex Queries)、Firstrade、Charles Schwab 交易紀錄 CSV 匯入",
+            "時段與事件標籤：自動比對每筆美股進場時間是否為「財報公布前 24 小時」或「台灣時間凌晨 02:00 後（疲勞交易時段）」",
+            "MFE / MAE 指標計算：自動計算每筆交易持倉期間的「最大有利波動 (MFE)」與「最大不利波動 (MAE)」"
+          ],
+          pythonSteps: [
+            "建立標準化 CSV 解析器，將不同券商匯出的對帳單轉為統一欄位：`trade_id, symbol, market, side, entry_time, exit_time, entry_price, exit_price, pnl_amount, pnl_pct, post_exit_5d_return`。",
+            "在送入 LLM 前，先用 Python 統計出「早盤前 15 分鐘勝率」、「平均賺賠比 (Payoff Ratio)」、「連虧後下一筆的平均部位大小變化」。",
+            "將模組 5 產出的「3 條個人化規則」存入資料庫，並顯示在下次使用模組 1 準備下單時的彈窗提醒。"
+          ],
+          agentSteps: [
+            "建立 Notion 或 Google Sheets「交易日誌表」，每滿 20 筆交易自動觸發 Make / n8n 工作流。",
+            "將最近 20 筆列資料轉為 Markdown 表格傳入模組 5 Agent。",
+            "自動將 AI 診斷出的「反覆錯誤」與「3 條個人化規則」置頂更新於看盤儀表板首頁。"
+          ],
+          schema: `{
+  "analyzed_trades_count": 20,
+  "summary_stats": {
+    "win_rate_pct": 55.0,
+    "avg_win_twd": 6200,
+    "avg_loss_twd": -12960,
+    "payoff_ratio": 0.48
+  },
+  "recurring_mistakes": [
+    {
+      "pattern": "早盤 09:00-09:15 衝動使用市價 IOC 追高急拉股",
+      "evidence_trade_ids": ["#08", "#15", "#16", "#17"],
+      "total_loss_impact": -64000
+    },
+    {
+      "pattern": "跌破預設停損點時取消停損單並逆勢攤平",
+      "evidence_trade_ids": ["#12"]
+    }
+  ],
+  "missed_opportunities": [
+    "交易 #01~#05 在趨勢未破 MA10 前僅獲利 2.5% 即落袋，錯失後續平均 +8% 波段漲幅"
+  ],
+  "behavioral_biases": [
+    "處置效應 (Disposition Effect)：獲利時極度厭惡回吐風險、虧損時卻轉為風險愛好者死抱凹單",
+    "報復性交易 (Revenge Trading)：於 #12 大虧後隔日頻繁當沖試圖翻本"
+  ],
+  "personal_rules_to_enforce": [
+    "規則 1【早盤冷靜期】：台股 09:00-09:15 與美股開盤前 15 分鐘禁止送出任何市價 IOC 買單，一律等待 09:15 後以限價 ROD 掛單。",
+    "規則 2【硬性停損鐵律】：進場同時必須設定觸價停損單，盤中嚴禁手動下移停損價或逆勢加碼攤平虧損部位。",
+    "規則 3【讓獲利奔跑】：帳面獲利達 +3% 時最多僅能平倉一半部位，剩餘一半部位強制改以跌破日線 MA10 作為移動停利出場條件。"
+  ]
+}`
+        },
+        devChecklist: [
+          { id: "m5_d1", market: "ALL", title: "建立標準化 20 筆交易紀錄匯入器（支援台美股券商 CSV 匯入與手動表單新增）" },
+          { id: "m5_d2", market: "ALL", title: "自動統計賺賠比 (平均獲利 ÷ 平均虧損)、下單時段勝率與「連虧後下一筆部位放大率」" },
+          { id: "m5_d3", market: "ALL", title: "實作「出場後 5 日表現追蹤」，自動標記哪些交易屬於『過早賣飛（出場後續漲 > 5%）』" },
+          { id: "m5_d4", market: "ALL", title: "設計行為偏誤映射邏輯，強制 AI 在指出錯誤時必須列出對應的交易編號（如 #08、#12）作為證據" },
+          { id: "m5_d5", market: "ALL", title: "將 AI 制定的「3 條個人化規則」串接回系統首頁，作為下次下單前的強制打勾確認項" }
+        ],
+        verifications: [
+          {
+            id: "m5_v1",
+            market: "ALL",
+            title: "植入式壞習慣偵測驗收 (Planted Flaw Detection Test)",
+            method: "準備一份包含明顯「賺 2% 就跑、賠 10% 死抱（處置效應）」與「大虧後隔日部位翻倍（報復性交易）」的 20 筆測試帳單，檢視系統能否精準抓出這兩項偏誤並點名對應交易編號。",
+            passCriteria: "100% 準確指出植入的壞習慣與對應交易編號，無遺漏或張冠李戴。"
+          },
+          {
+            id: "m5_v2",
+            market: "ALL",
+            title: "3 條個人化規則可量化性驗收 (Rule Specificity Check)",
+            method: "檢查系統最終制定的 3 條規則是否具備明確的數字、時間或指標門檻（例如『09:15 前禁止下單』、『單筆虧損達 5% 強制市價 IOC 停損』），而非『保持良好心態』等空話。",
+            passCriteria: "3 條規則皆包含明確可執行的觸發條件與限制動作，可直接轉化為下單前檢核表。"
+          },
+          {
+            id: "m5_v3",
+            market: "ALL",
+            title: "跨模組閉環連動測試 (Closed-Loop Integration Check)",
+            method: "確認模組 5 產出的 3 條個人化規則儲存後，能否在模組 1（技術分析決策）與模組 4（部位風控）介面中正常顯示提醒。",
+            passCriteria: "儲存規則後，全系統各模組皆能同步讀取最新 3 條個人化交易守則。"
+          }
+        ]
+      }
+    ];
+
+    // ==================== APPLICATION STATE ====================
+    const STORAGE_KEY = "tw_us_ai_trading_blueprint_v2";
+
+    const appState = {
+      activeMainTab: "overview",    // "overview" | "modules" | "markets" | "master" | "architecture"
+      activeModuleId: 1,            // 1, 2, 3, 4, 5
+      activeSubTab: "all",          // "all" | "setup" | "checklist" | "verify" | "prompt"
+      marketScope: "ALL",           // "ALL" | "TW" | "US"
+      techStack: "PYTHON",          // "PYTHON" | "AGENT"
+      promptMode: "ENGINEERED",     // "ORIGINAL" | "ENGINEERED"
+      masterFilter: "ALL",          // "ALL" | "PENDING" | "DONE"
+      checkedDevIds: {},            // { "m1_d1": true, ... }
+      verifiedIds: {},              // { "m1_v1": true, ... }
+      customItems: [],              // [{ id, moduleId, type: 'dev'|'verify', title, market: 'ALL' }]
+      promptInputsByModule: {}      // { 1: { ticker: ... }, 2: { ... } }
+    };
+
+    // Initialize default prompt inputs from TW presets
+    function initDefaultPromptInputs() {
+      MODULES_DATA.forEach(mod => {
+        if (!appState.promptInputsByModule[mod.id]) {
+          appState.promptInputsByModule[mod.id] = Object.assign({}, mod.presets.tw);
+        }
+      });
+    }
+
+    function loadState() {
+      initDefaultPromptInputs();
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === "object") {
+            appState.checkedDevIds = parsed.checkedDevIds || {};
+            appState.verifiedIds = parsed.verifiedIds || {};
+            appState.customItems = Array.isArray(parsed.customItems) ? parsed.customItems : [];
+            if (parsed.marketScope) appState.marketScope = parsed.marketScope;
+            if (parsed.techStack) appState.techStack = parsed.techStack;
+          }
+        }
+      } catch (e) {
+        // Ignore storage error
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          checkedDevIds: appState.checkedDevIds,
+          verifiedIds: appState.verifiedIds,
+          customItems: appState.customItems,
+          marketScope: appState.marketScope,
+          techStack: appState.techStack
+        }));
+      } catch (e) {
+        // Ignore storage error
+      }
+    }
+
+    // ==================== HELPER FUNCTIONS ====================
+    function showToast(msg, icon = "✓") {
+      const container = document.getElementById("toastContainer");
+      const msgEl = document.getElementById("toastMessage");
+      const iconEl = document.getElementById("toastIcon");
+      msgEl.textContent = msg;
+      iconEl.textContent = icon;
+      container.classList.remove("hidden");
+      if (window._toastTimer) clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        container.classList.add("hidden");
+      }, 2400);
+    }
+
+    function copyTextToClipboard(text, successMsg) {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(successMsg);
+        }).catch(() => {
+          fallbackCopy(text, successMsg);
+        });
+      } else {
+        fallbackCopy(text, successMsg);
+      }
+    }
+
+    function fallbackCopy(text, successMsg) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        showToast(successMsg);
+      } catch (e) {
+        showToast("請手動選取複製", "ℹ️");
+      }
+      document.body.removeChild(ta);
+    }
+
+    function getModuleAllDevItems(modId) {
+      const mod = MODULES_DATA.find(m => m.id === modId);
+      if (!mod) return [];
+      const custom = appState.customItems.filter(c => c.moduleId === modId && c.type === "dev");
+      const all = [...mod.devChecklist, ...custom];
+      if (appState.marketScope === "ALL") return all;
+      return all.filter(item => item.market === "ALL" || item.market === appState.marketScope);
+    }
+
+    function getModuleAllVerifyItems(modId) {
+      const mod = MODULES_DATA.find(m => m.id === modId);
+      if (!mod) return [];
+      const custom = appState.customItems.filter(c => c.moduleId === modId && c.type === "verify");
+      const all = [...mod.verifications, ...custom];
+      if (appState.marketScope === "ALL") return all;
+      return all.filter(item => item.market === "ALL" || item.market === appState.marketScope);
+    }
+
+    function computeProgressStats() {
+      let totalDev = 0, doneDev = 0;
+      let totalVer = 0, doneVer = 0;
+
+      MODULES_DATA.forEach(mod => {
+        const devs = getModuleAllDevItems(mod.id);
+        const vers = getModuleAllVerifyItems(mod.id);
+        devs.forEach(d => {
+          totalDev++;
+          if (appState.checkedDevIds[d.id]) doneDev++;
+        });
+        vers.forEach(v => {
+          totalVer++;
+          if (appState.verifiedIds[v.id]) doneVer++;
+        });
+      });
+
+      const totalAll = totalDev + totalVer;
+      const doneAll = doneDev + doneVer;
+      const pct = totalAll > 0 ? Math.round((doneAll / totalAll) * 100) : 0;
+      return { totalDev, doneDev, totalVer, doneVer, totalAll, doneAll, pct };
+    }
+
+    // ==================== RENDER FUNCTIONS ====================
+    function renderHeaderControls() {
+      const mktMap = {
+        ALL: document.getElementById("mktAllBtn"),
+        TW: document.getElementById("mktTwBtn"),
+        US: document.getElementById("mktUsBtn")
+      };
+      Object.keys(mktMap).forEach(k => {
+        if (k === appState.marketScope) {
+          mktMap[k].className = "px-2.5 py-1.5 rounded-lg font-medium transition bg-blue-600 text-white shadow";
+        } else {
+          mktMap[k].className = "px-2.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white";
+        }
+      });
+
+      const pyBtn = document.getElementById("stackPythonBtn");
+      const agBtn = document.getElementById("stackAgentBtn");
+      if (appState.techStack === "PYTHON") {
+        pyBtn.className = "px-2.5 py-1.5 rounded-lg font-medium transition bg-indigo-600 text-white shadow";
+        agBtn.className = "px-2.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white";
+      } else {
+        agBtn.className = "px-2.5 py-1.5 rounded-lg font-medium transition bg-indigo-600 text-white shadow";
+        pyBtn.className = "px-2.5 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white";
+      }
+
+      const navMap = {
+        overview: document.getElementById("navTabOverview"),
+        modules: document.getElementById("navTabModules"),
+        markets: document.getElementById("navTabMarkets"),
+        master: document.getElementById("navTabMasterList"),
+        architecture: document.getElementById("navTabArchitecture")
+      };
+      Object.keys(navMap).forEach(tabKey => {
+        if (tabKey === appState.activeMainTab) {
+          navMap[tabKey].className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-transparent transition active-tab";
+        } else {
+          navMap[tabKey].className = "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-slate-800 bg-slate-900/70 text-slate-300 hover:text-white transition";
+        }
+      });
+
+      document.getElementById("viewOverview").classList.toggle("hidden", appState.activeMainTab !== "overview");
+      document.getElementById("viewModules").classList.toggle("hidden", appState.activeMainTab !== "modules");
+      document.getElementById("viewMarkets").classList.toggle("hidden", appState.activeMainTab !== "markets");
+      document.getElementById("viewMasterList").classList.toggle("hidden", appState.activeMainTab !== "master");
+      document.getElementById("viewArchitecture").classList.toggle("hidden", appState.activeMainTab !== "architecture");
+
+      const stats = computeProgressStats();
+      document.getElementById("headerDevCount").textContent = `${stats.doneDev}/${stats.totalDev}`;
+      document.getElementById("headerVerCount").textContent = `${stats.doneVer}/${stats.totalVer}`;
+      document.getElementById("headerProgressBar").style.width = `${stats.pct}%`;
+      document.getElementById("headerTotalPct").textContent = `${stats.pct}%`;
+    }
+
+    function renderModuleSelectorStrip() {
+      const grid = document.getElementById("moduleSelectorGrid");
+      grid.innerHTML = "";
+
+      MODULES_DATA.forEach(mod => {
+        const devs = getModuleAllDevItems(mod.id);
+        const vers = getModuleAllVerifyItems(mod.id);
+        const total = devs.length + vers.length;
+        const done = devs.filter(d => appState.checkedDevIds[d.id]).length +
+                     vers.filter(v => appState.verifiedIds[v.id]).length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const isActive = mod.id === appState.activeModuleId;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `text-left p-3.5 rounded-xl border transition flex flex-col justify-between gap-2 ${
+          isActive
+            ? "module-active shadow-lg"
+            : "bg-slate-900/70 border-slate-800/90 text-slate-300 hover:border-slate-700 hover:bg-slate-900"
+        }`;
+        btn.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between gap-1 mb-1">
+              <span class="text-[11px] font-bold mono ${isActive ? "text-blue-300" : "text-slate-400"}">${mod.code}</span>
+              <span class="text-[11px] mono font-semibold px-1.5 py-0.5 rounded ${
+                pct === 100
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "bg-slate-800 text-slate-300"
+              }">${pct}%</span>
+            </div>
+            <div class="text-sm font-bold text-white leading-snug">${mod.shortName}</div>
+          </div>
+          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-300" style="width: ${pct}%"></div>
+          </div>
+        `;
+        btn.addEventListener("click", () => {
+          appState.activeModuleId = mod.id;
+          renderAll();
+        });
+        grid.appendChild(btn);
+      });
+    }
+
+    function renderActiveModuleContent() {
+      const mod = MODULES_DATA.find(m => m.id === appState.activeModuleId);
+      if (!mod) return;
+
+      document.getElementById("modBadge").textContent = mod.code;
+      document.getElementById("modTitle").textContent = mod.title;
+      document.getElementById("modSubtitle").textContent = mod.subtitle;
+
+      const devs = getModuleAllDevItems(mod.id);
+      const vers = getModuleAllVerifyItems(mod.id);
+      const doneDev = devs.filter(d => appState.checkedDevIds[d.id]).length;
+      const doneVer = vers.filter(v => appState.verifiedIds[v.id]).length;
+      const total = devs.length + vers.length;
+      const done = doneDev + doneVer;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+      document.getElementById("modProgressText").textContent = `${done} / ${total} 項完成`;
+      document.getElementById("modProgressPct").textContent = `${pct}%`;
+
+      const mktLabel = appState.marketScope === "ALL" ? "🌐 台美雙市場" : (appState.marketScope === "TW" ? "🇹🇼 台股重點" : "🇺🇸 美股重點");
+      const stackLabel = appState.techStack === "PYTHON" ? "🐍 Python 全端自建" : "⚡ No-Code / AI Agent";
+      document.getElementById("activeModeIndicator").innerHTML = `目前顯示：<span class="text-blue-300 font-medium">${mktLabel}</span> · <span class="text-indigo-300 font-medium">${stackLabel}</span>`;
+
+      const subMap = {
+        all: document.getElementById("subTabAll"),
+        setup: document.getElementById("subTabSetup"),
+        checklist: document.getElementById("subTabChecklist"),
+        verify: document.getElementById("subTabVerify"),
+        prompt: document.getElementById("subTabPrompt")
+      };
+      Object.keys(subMap).forEach(k => {
+        if (k === appState.activeSubTab) {
+          subMap[k].className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white border border-blue-500 transition shadow";
+        } else {
+          subMap[k].className = "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-400 hover:text-white border border-slate-800 transition";
+        }
+      });
+
+      document.getElementById("sectionSetup").classList.toggle("hidden", appState.activeSubTab !== "all" && appState.activeSubTab !== "setup");
+      document.getElementById("sectionChecklist").classList.toggle("hidden", appState.activeSubTab !== "all" && appState.activeSubTab !== "checklist");
+      document.getElementById("sectionVerify").classList.toggle("hidden", appState.activeSubTab !== "all" && appState.activeSubTab !== "verify");
+      document.getElementById("sectionPrompt").classList.toggle("hidden", appState.activeSubTab !== "all" && appState.activeSubTab !== "prompt");
+
+      // Setup
+      document.getElementById("setupStackBadge").textContent = appState.techStack === "PYTHON"
+        ? "🐍 Python 全端自建配置"
+        : "⚡ No-Code / AI Agent 工作流配置";
+
+      const setupGrid = document.getElementById("setupMarketGrid");
+      setupGrid.innerHTML = "";
+      if (appState.marketScope === "ALL" || appState.marketScope === "TW") {
+        const twCard = document.createElement("div");
+        twCard.className = "bg-slate-950/90 rounded-xl p-4 border border-blue-500/30";
+        twCard.innerHTML = `
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-bold text-blue-300 flex items-center gap-1.5">🇹🇼 台股資料源與特殊設定 (TWSE / TPEx)</span>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 mono">TWD · 整張/零股</span>
+          </div>
+          <ul class="space-y-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            ${mod.setup.twSources.map(s => `<li class="flex items-start gap-2"><span class="text-blue-400 mt-0.5">▸</span><span>${s}</span></li>`).join("")}
+          </ul>
+        `;
+        setupGrid.appendChild(twCard);
+      }
+      if (appState.marketScope === "ALL" || appState.marketScope === "US") {
+        const usCard = document.createElement("div");
+        usCard.className = "bg-slate-950/90 rounded-xl p-4 border border-emerald-500/30";
+        usCard.innerHTML = `
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-bold text-emerald-300 flex items-center gap-1.5">🇺🇸 美股資料源與特殊設定 (NYSE / NASDAQ)</span>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 mono">USD · 盤前/盤後</span>
+          </div>
+          <ul class="space-y-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            ${mod.setup.usSources.map(s => `<li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">▸</span><span>${s}</span></li>`).join("")}
+          </ul>
+        `;
+        setupGrid.appendChild(usCard);
+      }
+      setupGrid.className = appState.marketScope === "ALL"
+        ? "grid grid-cols-1 md:grid-cols-2 gap-4"
+        : "grid grid-cols-1 gap-4";
+
+      const steps = appState.techStack === "PYTHON" ? mod.setup.pythonSteps : mod.setup.agentSteps;
+      document.getElementById("setupStepsTitle").textContent = appState.techStack === "PYTHON"
+        ? "🐍 Python 自建系統實作步驟 (FastAPI / Streamlit + LLM)"
+        : "⚡ No-Code / AI Agent 串接步驟 (Dify / n8n / Make)";
+      document.getElementById("setupStepsList").innerHTML = steps.map((st, idx) => `
+        <li class="flex items-start gap-2.5 leading-relaxed">
+          <span class="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">${idx + 1}</span>
+          <span>${st}</span>
+        </li>
+      `).join("");
+
+      document.getElementById("setupSchemaCode").textContent = mod.setup.schema;
+
+      // Dev Checklist
+      document.getElementById("modChecklistStats").textContent = `已完成 ${doneDev} / ${devs.length}`;
+      const devContainer = document.getElementById("devChecklistContainer");
+      devContainer.innerHTML = "";
+
+      devs.forEach(item => {
+        const isChecked = !!appState.checkedDevIds[item.id];
+        const mktTag = item.market === "TW"
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-semibold shrink-0">🇹🇼 台股</span>`
+          : (item.market === "US"
+              ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold shrink-0">🇺🇸 美股</span>`
+              : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-semibold shrink-0">🌐 通用</span>`);
+
+        const card = document.createElement("div");
+        card.className = `p-3.5 rounded-xl border transition cursor-pointer flex items-start gap-3 select-none ${
+          isChecked
+            ? "bg-blue-950/25 border-blue-500/40 text-slate-200"
+            : "bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-300"
+        }`;
+        card.innerHTML = `
+          <div class="w-5 h-5 rounded-md border flex items-center justify-center mt-0.5 shrink-0 transition ${
+            isChecked ? "bg-blue-600 border-blue-500 text-white" : "border-slate-600 bg-slate-900"
+          }">
+            ${isChecked ? "✓" : ""}
+          </div>
+          <div class="flex-1 text-xs sm:text-sm leading-relaxed ${isChecked ? "line-through text-slate-400" : "text-slate-200"}">
+            ${item.title}
+          </div>
+          ${mktTag}
+        `;
+        card.addEventListener("click", () => {
+          appState.checkedDevIds[item.id] = !appState.checkedDevIds[item.id];
+          saveState();
+          renderAll();
+        });
+        devContainer.appendChild(card);
+      });
+
+      // Verification Protocol
+      document.getElementById("modVerifyStats").textContent = `驗證通過 ${doneVer} / ${vers.length}`;
+      const verContainer = document.getElementById("verifyListContainer");
+      verContainer.innerHTML = "";
+
+      vers.forEach(v => {
+        const isPassed = !!appState.verifiedIds[v.id];
+        const card = document.createElement("div");
+        card.className = `p-4 rounded-xl border transition ${
+          isPassed
+            ? "bg-emerald-950/20 border-emerald-500/40"
+            : "bg-slate-950/80 border-slate-800"
+        }`;
+        card.innerHTML = `
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[11px] font-bold mono ${
+                isPassed ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-slate-800 text-slate-400"
+              }">${isPassed ? "✓ 驗收通過 (PASSED)" : "⏳ 待驗證 (PENDING)"}</span>
+              <h4 class="text-sm font-bold text-white">${v.title}</h4>
+            </div>
+            <button type="button" class="toggle-verify-btn px-3 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
+              isPassed
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+            }">
+              ${isPassed ? "✓ 已通過驗收 (點擊取消)" : "標記為驗證通過"}
+            </button>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2 text-xs leading-relaxed">
+            <div class="bg-slate-900/90 p-3 rounded-lg border border-slate-800/80">
+              <span class="font-bold text-blue-300 block mb-1">🔬 測試與驗證方法 (How to Verify)：</span>
+              <span class="text-slate-300">${v.method || "依據標準測試資料集執行驗證"}</span>
+            </div>
+            <div class="bg-slate-900/90 p-3 rounded-lg border border-slate-800/80">
+              <span class="font-bold text-emerald-300 block mb-1">🎯 驗收通過標準 (Pass Criteria)：</span>
+              <span class="text-slate-300">${v.passCriteria || "輸出結果符合預期規格且無幻覺誤差"}</span>
+            </div>
+          </div>
+        `;
+        card.querySelector(".toggle-verify-btn").addEventListener("click", () => {
+          appState.verifiedIds[v.id] = !appState.verifiedIds[v.id];
+          saveState();
+          renderAll();
+        });
+        verContainer.appendChild(card);
+      });
+
+      // Prompt Sandbox
+      const origBtn = document.getElementById("promptModeOriginalBtn");
+      const engBtn = document.getElementById("promptModeEngineeredBtn");
+      if (appState.promptMode === "ORIGINAL") {
+        origBtn.className = "px-2.5 py-1 rounded bg-purple-600 text-white font-medium transition";
+        engBtn.className = "px-2.5 py-1 rounded bg-slate-800 text-slate-300 hover:text-white transition";
+      } else {
+        engBtn.className = "px-2.5 py-1 rounded bg-purple-600 text-white font-medium transition";
+        origBtn.className = "px-2.5 py-1 rounded bg-slate-800 text-slate-300 hover:text-white transition";
+      }
+
+      const fieldsContainer = document.getElementById("promptInputFields");
+      fieldsContainer.innerHTML = "";
+      const currentValues = appState.promptInputsByModule[mod.id] || {};
+
+      mod.inputFields.forEach(field => {
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = `
+          <label class="block text-xs font-medium text-slate-300 mb-1">${field.label}</label>
+          <textarea data-field-key="${field.key}" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500 leading-relaxed">${currentValues[field.key] || ""}</textarea>
+        `;
+        const textarea = wrapper.querySelector("textarea");
+        textarea.addEventListener("input", (e) => {
+          appState.promptInputsByModule[mod.id][field.key] = e.target.value;
+          updatePromptPreview();
+        });
+        fieldsContainer.appendChild(wrapper);
+      });
+
+      updatePromptPreview();
+    }
+
+    function updatePromptPreview() {
+      const mod = MODULES_DATA.find(m => m.id === appState.activeModuleId);
+      if (!mod) return;
+      const vals = appState.promptInputsByModule[mod.id] || {};
+      let template = appState.promptMode === "ORIGINAL" ? mod.originalPromptTemplate : mod.engineeredPromptTemplate;
+
+      Object.keys(vals).forEach(k => {
+        const regex = new RegExp(`\\{${k}\\}`, "g");
+        template = template.replace(regex, vals[k] || `【請輸入 ${k}】`);
+      });
+
+      document.getElementById("generatedPromptPreview").textContent = template;
+    }
+
+    function renderMasterListView() {
+      const container = document.getElementById("masterListContainer");
+      container.innerHTML = "";
+
+      const fAll = document.getElementById("filterAllItemsBtn");
+      const fPend = document.getElementById("filterPendingItemsBtn");
+      const fDone = document.getElementById("filterDoneItemsBtn");
+      fAll.className = appState.masterFilter === "ALL" ? "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white transition" : "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition";
+      fPend.className = appState.masterFilter === "PENDING" ? "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white transition" : "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition";
+      fDone.className = appState.masterFilter === "DONE" ? "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white transition" : "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition";
+
+      MODULES_DATA.forEach(mod => {
+        const devs = getModuleAllDevItems(mod.id).map(d => ({ ...d, itemType: "DEV", done: !!appState.checkedDevIds[d.id] }));
+        const vers = getModuleAllVerifyItems(mod.id).map(v => ({ ...v, itemType: "VERIFY", done: !!appState.verifiedIds[v.id] }));
+        let combined = [...devs, ...vers];
+
+        if (appState.masterFilter === "PENDING") {
+          combined = combined.filter(i => !i.done);
+        } else if (appState.masterFilter === "DONE") {
+          combined = combined.filter(i => i.done);
+        }
+
+        const block = document.createElement("div");
+        block.className = "bg-slate-900/70 rounded-xl p-4 border border-slate-800";
+        block.innerHTML = `
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+            <h3 class="text-sm sm:text-base font-bold text-white">${mod.title}</h3>
+            <span class="text-xs text-slate-400 mono">顯示 ${combined.length} 項</span>
+          </div>
+          <div class="space-y-2 master-items-list"></div>
+        `;
+
+        const listEl = block.querySelector(".master-items-list");
+        if (combined.length === 0) {
+          listEl.innerHTML = `<div class="text-xs text-slate-500 py-2">目前篩選條件下無項目</div>`;
+        } else {
+          combined.forEach(item => {
+            const row = document.createElement("div");
+            row.className = `p-3 rounded-lg border flex items-center justify-between gap-3 cursor-pointer transition ${
+              item.done ? "bg-slate-950/40 border-slate-800/80 text-slate-400" : "bg-slate-950/90 border-slate-800 hover:border-slate-700 text-slate-200"
+            }`;
+            const typeBadge = item.itemType === "DEV"
+              ? `<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold shrink-0">開發檢查</span>`
+              : `<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold shrink-0">驗收測試</span>`;
+
+            row.innerHTML = `
+              <div class="flex items-center gap-3 flex-1">
+                <div class="w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                  item.done ? "bg-blue-600 border-blue-500 text-white text-xs" : "border-slate-600"
+                }">${item.done ? "✓" : ""}</div>
+                <span class="text-xs sm:text-sm ${item.done ? "line-through text-slate-500" : "text-slate-200"}">${item.title}</span>
+              </div>
+              ${typeBadge}
+            `;
+            row.addEventListener("click", () => {
+              if (item.itemType === "DEV") {
+                appState.checkedDevIds[item.id] = !appState.checkedDevIds[item.id];
+              } else {
+                appState.verifiedIds[item.id] = !appState.verifiedIds[item.id];
+              }
+              saveState();
+              renderAll();
+            });
+            listEl.appendChild(row);
+          });
+        }
+        container.appendChild(block);
+      });
+    }
+
+    function generateMarkdownReport() {
+      const stats = computeProgressStats();
+      const lines = [];
+      lines.push(`# 台美股 AI 交易分析系統 — 開發與檢核進度報告`);
+      lines.push(`- 整體完成度：**${stats.pct}%**（開發檢查清單：${stats.doneDev}/${stats.totalDev}｜驗證測試：${stats.doneVer}/${stats.totalVer}）`);
+      lines.push(`- 目標市場模式：${appState.marketScope}｜技術路線：${appState.techStack}`);
+      lines.push(``);
+
+      MODULES_DATA.forEach(mod => {
+        lines.push(`## ${mod.title}`);
+        lines.push(`> ${mod.subtitle}`);
+        lines.push(``);
+        lines.push(`### 1. 開發檢查清單 (Dev Checklist)`);
+        getModuleAllDevItems(mod.id).forEach(d => {
+          const mark = appState.checkedDevIds[d.id] ? "x" : " ";
+          lines.push(`- [${mark}] [${d.market}] ${d.title}`);
+        });
+        lines.push(``);
+        lines.push(`### 2. 驗證與驗收標準 (Verification Protocol)`);
+        getModuleAllVerifyItems(mod.id).forEach(v => {
+          const mark = appState.verifiedIds[v.id] ? "x" : " ";
+          lines.push(`- [${mark}] **${v.title}**`);
+          if (v.method) lines.push(`  - 驗證方法：${v.method}`);
+          if (v.passCriteria) lines.push(`  - 通過標準：${v.passCriteria}`);
+        });
+        lines.push(``);
+      });
+
+      return lines.join("\n");
+    }
+
+    function renderAll() {
+      renderHeaderControls();
+      renderModuleSelectorStrip();
+      renderActiveModuleContent();
+      renderMasterListView();
+    }
+
+    // ==================== EVENT LISTENERS ====================
+    window.addEventListener("DOMContentLoaded", () => {
+      loadState();
+      renderAll();
+
+      document.getElementById("mktAllBtn").addEventListener("click", () => {
+        appState.marketScope = "ALL";
+        saveState();
+        renderAll();
+      });
+      document.getElementById("mktTwBtn").addEventListener("click", () => {
+        appState.marketScope = "TW";
+        saveState();
+        renderAll();
+      });
+      document.getElementById("mktUsBtn").addEventListener("click", () => {
+        appState.marketScope = "US";
+        saveState();
+        renderAll();
+      });
+
+      document.getElementById("stackPythonBtn").addEventListener("click", () => {
+        appState.techStack = "PYTHON";
+        saveState();
+        renderAll();
+      });
+      document.getElementById("stackAgentBtn").addEventListener("click", () => {
+        appState.techStack = "AGENT";
+        saveState();
+        renderAll();
+      });
+
+      document.getElementById("navTabOverview").addEventListener("click", () => {
+        appState.activeMainTab = "overview";
+        renderAll();
+      });
+      document.querySelectorAll(".jump-mod-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const targetMod = parseInt(btn.getAttribute("data-jump-mod"), 10);
+          appState.activeModuleId = targetMod;
+          appState.activeMainTab = "modules";
+          renderAll();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      });
+      document.getElementById("navTabModules").addEventListener("click", () => {
+        appState.activeMainTab = "modules";
+        renderAll();
+      });
+      document.getElementById("navTabMarkets").addEventListener("click", () => {
+        appState.activeMainTab = "markets";
+        renderAll();
+      });
+      document.getElementById("navTabMasterList").addEventListener("click", () => {
+        appState.activeMainTab = "master";
+        renderAll();
+      });
+      document.getElementById("navTabArchitecture").addEventListener("click", () => {
+        appState.activeMainTab = "architecture";
+        renderAll();
+      });
+
+      const subTabs = [
+        { id: "subTabAll", val: "all" },
+        { id: "subTabSetup", val: "setup" },
+        { id: "subTabChecklist", val: "checklist" },
+        { id: "subTabVerify", val: "verify" },
+        { id: "subTabPrompt", val: "prompt" }
+      ];
+      subTabs.forEach(st => {
+        document.getElementById(st.id).addEventListener("click", () => {
+          appState.activeSubTab = st.val;
+          renderActiveModuleContent();
+        });
+      });
+
+      document.getElementById("checkAllCurrentModuleBtn").addEventListener("click", () => {
+        const devs = getModuleAllDevItems(appState.activeModuleId);
+        const vers = getModuleAllVerifyItems(appState.activeModuleId);
+        devs.forEach(d => { appState.checkedDevIds[d.id] = true; });
+        vers.forEach(v => { appState.verifiedIds[v.id] = true; });
+        saveState();
+        renderAll();
+        showToast("已將本模組所有檢查與驗證項目標記為完成！");
+      });
+
+      document.getElementById("copySchemaBtn").addEventListener("click", () => {
+        const text = document.getElementById("setupSchemaCode").textContent;
+        copyTextToClipboard(text, "已複製 JSON Schema 資料規格！");
+      });
+
+      document.getElementById("copyPromptBtn").addEventListener("click", () => {
+        const text = document.getElementById("generatedPromptPreview").textContent;
+        copyTextToClipboard(text, "已複製完整提示詞！");
+      });
+
+      document.getElementById("loadTwPresetBtn").addEventListener("click", () => {
+        const mod = MODULES_DATA.find(m => m.id === appState.activeModuleId);
+        if (mod?.presets.tw) {
+          appState.promptInputsByModule[mod.id] = Object.assign({}, mod.presets.tw);
+          renderActiveModuleContent();
+          showToast("已載入台股 (2330 台積電) 測試參數！");
+        }
+      });
+
+      document.getElementById("loadUsPresetBtn").addEventListener("click", () => {
+        const mod = MODULES_DATA.find(m => m.id === appState.activeModuleId);
+        if (mod?.presets.us) {
+          appState.promptInputsByModule[mod.id] = Object.assign({}, mod.presets.us);
+          renderActiveModuleContent();
+          showToast("已載入美股 (NVDA 輝達) 測試參數！");
+        }
+      });
+
+      document.getElementById("promptModeOriginalBtn").addEventListener("click", () => {
+        appState.promptMode = "ORIGINAL";
+        renderActiveModuleContent();
+      });
+      document.getElementById("promptModeEngineeredBtn").addEventListener("click", () => {
+        appState.promptMode = "ENGINEERED";
+        renderActiveModuleContent();
+      });
+
+      document.getElementById("filterAllItemsBtn").addEventListener("click", () => {
+        appState.masterFilter = "ALL";
+        renderMasterListView();
+      });
+      document.getElementById("filterPendingItemsBtn").addEventListener("click", () => {
+        appState.masterFilter = "PENDING";
+        renderMasterListView();
+      });
+      document.getElementById("filterDoneItemsBtn").addEventListener("click", () => {
+        appState.masterFilter = "DONE";
+        renderMasterListView();
+      });
+
+      document.getElementById("addCustomTaskBtn").addEventListener("click", () => {
+        const input = document.getElementById("customTaskInput");
+        const title = input.value.trim();
+        if (!title) {
+          showToast("請先輸入檢核項目內容", "⚠️");
+          return;
+        }
+        const modId = parseInt(document.getElementById("customTaskModuleSelect").value, 10);
+        const type = document.getElementById("customTaskTypeSelect").value;
+        const newId = `custom_${Date.now()}`;
+        appState.customItems.push({
+          id: newId,
+          moduleId: modId,
+          type: type,
+          market: "ALL",
+          title: title,
+          method: "自訂驗收測試項目",
+          passCriteria: "符合自訂開發驗收預期"
+        });
+        input.value = "";
+        saveState();
+        renderAll();
+        showToast("已新增自訂檢核項目！");
+      });
+
+      document.getElementById("copyFolderTreeBtn").addEventListener("click", () => {
+        copyTextToClipboard(document.getElementById("folderTreeCode").textContent, "已複製專案目錄結構！");
+      });
+      document.getElementById("copyBoilerplateBtn").addEventListener("click", () => {
+        copyTextToClipboard(document.getElementById("boilerplateCode").textContent, "已複製雙市場路由 Python 範本！");
+      });
+
+      document.getElementById("openExportBtn").addEventListener("click", () => {
+        document.getElementById("exportTextarea").value = generateMarkdownReport();
+        document.getElementById("exportModal").classList.remove("hidden");
+      });
+      document.getElementById("closeExportModalBtn").addEventListener("click", () => {
+        document.getElementById("exportModal").classList.add("hidden");
+      });
+      document.getElementById("copyExportContentBtn").addEventListener("click", () => {
+        copyTextToClipboard(document.getElementById("exportTextarea").value, "已複製整份 Markdown 開發檢核報告！");
+      });
+
+      document.getElementById("openResetBtn").addEventListener("click", () => {
+        document.getElementById("resetModal").classList.remove("hidden");
+      });
+      document.getElementById("cancelResetBtn").addEventListener("click", () => {
+        document.getElementById("resetModal").classList.add("hidden");
+      });
+      document.getElementById("confirmResetBtn").addEventListener("click", () => {
+        appState.checkedDevIds = {};
+        appState.verifiedIds = {};
+        appState.customItems = [];
+        saveState();
+        renderAll();
+        document.getElementById("resetModal").classList.add("hidden");
+        showToast("已重置所有開發與驗收進度！");
+      });
+    });
+  </script>
+</body>
+</html>
