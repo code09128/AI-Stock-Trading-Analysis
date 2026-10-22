@@ -1,0 +1,330 @@
+// 說明頁與新手導覽
+(() => {
+  const { LS_TOUR, readLS } = window.TA;
+
+  const GLOSSARY = [
+    [
+      '多頭 / 空頭 / 盤整',
+      '多頭＝價格趨勢向上（高點與低點都墊高）；空頭＝趨勢向下；盤整＝在一個區間來回，沒有明確方向。',
+    ],
+    [
+      '黃金交叉 / 死亡交叉',
+      '短期均線由下往上穿過長期均線叫黃金交叉（偏多訊號），由上往下穿過叫死亡交叉（偏空訊號）。策略回測 的回測就是用它。',
+    ],
+    [
+      'MACD',
+      '由兩條不同速度的均線相減得到的動能指標。柱狀體由負轉正代表動能轉強，常與價格背離一起觀察。',
+    ],
+    [
+      '停損 / 停利',
+      '停損是預先設定「錯了就認賠」的價格；停利是獲利達標就賣出或用移動停利鎖住利潤。兩者都要在進場前決定。',
+    ],
+    [
+      '風險報酬比',
+      '預期獲利 ÷ 預期虧損。例如停損 5 元、目標 10 元就是 2：1。比值越高，即使勝率不到五成也可能賺錢。',
+    ],
+    [
+      '勝率 / 獲利因子',
+      '勝率＝賺錢次數 ÷ 總次數。獲利因子＝總獲利 ÷ 總虧損，大於 1 才有獲利，1.5 以上較理想。要一起看，不能只看勝率。',
+    ],
+    [
+      '最大回撤 (MDD)',
+      '資產從高點下跌到谷底的最大幅度。它代表你可能要承受的最痛一段，決定你能不能撐到策略開花結果。',
+    ],
+    ['滑價', '實際成交價與預期價的差距。市價單、流動性差、財報跳空時特別明顯，回測要把它算進去。'],
+    [
+      'Beta',
+      '股票相對大盤的波動倍數。Beta 1.5 代表大盤跌 10% 時，該股平均可能跌 15%；組合 Beta 越高，崩盤時越痛。',
+    ],
+    [
+      '相關係數 / 集中度',
+      '相關係數越接近 1，兩檔股票漲跌越同步，分散效果越差。集中度過高（單一產業或單一標的占比大）是組合最大的隱藏風險。',
+    ],
+    [
+      '穿透式曝險',
+      '把 ETF 拆開看它內含的個股比重，再與你直接持有的個股相加，才是真正押在某檔股票上的比例。',
+    ],
+    ['再平衡', '定期把各資產比重調回目標，等於自動「賣出漲多的、買進跌多的」，控制風險。'],
+    [
+      '除權息 / 殖利率',
+      '除息是把盈餘以現金發給股東、股價同步下調；殖利率＝近一年配息 ÷ 現價。高殖利率不代表一定賺，要看股價是否填息。',
+    ],
+    [
+      '本益比 / 淨值比',
+      '本益比＝股價 ÷ 每股盈餘，衡量回本年數；股價淨值比＝股價 ÷ 每股淨值。需和同產業、自身歷史比較。',
+    ],
+    ['ETF 折溢價', 'ETF 市價與其淨值的差距。溢價太多代表買貴了；流動性差的 ETF 較容易出現。'],
+    [
+      '融資 / 融券 / 當沖',
+      '融資是借錢買股，融券是借股票放空，當沖是同一天買賣完畢。都有槓桿或高週轉風險，新手要特別謹慎。',
+    ],
+    [
+      '委買 / 委賣 / 價差',
+      '委買是想買的掛單、委賣是想賣的掛單。最佳買賣價之間的差距叫價差，越小越好成交。',
+    ],
+    [
+      'IOC / FOK / ROD 的選擇',
+      '想確保成交且怕掛著被打到，可用 IOC；要整筆一次成交用 FOK；一般想掛單等價格用 ROD。',
+    ],
+    [
+      'K 線 / K 棒',
+      '一根 K 棒記錄一段時間的開盤、最高、最低、收盤。台灣習慣紅＝上漲、綠＝下跌（與歐美相反）。',
+    ],
+    [
+      '實體 / 影線',
+      '實體是開盤到收盤的方塊；影線是盤中到過但沒守住的最高、最低價。上影線長代表上方有賣壓，下影線長代表下方有買盤。',
+    ],
+    [
+      '成交量副圖',
+      'K 線下方的柱狀圖，每根對應當天的成交量，顏色與 K 棒相同。價漲量增較健康，價漲量縮要小心追高。',
+    ],
+    [
+      '還權 / 還原權值',
+      '配息配股或拆股後股價會跳空下降，但不是真下跌。還權是把歷史價按比例調整，讓 K 線與均線連續。',
+    ],
+    [
+      '支撐 / 壓力',
+      '支撐是過去股價跌到此處常有買盤的價位；壓力是漲到此處常有賣壓的價位。本系統由波段高低點與成交密集區計算。',
+    ],
+    [
+      'MA5 / MA20 / MA60 / MA200',
+      '近 5、20、60、200 日收盤均價，分別代表週、月、季、年的平均成本。MA200 常被視為長期多空分界。',
+    ],
+    [
+      '跳空缺口',
+      '今天的最低價仍高於昨天最高價（向上跳空），或最高價低於昨天最低價（向下跳空）。美股常見財報後盤後跳空。',
+    ],
+    [
+      '大盤指數',
+      '台灣加權指數代表整個台股上市股票；S&P 500 是美國 500 大企業；那斯達克偏科技股；費半是半導體族群。用來判斷整體多空氣氛。',
+    ],
+    [
+      '量價關係',
+      '價漲量增＝買盤跟進；價漲量縮＝追價意願降低；價跌量增＝賣壓出籠；價跌量縮＝賣壓暫歇。需搭配位置判斷。',
+    ],
+    ['張 / 零股', '台股 1 張 = 1000 股。不足 1000 股稱為零股，可以小額買。'],
+    [
+      'ROD / IOC / FOK',
+      'ROD：當日有效，沒成交就一直掛著。IOC：立即成交，沒成交的部分取消。FOK：要全部立刻成交，否則整筆取消。',
+    ],
+    ['ANY / AON', '美股成交方式。ANY 可部分成交；AON（All Or None）必須全部成交，否則不成交。'],
+    ['昨收 / 漲跌幅', '昨收是前一個交易日收盤價。漲跌幅 =（現價 − 昨收）÷ 昨收。'],
+    ['漲停 / 跌停', '台股單日價格最多漲跌 10%，委託價不能超出這個範圍。'],
+    ['五檔', '最接近成交價的 5 個買價和 5 個賣價，以及各價位的掛單量，用來判斷短線買賣力道。'],
+    [
+      '委買／委賣比例',
+      '五檔裡買方總量和賣方總量的比例。注意它不是「內外盤」，內外盤是統計實際成交方向，官方公開資料沒有提供。',
+    ],
+    [
+      '跳動檔位 (Tick)',
+      '台股價格只能是特定間距的倍數，例如 1000 元以上每 5 元一檔。不合規的價格券商不會接受。',
+    ],
+    ['MA 均線', '最近 N 天收盤價平均。價格在均線上方通常代表偏強，MA200 常被視為長期趨勢線。'],
+    ['RSI', '0–100 的強弱指標。高於 70 常視為過熱，低於 30 常視為過冷，不代表一定反轉。'],
+    ['ATR', '平均真實波幅，用來衡量這檔股票平常一天會動多大，用於設停損與預期波動區間。'],
+    ['Priced-in（已反映）', '利多消息出來前股價已先漲，消息公布後可能「利多出盡」。'],
+  ];
+
+  function GuidePage({ onGo, onShowTour }) {
+    return (
+      <div className="space-y-5">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">📖 使用說明</h2>
+              <p className="text-xs text-slate-400">
+                第一次使用？按右邊按鈕跟著導覽走一遍，導覽會自動切換頁面並框出要看的位置。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onShowTour}
+              className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm cursor-pointer"
+            >
+              🎓 開始新手導覽
+            </button>
+          </div>
+        </div>
+
+        <window.TA.FlowGuide onGo={onGo} />
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-3">🧭 建議操作流程</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              ['watch', '① 看盤', '挑標的、看報價五檔、模擬下單'],
+              ['mod1', '② 技術分析', '均線 / RSI / 支撐壓力 / 買進觀望賣出條件'],
+              ['mod2', '③ 新聞判斷', '消息是否已被股價反映？預期波動多大？'],
+              ['mod3', '④ 策略回測', '這個策略過去真的有優勢嗎？含稅費'],
+              ['mod4', '⑤ 組合風控', '是不是押太集中？大盤跌 20% 會虧多少？'],
+              ['mod5', '⑥ 交易檢討', '從過去交易找壞習慣，產生 3 條個人規則'],
+            ].map(([id, t, d]) => (
+              <button
+                type="button"
+                key={id}
+                onClick={() => onGo(id)}
+                className="text-left p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-sky-500 cursor-pointer"
+              >
+                <div className="font-bold text-sky-300 text-sm">{t}</div>
+                <div className="text-xs text-slate-400 mt-1">{d}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <h3 className="font-bold text-white">📡 資料從哪裡來？（透明說明）</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-400 text-left border-b border-slate-700">
+                  <th className="py-2 pr-3">資料</th>
+                  <th className="pr-3">來源</th>
+                  <th className="pr-3">方式</th>
+                  <th>即時性 / 真實性</th>
+                </tr>
+              </thead>
+              <tbody className="text-slate-300">
+                {[
+                  [
+                    '看盤頁：台股/ETF 報價、五檔、漲跌停',
+                    '證交所 MIS（mis.twse.com.tw）',
+                    '伺服器端 HTTP 取 JSON',
+                    '真實，約延遲 5 秒；已與 Yahoo 交叉比對，價格一致',
+                  ],
+                  [
+                    '看盤頁：美股報價（NVDA、SPCX…）',
+                    'Yahoo Finance Chart API',
+                    '伺服器端 HTTP 取 JSON',
+                    '真實，盤中實測延遲約 0–5 秒（每 5 秒更新一次畫面），無五檔',
+                  ],
+                  [
+                    '看盤頁：分時圖、52 週高低、迷你走勢、頂部大盤指數',
+                    'Yahoo Finance Chart API（5 分鐘線／日線／指數）',
+                    '伺服器端 HTTP 取 JSON，分時快取 30 秒、迷你走勢 10 分鐘',
+                    '真實；美股與指數盤中實測延遲約 0–5 秒；分時圖每 30 秒更新。台股分時來自 Yahoo，盤中延遲尚未實測，可能比證交所 MIS 慢',
+                  ],
+                  [
+                    '新聞判斷：新聞與公告',
+                    'Google News、Yahoo、證交所重大訊息（當日）、SEC 8-K',
+                    '伺服器端取 RSS／JSON，快取 5 分鐘',
+                    '真實；情緒方向由你判斷。事件前後漲幅用發布當下已知的收盤價計算',
+                  ],
+                  [
+                    '組合風控：歷史回落重演',
+                    'Yahoo 還權日 K（約 2 年）',
+                    '用目前持股數量回推組合價值',
+                    '真實歷史；假設持股與匯率不變，不代表未來',
+                  ],
+                  [
+                    '看盤頁：我的持股（成本、股數）',
+                    '你自己輸入',
+                    '只存在瀏覽器 localStorage',
+                    '成本與股數是你的輸入；市值與損益用即時價計算',
+                  ],
+                  [
+                    '技術分析：日 K、均線、RSI、MACD、ATR',
+                    'Yahoo Finance，備援 FinMind',
+                    '還權日線；當日最後一根以真實報價覆蓋',
+                    '真實；抓不到行情時直接報錯，不使用假資料（離線開發才可用 TRADING_ALLOW_SAMPLE=1）',
+                  ],
+                  [
+                    '技術分析：買進/觀望/賣出決策文字',
+                    '內建規則引擎；或「設定」頁連接的雲端／本地 AI',
+                    '價位由程式算好，AI 只解讀',
+                    '畫面會標明來源是「規則引擎」或「AI」；AI 輸出要通過價位與合理性檢查，否則退回規則引擎',
+                  ],
+                  [
+                    '策略回測：回測',
+                    '同上真實還權日 K',
+                    '次日開盤價成交',
+                    '真實歷史資料；結果不代表未來',
+                  ],
+                  [
+                    '組合風控：USD/TWD 匯率',
+                    'Yahoo Finance',
+                    'HTTP 取 JSON',
+                    '真實；失敗時標示預設匯率 32.15',
+                  ],
+                  [
+                    '組合風控：持股、ETF 穿透權重、Beta',
+                    '持股為範例輸入；成分股=Yahoo topHoldings；Beta=自行計算',
+                    '前十大成分股；近1年日報酬 vs 大盤(^TWII/^GSPC) 的 cov/var',
+                    '成分股與 Beta 為真實（成分股僅前十大）；Beta 欄位留空才自動算，手動填則用你的值',
+                  ],
+                  [
+                    'ETF 規模、殖利率、定期定額戶數',
+                    'TWSE OpenAPI（發行單位數、戶數排行）+ Yahoo 配息紀錄',
+                    '規模＝發行單位數×市價；殖利率＝近12月配息÷現價，自行計算',
+                    '真實；規模是市值估算、戶數僅前20名，皆非官方淨值規模／總持股人數',
+                  ],
+                  [
+                    '新聞判斷 新聞、交易檢討 交易日誌',
+                    '範例資料',
+                    '內建範例，可自行修改',
+                    '示範用，非真實新聞/帳單',
+                  ],
+                ].map((r) => (
+                  <tr key={r[0]} className="border-b border-slate-800">
+                    {r.map((c) => (
+                      <td key={c} className="py-2 pr-3 align-top">
+                        {c}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            我們不是去「爬網頁畫面」，而是呼叫這些網站公開的資料介面（JSON）。每次請求的網址、狀態碼、耗時都會記錄，
+            在看盤頁按「看資料怎麼抓的」就能看到。請注意：公開資料源可能改版、限流或延遲，本工具僅供研究與學習，不構成投資建議。
+          </p>
+        </div>
+
+        <window.TA.CandleGuide />
+
+        <window.TA.StrategyGuide />
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-3">📚 名詞小辭典</h3>
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            {GLOSSARY.map(([t, d]) => (
+              <div key={t}>
+                <dt className="text-sm font-semibold text-sky-300">{t}</dt>
+                <dd className="text-xs text-slate-400 leading-relaxed">{d}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
+          <h3 className="font-bold text-white">❓ 常見問題</h3>
+          {[
+            [
+              '為什麼畫面上沒有五檔？',
+              '美股公開資料源不提供五檔；台股在非交易時段或無掛單時也可能是空的。',
+            ],
+            ['價格怎麼不動？', '收盤後或週末是最後一筆成交價；畫面上的「最後成交」時間可以確認。'],
+            ['模擬下單會真的送單嗎？', '不會。這裡沒有串任何券商，暫存匣只存在你瀏覽器裡。'],
+            [
+              '顯示「抓取失敗」怎麼辦？',
+              '先確認網路與 Python 伺服器是否正在執行，再按「立即更新」；失敗時我們寧可顯示錯誤也不會顯示假資料。',
+            ],
+          ].map(([qq, a]) => (
+            <details
+              key={qq}
+              className="text-sm bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2"
+            >
+              <summary className="cursor-pointer text-slate-200">{qq}</summary>
+              <p className="text-xs text-slate-400 mt-1.5">{a}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const tourAlreadyDone = () => !!readLS(LS_TOUR, false);
+  window.TA = Object.assign(window.TA || {}, { GuidePage, tourAlreadyDone });
+})();

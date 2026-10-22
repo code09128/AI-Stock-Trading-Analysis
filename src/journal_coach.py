@@ -24,6 +24,7 @@ class JournalEntry:
     pnl_pct: float
     holding_days: int
     post_exit_5d_high: float  # 出場後 5 日最高價
+    emotion_score: int = 0    # 1~10 情緒/煎熬分數（>=8 視為死抱未停損的訊號），選填
 
 class JournalCoach:
     def __init__(self, entries: List[JournalEntry]):
@@ -65,6 +66,8 @@ class JournalCoach:
             "avg_win_amount": round(avg_win, 2),
             "avg_loss_amount": round(avg_loss, 2),
             "payoff_ratio": payoff_ratio,
+            "expectancy": round(sum(e.pnl_amount for e in self.entries) / n, 2),  # 平均每筆淨損益（元）
+            "sold_too_early_ratio_pct": round(len(early_exits) / len(wins) * 100, 1) if wins else 0.0,
             "early_exits_count": len(early_exits),
             "early_exits_detail": early_exits
         }
@@ -81,7 +84,7 @@ class JournalCoach:
         disposition_trades = []
         for e in self.entries:
             # 虧損超過 10% 仍死抱凹單
-            if e.pnl_pct <= -10.0 and e.holding_days >= 5:
+            if e.pnl_pct <= -10.0 and (e.holding_days >= 5 or e.emotion_score >= 8):
                 disposition_trades.append(e.trade_id)
 
         if disposition_trades:

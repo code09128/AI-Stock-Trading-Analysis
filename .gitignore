@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+node_modules/
+dist/
+.DS_Store
+
+# 本機金鑰（FINMIND_TOKEN 等），不要提交
+.env

@@ -18,8 +18,10 @@ class PortfolioRiskManager:
         "QQQ": {"NVDA": 0.088, "AAPL": 0.091, "MSFT": 0.082} # QQQ 輝達約佔 8.8%
     }
 
-    def __init__(self, usd_twd_rate: float = 32.2):
+    def __init__(self, usd_twd_rate: float = 32.2, etf_holdings: Dict[str, Dict[str, float]] = None):
         self.usd_twd_rate = usd_twd_rate
+        # 傳入即時取得的成分股權重（0~1）時優先使用，否則退回上方靜態概略表
+        self.etf_holdings = {**self.ETF_HOLDINGS_LOOKTHROUGH, **(etf_holdings or {})}
 
     def calculate_portfolio_weights(self, holdings: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -70,8 +72,8 @@ class PortfolioRiskManager:
         final_exposures = dict(direct_weights)
 
         for sym, direct_pct in direct_weights.items():
-            if sym in self.ETF_HOLDINGS_LOOKTHROUGH:
-                breakdown = self.ETF_HOLDINGS_LOOKTHROUGH[sym]
+            if sym in self.etf_holdings:
+                breakdown = self.etf_holdings[sym]
                 for sub_ticker, sub_share in breakdown.items():
                     indirect_pct = direct_pct * sub_share
                     final_exposures[sub_ticker] = round(final_exposures.get(sub_ticker, 0.0) + indirect_pct, 2)
