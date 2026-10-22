@@ -1,33 +1,124 @@
-// 看盤頁左側的「技術總覽」表格與「提醒」面板，以及提醒判斷引擎（頁面開著時才會監控）
+// 看盤頁左側的「技術總覽」表格與「提醒」面板，以及全站共用的提醒判斷引擎 AlertWatcher（掛在 App 上）
 (() => {
   const { useState, useEffect, useRef } = React;
   const { fmt, colorOf, baseCode, normSym, readLS, writeLS } = window.TA;
 
   const LS_ALERTS = 'tw_us_alerts_v1';
 
+  // 數值一律輸入正數：漲幅／跌幅都填「幾 %」，例如跌幅 3 代表今天跌了 3% 以上（舊資料存成負數也相容）
   const ALERT_TYPES = {
-    price_above: { label: '價格 ≥', unit: '', test: (m, v) => m.price != null && m.price >= v },
-    price_below: { label: '價格 ≤', unit: '', test: (m, v) => m.price != null && m.price <= v },
-    chg_above: { label: '今日漲幅 ≥', unit: '%', test: (m, v) => m.chg != null && m.chg >= v },
-    chg_below: { label: '今日跌幅 ≤', unit: '%', test: (m, v) => m.chg != null && m.chg <= v },
-    rsi_above: { label: 'RSI(14) ≥', unit: '', test: (m, v) => m.rsi != null && m.rsi >= v },
-    rsi_below: { label: 'RSI(14) ≤', unit: '', test: (m, v) => m.rsi != null && m.rsi <= v },
+    price_above: {
+      label: '價格 ≥',
+      unit: '',
+      hint: '價格，例 2400',
+      test: (m, v) => m.price != null && m.price >= v,
+    },
+    price_below: {
+      label: '價格 ≤',
+      unit: '',
+      hint: '價格，例 2300',
+      test: (m, v) => m.price != null && m.price <= v,
+    },
+    chg_above: {
+      label: '今日漲幅 ≥',
+      unit: '%',
+      hint: '例 3＝漲 3%',
+      test: (m, v) => m.chg != null && m.chg >= Math.abs(v),
+    },
+    chg_below: {
+      label: '今日跌幅 ≥',
+      unit: '%',
+      hint: '例 3＝跌 3%',
+      test: (m, v) => m.chg != null && m.chg <= -Math.abs(v),
+    },
+    rsi_above: {
+      label: 'RSI(14) ≥',
+      unit: '',
+      hint: '0–100，例 70',
+      test: (m, v) => m.rsi != null && m.rsi >= v,
+    },
+    rsi_below: {
+      label: 'RSI(14) ≤',
+      unit: '',
+      hint: '0–100，例 30',
+      test: (m, v) => m.rsi != null && m.rsi <= v,
+    },
+  };
+  const shownValue = (a) => (ALERT_TYPES[a.type]?.unit === '%' ? Math.abs(a.value) : a.value);
+
+  // 提醒與觸發紀錄是全站共用的：任何頁面改動都會廣播 'alerts-changed'
+  let alertLog = [];
+  const loadAlerts = () => readLS(LS_ALERTS, []);
+  const saveAlerts = (list) => {
+    writeLS(LS_ALERTS, list);
+    window.dispatchEvent(new Event('alerts-changed'));
   };
 
-  // 提醒引擎：每當報價 / 技術指標更新就檢查；觸發後標記為已觸發（不重複吵）
-  function useAlerts({ quotes, overview, say }) {
-    const [alerts, setAlerts] = useState(() => readLS(LS_ALERTS, []));
-    const [log, setLog] = useState([]);
-    useEffect(() => writeLS(LS_ALERTS, alerts), [alerts]);
-    const lastRun = useRef('');
+  // 看盤頁「提醒」面板用：只負責顯示與編輯，檢查交給 AlertWatcher
+  function useAlerts() {
+    const [alerts, setState] = useState(loadAlerts);
+    const [log, setLog] = useState(alertLog);
     useEffect(() => {
-      const fired = [];
-      const next = alerts.map((a) => {
-        if (!a.active) return a;
-        const q = quotes[baseCode(a.symbol)];
-        const o = overview[baseCode(a.symbol)];
-        const metrics = { price: q?.price, chg: q?.change_pct, rsi: o?.rsi14 };
-        if (ALERT_TYPES[a.type]?.test(metrics, a.value)) {
+      const on = () => {
+        setState(loadAlerts());
+        setLog(alertLog);
+      };
+      window.addEventListener('alerts-changed', on);
+      window.addEventListener('storage', on);
+      return () => {
+        window.removeEventListener('alerts-changed', on);
+        window.removeEventListener('storage', on);
+      };
+    }, []);
+    return { alerts, setAlerts: saveAlerts, log };
+  }
+
+  // 提醒引擎：掛在整個 App 上，不論在哪一頁都會檢查。報價每 10 秒、RSI 每 5 分鐘（後端也快取 5 分鐘）
+  const QUOTE_EVERY_MS = 10000;
+  const RSI_EVERY_MS = 300000;
+  function AlertWatcher({ say }) {
+    const { alerts } = useAlerts();
+    const rsiRef = useRef({ at: 0, rows: {} });
+    const active = alerts.filter((a) => a.active);
+    const key = active.map((a) => `${a.id}:${a.symbol}`).join(',');
+    useEffect(() => {
+      if (!key) return undefined;
+      let stop = false;
+      const post = (url, symbols) =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbols }),
+        }).then((r) => r.json());
+      const check = async () => {
+        const list = loadAlerts().filter((a) => a.active);
+        if (!list.length) return;
+        const syms = [...new Set(list.map((a) => a.symbol))];
+        const quotes = {};
+        try {
+          for (const q of (await post('/api/quotes', syms)).quotes || []) {
+            if (q) quotes[baseCode(q.symbol)] = q;
+          }
+          const rsiSyms = [
+            ...new Set(list.filter((a) => a.type.startsWith('rsi')).map((a) => a.symbol)),
+          ];
+          if (rsiSyms.length && Date.now() - rsiRef.current.at > RSI_EVERY_MS) {
+            const d = await post('/api/overview', rsiSyms);
+            const rows = {};
+            for (const r of d.rows || d.overview || []) rows[baseCode(r.symbol)] = r;
+            rsiRef.current = { at: Date.now(), rows };
+          }
+        } catch (_e) {
+          return; // 這一輪抓不到就等下一輪，不誤觸發
+        }
+        if (stop) return;
+        const fired = [];
+        const next = loadAlerts().map((a) => {
+          if (!a.active) return a;
+          const q = quotes[baseCode(a.symbol)];
+          const o = rsiRef.current.rows[baseCode(a.symbol)];
+          const metrics = { price: q?.price, chg: q?.change_pct, rsi: o?.rsi14 };
+          if (!ALERT_TYPES[a.type]?.test(metrics, a.value)) return a;
           const f = {
             ...a,
             active: false,
@@ -36,16 +127,13 @@
           };
           fired.push(f);
           return f;
-        }
-        return a;
-      });
-      const sig = JSON.stringify(fired.map((f) => f.id));
-      if (fired.length && sig !== lastRun.current) {
-        lastRun.current = sig;
-        setAlerts(next);
-        setLog((l) => [...fired, ...l].slice(0, 30));
+        });
+        if (!fired.length) return;
+        alertLog = [...fired, ...alertLog].slice(0, 30);
+        saveAlerts(next);
         for (const f of fired) {
-          const msg = `🔔 ${f.symbol} 觸發：${ALERT_TYPES[f.type].label} ${f.value}${ALERT_TYPES[f.type].unit}`;
+          const t = ALERT_TYPES[f.type];
+          const msg = `🔔 ${f.symbol} 觸發：${t.label} ${shownValue(f)}${t.unit}`;
           say(msg);
           try {
             if (window.Notification && Notification.permission === 'granted') new Notification(msg);
@@ -53,9 +141,15 @@
             /* 通知不可用時忽略 */
           }
         }
-      }
-    }, [quotes, overview, alerts, say]);
-    return { alerts, setAlerts, log };
+      };
+      check();
+      const id = setInterval(check, QUOTE_EVERY_MS);
+      return () => {
+        stop = true;
+        clearInterval(id);
+      };
+    }, [key, say]);
+    return null;
   }
 
   function AlertsPanel({ alerts, setAlerts, selected, log }) {
@@ -63,10 +157,19 @@
     const [perm, setPerm] = useState(() =>
       window.Notification ? Notification.permission : 'unsupported',
     );
+    const [err, setErr] = useState('');
     const add = () => {
       const sym = normSym(form.symbol || selected);
       const value = Number(form.value);
-      if (!sym || Number.isNaN(value) || form.value === '') return;
+      const t = ALERT_TYPES[form.type];
+      if (!sym) return setErr('請輸入代號');
+      if (form.value === '' || Number.isNaN(value)) return setErr(`請輸入數值（${t.hint}）`);
+      if (t.unit === '%' && (value <= 0 || value >= 100))
+        return setErr('漲跌幅請填 0～100 之間的正數，例如 3 代表 3%');
+      if (form.type.startsWith('rsi') && (value <= 0 || value >= 100))
+        return setErr('RSI 介於 0～100，請填例如 70 或 30');
+      if (form.type.startsWith('price') && value <= 0) return setErr('價格必須大於 0');
+      setErr('');
       setAlerts([...alerts, { id: Date.now(), symbol: sym, type: form.type, value, active: true }]);
       setForm({ ...form, value: '' });
     };
@@ -98,7 +201,7 @@
               value={form.value}
               onChange={(e) => setForm({ ...form, value: e.target.value })}
               onKeyDown={(e) => e.key === 'Enter' && add()}
-              placeholder="數值"
+              placeholder={ALERT_TYPES[form.type].hint}
               aria-label="提醒數值"
               className="col-span-1 min-w-0 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs mono text-white"
             />
@@ -110,8 +213,10 @@
               ＋
             </button>
           </div>
+          {err && <div className="text-[11px] text-rose-300">{err}</div>}
           <div className="text-[10px] text-slate-500 leading-snug">
-            ⚠️ 提醒只在這個網頁開著時檢查（每 5 秒報價、每 5 分鐘技術指標），關掉頁面就不會通知。
+            ⚠️ 只要這個系統的網頁開著（在哪一頁都可以）就會檢查：報價每 10 秒、RSI 每 5
+            分鐘。關掉網頁就不會通知。漲跌幅都填正數，例如「今日跌幅 ≥ 3」代表跌 3% 以上。
           </div>
           {perm === 'default' && (
             <button
@@ -144,7 +249,7 @@
           >
             <span className="mono font-bold text-white">{a.symbol}</span>
             <span className="text-slate-300">
-              {ALERT_TYPES[a.type].label} {a.value}
+              {ALERT_TYPES[a.type].label} {shownValue(a)}
               {ALERT_TYPES[a.type].unit}
             </span>
             <span className="ml-auto text-[11px] text-slate-400">
@@ -176,8 +281,8 @@
             <div className="text-slate-400">本次開啟後觸發紀錄</div>
             {log.map((f) => (
               <div key={`${f.id}-${f.firedAt}`}>
-                {f.firedAt}　{f.symbol} {ALERT_TYPES[f.type].label} {f.value}（當時價{' '}
-                {fmt(f.firedValue?.price)}）
+                {f.firedAt}　{f.symbol} {ALERT_TYPES[f.type].label} {shownValue(f)}
+                {ALERT_TYPES[f.type].unit}（當時價 {fmt(f.firedValue?.price)}）
               </div>
             ))}
           </div>
@@ -271,6 +376,7 @@
 
   window.TA = Object.assign(window.TA || {}, {
     useAlerts,
+    AlertWatcher,
     AlertsPanel,
     OverviewPanel,
     ALERT_TYPES,

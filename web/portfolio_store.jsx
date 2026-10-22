@@ -11,11 +11,40 @@
   };
   const today = () => new Date().toISOString().slice(0, 10);
 
-  const load = () => ({
-    holdings: readLS(KEYS.holdings, []),
-    journal: readLS(KEYS.journal, []),
-    rules: readLS(KEYS.rules, null), // { rules: [...], source, savedAt }
-  });
+  // 交易編號：取現有最大編號 + 1（不能用筆數 + 1，刪過一筆後會撞號）
+  const idNum = (id) => Number(String(id || '').replace(/\D/g, '')) || 0;
+  const fmtId = (n) => `#${String(n).padStart(2, '0')}`;
+  const nextTradeId = (list) =>
+    fmtId(Math.max(0, ...(list || []).map((e) => idNum(e.trade_id))) + 1);
+  // 舊資料若已有重複編號：保留第一筆，之後重複的改發新號
+  const dedupeIds = (list) => {
+    const seen = new Set();
+    let max = Math.max(0, ...list.map((e) => idNum(e.trade_id)));
+    let changed = false;
+    const out = list.map((e) => {
+      if (e.trade_id && !seen.has(e.trade_id)) {
+        seen.add(e.trade_id);
+        return e;
+      }
+      changed = true;
+      max += 1;
+      const id = fmtId(max);
+      seen.add(id);
+      return { ...e, trade_id: id };
+    });
+    return { out, changed };
+  };
+
+  const load = () => {
+    const raw = readLS(KEYS.journal, []);
+    const { out: journal, changed } = dedupeIds(Array.isArray(raw) ? raw : []);
+    if (changed) writeLS(KEYS.journal, journal);
+    return {
+      holdings: readLS(KEYS.holdings, []),
+      journal,
+      rules: readLS(KEYS.rules, null), // { rules: [...], source, savedAt }
+    };
+  };
   const save = (key, value) => {
     writeLS(KEYS[key], value);
     window.dispatchEvent(new Event('portfolio-changed'));
@@ -80,7 +109,7 @@
         msg: `賣出失敗：持股中沒有足夠的 ${symbol}（目前 ${h ? h.shares : 0} 股）`,
       };
     const trade = {
-      trade_id: `#${String(journal.length + 1).padStart(2, '0')}`,
+      trade_id: nextTradeId(journal),
       symbol,
       entry_time: h.opened || '',
       exit_time: today(),
@@ -130,6 +159,8 @@
   }
 
   window.TA = Object.assign(window.TA || {}, {
+    nextTradeId,
+    dedupeIds,
     usePortfolio,
     loadPortfolio: load,
     setHoldings,

@@ -9,6 +9,7 @@ LLM 結構化推論與防幻覺閘門模組 (llm_runner.py)
 from typing import Dict, Any, Optional
 import urllib.request
 import json
+import time
 import os
 
 from src import ai_client
@@ -50,6 +51,16 @@ class LLMRunner:
         )
 
         prompt_text = custom_prompt or self._build_mod1_prompt(snapshot)
+        uses_ai = ai_client.is_enabled(self.profile) or (
+            (self.provider == "GEMINI" and self.gemini_key) or (self.provider == "OPENAI" and self.openai_key))
+        if uses_ai and not custom_prompt:
+            # 只有真的要呼叫 AI 時才抓多面向補充資料（籌碼、評價、大盤、新聞），規則引擎不需要
+            try:
+                from src import ai_context
+
+                prompt_text += "\n" + ai_context.summary_lines(snapshot["symbol"])
+            except Exception:
+                pass
 
         # 決定是否呼叫外部 LLM API
         llm_raw_payload: Optional[Dict[str, Any]] = None
@@ -77,20 +88,26 @@ class LLMRunner:
                     if ai_rejected is not None
                     else f"AI 呼叫失敗（{e}），已改用本地量化決策規則引擎。"
                 )
-        elif self.gemini_key and self.provider in ("AUTO", "GEMINI"):
+        elif (self.provider == "GEMINI" and self.gemini_key) or (self.provider == "OPENAI" and self.openai_key):
+            # 舊版直連路徑：只有呼叫端明確指定 provider 才用（前端選「內建規則引擎」時不會因為環境變數而偷偷呼叫 AI）。
+            # 一般請在「設定」新增 Gemini／OpenAI 連線（金鑰可留空，會讀 GEMINI_API_KEY／OPENAI_API_KEY）。
+            name = "Gemini" if self.provider == "GEMINI" else "OpenAI"
             try:
-                llm_raw_payload = self._call_gemini_json(prompt_text)
-                execution_mode = "LIVE_GEMINI_API"
-                llm_notice = "已透過 Google Gemini API 完成結構化推論。"
+                candidate = (self._call_gemini_json(prompt_text) if self.provider == "GEMINI"
+                             else self._call_openai_json(prompt_text))
+                issues = self._sanity_issues(candidate, snapshot, prompt_text)
+                if issues:
+                    ai_rejected = candidate
+                    raise ValueError("AI 的輸出沒有通過合理性檢查：" + "；".join(issues))
+                llm_raw_payload = candidate
+                execution_mode = f"LIVE_{self.provider}_API"
+                llm_notice = f"已透過 {name} API 完成結構化推論，並經防幻覺稽核。"
             except Exception as e:
-                llm_notice = f"Gemini API 呼叫失敗 ({e})，自動切換至本地量化決策規則引擎。"
-        elif self.openai_key and self.provider in ("AUTO", "OPENAI"):
-            try:
-                llm_raw_payload = self._call_openai_json(prompt_text)
-                execution_mode = "LIVE_OPENAI_API"
-                llm_notice = "已透過 OpenAI API 完成結構化推論。"
-            except Exception as e:
-                llm_notice = f"OpenAI API 呼叫失敗 ({e})，自動切換至本地量化決策規則引擎。"
+                llm_notice = (
+                    f"AI 已回覆但未通過檢查，已改用規則引擎。原因：{e}"
+                    if ai_rejected is not None
+                    else f"{name} API 呼叫失敗（{e}），已改用本地量化決策規則引擎。"
+                )
 
         if llm_raw_payload is None:
             llm_raw_payload = self._deterministic_technical_decision(snapshot)
@@ -123,8 +140,8 @@ class LLMRunner:
         ot = p.get("order_type")
         if market == "TW" and ot not in ("ROD", "IOC", "FOK"):
             issues.append(f"台股委託別必須是 ROD／IOC／FOK（收到 {ot}）")
-        if market == "US" and ot not in ("LIMIT", "MARKET", "STOP", "STOP_LIMIT"):
-            issues.append(f"美股委託別不合法（收到 {ot}）")
+        if market != "TW" and ot not in ("LIMIT", "MARKET", "STOP", "STOP_LIMIT"):
+            issues.append(f"委託別不合法（收到 {ot}，台股以外請用 LIMIT／MARKET）")
         try:
             entry, stop = float(p["entry_price"]), float(p["stop_loss_price"])
             target = float(p["take_profit_target"]) if p.get("take_profit_target") is not None else None
@@ -133,6 +150,11 @@ class LLMRunner:
                     issues.append("停損價必須低於進場價")
                 if target is not None and not target > entry:
                     issues.append("目標價必須高於進場價")
+            elif p.get("action") == "SELL":
+                if not stop > entry:
+                    issues.append("賣出時的失效價（stop_loss_price）必須高於賣出價")
+                if target is not None and not target < entry:
+                    issues.append("賣出時的下檔目標（take_profit_target）必須低於賣出價")
             if market == "TW":
                 for name, v in (("進場價", entry), ("停損價", stop)):
                     tick = get_tw_tick_size(v)
@@ -173,6 +195,8 @@ class LLMRunner:
                 f"{d['alignment_label']}、MACD {d['macd_label']}、{d['volume_label']}、距 MA5 乖離 {d['bias_ma5_pct']}%\n")
         if score["hard_rules"]:
             line += "嚴進規則已觸發（action 不得為 BUY）：" + "；".join(score["hard_rules"]) + "\n"
+        if score.get("not_applicable"):
+            line += "注意：" + score["not_applicable"] + " 請以 HOLD 為主。\n"
         return line
 
     @staticmethod
@@ -187,7 +211,9 @@ class LLMRunner:
             f"系統識別支撐位：{snapshot['support_levels']}\n"
             f"系統識別壓力位：{snapshot['resistance_levels']}\n"
             + LLMRunner._score_prompt_line(snapshot)
-            + f"請回傳 JSON 格式包含：action ('BUY'|'HOLD'|'SELL'), support_levels (陣列), resistance_levels (陣列), "
+            + f"支撐位都低於現價、壓力位都高於現價。價位規則：BUY／HOLD 需 stop_loss_price < entry_price < take_profit_target；"
+            f"SELL 表示賣出／減碼，entry_price＝賣出價、stop_loss_price＝空方失效價（高於賣出價）、take_profit_target＝下檔目標（低於賣出價）。\n"
+            f"請回傳 JSON 格式包含：action ('BUY'|'HOLD'|'SELL'), support_levels (陣列), resistance_levels (陣列), "
             f"entry_price, stop_loss_price, take_profit_target, order_type（台股只能 'ROD'|'IOC'|'FOK'；美股 'LIMIT'|'MARKET'）, "
             f"invalidation_criteria（必須含具體價位數字的失效條件）, step_by_step_rationale（字串陣列，逐步理由，只能引用上面給的數字）。"
         )
@@ -219,18 +245,43 @@ class LLMRunner:
             action = "HOLD"
         order_type = ("IOC" if action == "SELL" else "ROD") if market == "TW" else "LIMIT"
 
-        raw_entry = supports[-1] if supports else close
-        raw_stop = max(snapshot["historical_low"], round(raw_entry - atr14 * 1.2, 2))
-        raw_target = resistances[-1] if resistances else round(close + atr14 * 1.5, 2)
+        # supports 都低於現價、resistances 都高於現價（data_adapter.classify_levels 保證），各自由低到高
+        near_sup = supports[-1] if supports else None
+        near_res = resistances[0] if resistances else None
+        # 目標要有意義：跳過離現價不到 0.5 ATR 的價位
+        far_sup = next((v for v in reversed(supports) if v <= close - atr14 * 0.5), None)
+        if action == "SELL":
+            # 賣出／減碼：現價附近賣出；站回「失效價」（上方最近壓力，最遠 1.5 ATR）代表判斷錯誤；下檔先看最近支撐
+            raw_entry = close
+            raw_stop = min(near_res, close + atr14 * 1.5) if near_res else close + atr14 * 1.2
+            raw_target = far_sup if far_sup else close - atr14 * 1.5
+            stop_mode, target_mode = "ceil", "floor"
+        else:
+            # 買進／觀望：最近支撐在 1 ATR 內就掛在支撐，否則以現價為準；停損在進場下方 1.2 ATR；目標看上方最近壓力
+            raw_entry = near_sup if near_sup and close - near_sup <= atr14 else close
+            raw_stop = raw_entry - atr14 * 1.2
+            raw_target = next((v for v in resistances if v >= close + atr14 * 0.5), close + atr14 * 1.5)
+            stop_mode, target_mode = "floor", "ceil"
 
         if market == "TW":
             entry_price = align_tw_tick(raw_entry, mode="floor")
-            stop_loss = align_tw_tick(raw_stop, mode="floor")
-            take_profit = align_tw_tick(raw_target, mode="ceil")
+            stop_loss = align_tw_tick(raw_stop, mode=stop_mode)
+            take_profit = align_tw_tick(raw_target, mode=target_mode)
         else:
             entry_price = round(raw_entry, 2)
             stop_loss = round(raw_stop, 2)
             take_profit = round(raw_target, 2)
+
+        if action == "SELL":
+            invalidation = (f"若日線收盤站回 {stop_loss} 之上，或放量突破 MA20 ({round(ma20, 2)})，"
+                            f"空方判斷失效，應停止賣出或考慮買回。")
+            discipline = (f"3. 執行紀律：建議以 {order_type} 於 {entry_price} 附近賣出／減碼；"
+                          f"收盤站回 {stop_loss} 代表判斷錯誤，下檔先看 {take_profit}。")
+        else:
+            invalidation = (f"若日線收盤正式跌破關鍵支撐價位 {stop_loss} 或單日爆量長黑跌破 MA20 ({round(ma20, 2)})，"
+                            f"多頭結構失效立即停損出場。")
+            discipline = (f"3. 執行紀律：建議以 {order_type} 委託於 {entry_price} 布局，防守停損設於 {stop_loss}，"
+                          f"目標先看 {take_profit}。")
 
         return {
             "symbol": snapshot["symbol"],
@@ -242,12 +293,12 @@ class LLMRunner:
             "stop_loss_price": stop_loss,
             "support_levels": supports,
             "resistance_levels": resistances,
-            "invalidation_criteria": f"若日線收盤正式跌破關鍵支撐價位 {stop_loss} 或單日爆量長黑跌破 MA20 ({round(ma20, 2)})，多頭結構失效立即停損出場。",
+            "invalidation_criteria": invalidation,
             "step_by_step_rationale": [
                 f"1. 均線結構：最新收盤價 {close} 對比 MA5 ({round(ma5, 2)}) 與 MA20 ({round(ma20, 2)})，均由程式端還權 K 線精確計算。",
-                f"2. 動能與波動：RSI(14) 為 {rsi14}，ATR(14) 真實波動為 {atr14}，所有支撐 {supports} 與壓力 {resistances} 均符合市場 Tick 規範。",
-                f"3. 執行紀律：建議以 {order_type} 委託於 {entry_price} 布局，防守停損設於 {stop_loss}。",
-            ] + ([
+                f"2. 動能與波動：RSI(14) 為 {rsi14}，ATR(14) 真實波動為 {atr14}；現價下方支撐 {supports}、上方壓力 {resistances}（已對齊市場 Tick 規範）。",
+                discipline,
+            ] + ([f"4. {score['not_applicable']}"] if score and score.get("not_applicable") else [
                 f"4. 趨勢評分 {score['total']}/100（{score['signal_label']}）："
                 f"{score['details']['alignment_label']}、MACD {score['details']['macd_label']}、"
                 f"{score['details']['volume_label']}、距 MA5 乖離 {score['details']['bias_ma5_pct']}%。"
@@ -271,8 +322,10 @@ class LLMRunner:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        started = time.time()
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+        ai_client.record_usage("gemini", model_name, "Gemini（環境變數）", data, started)
         text = data["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(text)
 
@@ -297,7 +350,9 @@ class LLMRunner:
             },
             method="POST",
         )
+        started = time.time()
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+        ai_client.record_usage("openai", model_name, "OpenAI（環境變數）", data, started)
         text = data["choices"][0]["message"]["content"]
         return json.loads(text)

@@ -22,13 +22,44 @@
   };
 
   const isTW = (sym) => /^\d{4,6}[A-Z]?(\.TW|\.TWO)?$/i.test(sym);
-  // 以代號第一段判斷，與後端 normalize_symbol 同一規則
+  // 多市場：與後端 src/markets.py 同一份後綴規則（沒有後綴＝美股）
+  const MARKET_INFO = {
+    TW: { name: '台股', currency: 'TWD', flag: '🇹🇼' },
+    US: { name: '美股', currency: 'USD', flag: '🇺🇸' },
+    HK: { name: '港股', currency: 'HKD', flag: '🇭🇰', suffixes: ['.HK'] },
+    JP: { name: '日股', currency: 'JPY', flag: '🇯🇵', suffixes: ['.T'] },
+    KR: { name: '韓股', currency: 'KRW', flag: '🇰🇷', suffixes: ['.KS', '.KQ'] },
+    CN: { name: '陸股', currency: 'CNY', flag: '🇨🇳', suffixes: ['.SS', '.SZ'] },
+    UK: { name: '英股', currency: 'GBp', flag: '🇬🇧', suffixes: ['.L'] },
+    DE: { name: '德股', currency: 'EUR', flag: '🇩🇪', suffixes: ['.DE', '.F'] },
+    CA: { name: '加股', currency: 'CAD', flag: '🇨🇦', suffixes: ['.TO', '.V'] },
+    AU: { name: '澳股', currency: 'AUD', flag: '🇦🇺', suffixes: ['.AX'] },
+    SG: { name: '星股', currency: 'SGD', flag: '🇸🇬', suffixes: ['.SI'] },
+  };
+  const marketOf = (sym) => {
+    const s = String(sym || '').toUpperCase();
+    if (isTW(s)) return 'TW';
+    for (const [k, v] of Object.entries(MARKET_INFO)) {
+      if ((v.suffixes || []).some((x) => s.endsWith(x) && s.length > x.length)) return k;
+    }
+    return 'US';
+  };
+  const marketName = (sym) => MARKET_INFO[marketOf(sym)].name;
+  // 預設計價幣別（實際以報價回傳的 currency 為準；英股是 GBp 便士）
+  const currencyOf = (sym) => MARKET_INFO[marketOf(sym)].currency;
+  // 以代號第一段判斷，與後端 normalize_symbol 同一規則；港股補滿 4 位數（700.HK → 0700.HK）
   const normSym = (raw) => {
     const t = raw.trim().toUpperCase().split(/\s+/)[0] || '';
     if (!t) return '';
-    return isTW(t) ? t.split('.')[0] : t;
+    if (isTW(t)) return t.split('.')[0];
+    const hk = t.match(/^(\d{1,4})\.HK$/);
+    return hk ? `${hk[1].padStart(4, '0')}.HK` : t;
   };
-  const baseCode = (sym) => sym.split('.')[0];
+  // 比對用的代號：只有台股去掉 .TW／.TWO；其他市場保留後綴（避免日股 7203.T 與台股 7203 撞號）
+  const baseCode = (sym) => {
+    const s = String(sym || '').toUpperCase();
+    return isTW(s) ? s.split('.')[0] : s;
+  };
 
   const fmt = (n, d = 2) =>
     n === null || n === undefined || Number.isNaN(n)
@@ -166,6 +197,10 @@
     readLS,
     writeLS,
     isTW,
+    MARKET_INFO,
+    marketOf,
+    marketName,
+    currencyOf,
     normSym,
     baseCode,
     fmt,

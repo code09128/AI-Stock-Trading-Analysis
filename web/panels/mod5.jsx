@@ -13,7 +13,7 @@
         .map((l) => l.split(/[,\t]/).map((x) => x.trim()))
         .filter((c) => c.length >= 6 && Number(c[2]) > 0 && Number(c[4]) > 0 && Number(c[5]) > 0)
         .map((c, i) => ({
-          trade_id: `#${String(journal.length + i + 1).padStart(2, '0')}`,
+          trade_id: `#${String(Number(window.TA.nextTradeId(journal).slice(1)) + i).padStart(2, '0')}`,
           symbol: c[0].toUpperCase(),
           entry_time: c[1],
           entry_price: Number(c[2]),
@@ -129,7 +129,7 @@
                   setM5Entries([
                     ...m5Entries,
                     {
-                      trade_id: `#0${m5Entries.length + 1}`,
+                      trade_id: window.TA.nextTradeId(m5Entries),
                       symbol: '2330.TW',
                       entry_time: '09:03',
                       exit_time: '10:15',

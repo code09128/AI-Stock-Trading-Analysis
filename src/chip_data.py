@@ -142,7 +142,7 @@ def chips(symbol: str) -> Dict[str, Any]:
     n = DualMarketDataAdapter.normalize_symbol(symbol)
     if n["market"] != "TW":
         return {"symbol": n["symbol"], "supported": False,
-                "reason": "籌碼資料（三大法人、融資融券）只有台股有；美股沒有對應的公開每日資料"}
+                "reason": f"{n['symbol']} 不是台股代號；籌碼資料（三大法人、融資融券）只有台股有"}
     code = n["raw_code"]
     with _LOCK:
         hit = _CACHE.get(code)
@@ -159,9 +159,12 @@ def chips(symbol: str) -> Dict[str, Any]:
         except Exception as e:
             got[key] = None
             errors.append(f"{ds}: {e}")
+    summary = summarize(got["inst"], got["margin"], got["holding"])
+    empty = not errors and summary["latest_date"] is None
     result = {
-        "symbol": n["symbol"], "supported": True,
-        **summarize(got["inst"], got["margin"], got["holding"]),
+        "symbol": n["symbol"], "supported": True, "empty": empty,
+        "reason": f"查無 {code} 的籌碼資料：代號可能不存在、已下市，或近期沒有交易" if empty else None,
+        **summary,
         "errors": errors,
         "source": "FinMind（三大法人買賣超、融資融券、外資持股），收盤後更新（T+1）",
     }

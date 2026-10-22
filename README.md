@@ -22,6 +22,7 @@ python -m unittest discover tests   # 後端測試
 npx @biomejs/biome check web        # 前端語法/無障礙檢查
 ```
 可選環境變數：`TRADING_ALLOW_SAMPLE=1`（離線開發時允許使用假資料，預設查不到行情會報錯）、
-`FINMIND_TOKEN`、`GEMINI_API_KEY`、`OPENAI_API_KEY`。
+`FINMIND_TOKEN`、`GEMINI_API_KEY`、`OPENAI_API_KEY`。AI 金鑰只有在「設定」新增對應連線（金鑰欄留空）並選用時才會使用；
+選「內建規則引擎」時一律不呼叫 AI。
 這些也可以寫在專案根目錄的 `.env`（每行 `KEY=VALUE`，已列入 `.gitignore`），啟動時自動載入，已設定的環境變數優先。
 `FINMIND_TOKEN` 設了之後 FinMind 額度由 300 提高到 600 次／小時；token 以 Authorization 標頭送出，不會出現在抓取紀錄。

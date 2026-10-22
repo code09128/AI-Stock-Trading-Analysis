@@ -1,32 +1,124 @@
 (() => {
   const { useState } = React;
-  const { BAR_ZOOM_OPTIONS } = window.TA;
 
-  function CandlestickChart({
-    bars,
-    supports,
-    resistances,
-    barCount,
-    onChangeBarCount,
-    unit = '日',
-  }) {
+  // 互動式 K 線：滾輪縮放（以游標所在 K 棒為中心）、拖曳平移、兩指縮放、範圍按鈕、全螢幕放大
+  const RANGE_PRESETS = [
+    ['1M', 22],
+    ['3M', 66],
+    ['6M', 130],
+    ['1Y', 250],
+    ['全部', Infinity],
+  ];
+  const MIN_VISIBLE = 10;
+
+  function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60, unit = '日' }) {
+    const { useRef, useEffect } = React;
+    const total = allBars?.length || 0;
+    // view：顯示幾根（count）與最右邊離最新差幾根（offset，0＝貼齊最新）
+    const [view, setView] = useState({ count: barCount, offset: 0 });
     const [hoverIdx, setHoverIdx] = useState(null);
+    const [expanded, setExpanded] = useState(false);
+    const svgRef = useRef(null);
+    const drag = useRef(null);
+    const pointers = useRef(new Map());
 
-    if (!bars || bars.length === 0) return null;
+    const clamp = (v) => {
+      const count = Math.max(Math.min(MIN_VISIBLE, total), Math.min(total, Math.round(v.count)));
+      const offset = Math.max(0, Math.min(total - count, Math.round(v.offset)));
+      return { count, offset };
+    };
+    const cur = clamp(view);
+    const end = total - cur.offset;
+    const start = end - cur.count;
+    const bars = total ? allBars.slice(start, end) : [];
+
+    const width = 780;
+    const height = expanded ? 560 : 340;
+    const padLeft = 56;
+    const padRight = 60;
+    const padTop = 18;
+    const volH = expanded ? 90 : 58;
+    const priceH = height - padTop - volH - 22 - 22;
+    const volTop = padTop + priceH + 22;
+    const plotW = width - padLeft - padRight;
+    const stepX = plotW / Math.max(bars.length, 1);
+
+    // 視窗座標 → 第幾根（相對可見範圍）
+    const idxAt = (clientX) => {
+      const r = svgRef.current?.getBoundingClientRect();
+      if (!r) return null;
+      const x = ((clientX - r.left) / r.width) * width;
+      if (x < padLeft || x > width - padRight) return null;
+      return Math.max(0, Math.min(bars.length - 1, Math.floor((x - padLeft) / stepX)));
+    };
+    const zoomAt = (factor, clientX) => {
+      setView((v) => {
+        const c = clamp(v);
+        const anchor = clientX != null ? idxAt(clientX) : null;
+        const frac = anchor != null ? (anchor + 0.5) / c.count : 1; // 游標在可見範圍的比例
+        const count = Math.max(MIN_VISIBLE, Math.min(total, c.count * factor));
+        // 讓游標下那根 K 棒維持在同一個位置
+        const rightIdx = total - c.offset; // 不含
+        const anchorAbs = rightIdx - c.count + frac * c.count;
+        const newRight = anchorAbs + (1 - frac) * count;
+        return clamp({ count, offset: total - newRight });
+      });
+    };
+
+    // 滾輪需要 passive:false 才能阻止頁面捲動
+    useEffect(() => {
+      const el = svgRef.current;
+      if (!el) return undefined;
+      const onWheel = (e) => {
+        e.preventDefault();
+        zoomAt(e.deltaY > 0 ? 1.15 : 1 / 1.15, e.clientX);
+      };
+      el.addEventListener('wheel', onWheel, { passive: false });
+      return () => el.removeEventListener('wheel', onWheel);
+    });
+    useEffect(() => {
+      if (!expanded) return undefined;
+      const onKey = (e) => e.key === 'Escape' && setExpanded(false);
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [expanded]);
+
+    const onPointerDown = (e) => {
+      pointers.current.set(e.pointerId, e.clientX);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      if (pointers.current.size === 1) drag.current = { x: e.clientX, offset: cur.offset };
+      else if (pointers.current.size === 2) {
+        const [a, b] = [...pointers.current.values()];
+        drag.current = { pinch: Math.abs(a - b) || 1, count: cur.count, center: (a + b) / 2 };
+      }
+    };
+    const onPointerMove = (e) => {
+      if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, e.clientX);
+      const d = drag.current;
+      if (d && pointers.current.size === 2 && d.pinch) {
+        const [a, b] = [...pointers.current.values()];
+        const dist = Math.abs(a - b) || 1;
+        setView((v) => ({ ...clamp(v), count: d.count * (d.pinch / dist) }));
+        return;
+      }
+      if (d && pointers.current.size === 1 && d.offset != null) {
+        const r = svgRef.current.getBoundingClientRect();
+        const barsMoved = (((e.clientX - d.x) / r.width) * width) / stepX;
+        setView((v) => clamp({ count: v.count, offset: d.offset + barsMoved }));
+        return;
+      }
+      setHoverIdx(idxAt(e.clientX));
+    };
+    const onPointerUp = (e) => {
+      pointers.current.delete(e.pointerId);
+      if (pointers.current.size === 0) drag.current = null;
+    };
+
+    if (!total) return null;
 
     const activeIdx = hoverIdx !== null && hoverIdx < bars.length ? hoverIdx : bars.length - 1;
     const activeBar = bars[activeIdx];
     const isActiveUp = activeBar.close >= activeBar.open;
-
-    const width = 780;
-    const height = 340;
-    const padLeft = 56;
-    const padRight = 60;
-    const padTop = 18;
-    const priceH = 215;
-    const volTop = padTop + priceH + 22;
-    const volH = 58;
-    const plotW = width - padLeft - padRight;
 
     const allPrices = [];
     let maxVol = 1;
@@ -34,109 +126,150 @@
       allPrices.push(b.high, b.low);
       if (b.ma5) allPrices.push(b.ma5);
       if (b.ma20) allPrices.push(b.ma20);
+      if (b.ma60 && cur.count > 40) allPrices.push(b.ma60);
       if (b.volume > maxVol) maxVol = b.volume;
     }
-    for (const s of supports || []) allPrices.push(s);
-    for (const r of resistances || []) allPrices.push(r);
+    const minRaw = Math.min(...allPrices);
+    const maxRaw = Math.max(...allPrices);
+    // 支撐壓力只在可見價格附近時才納入縮放範圍（太遠的會把 K 棒壓扁）
+    const near = (p) => p >= minRaw * 0.9 && p <= maxRaw * 1.1;
+    const levelsS = (supports || []).filter(near);
+    const levelsR = (resistances || []).filter(near);
+    for (const v of [...levelsS, ...levelsR]) allPrices.push(v);
 
     const minP = Math.min(...allPrices) * 0.992;
     const maxP = Math.max(...allPrices) * 1.008;
     const range = Math.max(maxP - minP, 0.01);
-
     const toY = (price) => padTop + priceH - ((price - minP) / range) * priceH;
     const toVolY = (vol) => volTop + volH - (vol / maxVol) * volH;
-    const stepX = plotW / bars.length;
-
-    const ma5Points = bars
-      .map((b, idx) => (b.ma5 ? `${padLeft + idx * stepX + stepX / 2},${toY(b.ma5)}` : null))
-      .filter(Boolean)
-      .join(' ');
-
-    const ma20Points = bars
-      .map((b, idx) => (b.ma20 ? `${padLeft + idx * stepX + stepX / 2},${toY(b.ma20)}` : null))
-      .filter(Boolean)
-      .join(' ');
-
+    const line = (key) =>
+      bars
+        .map((b, idx) => (b[key] ? `${padLeft + idx * stepX + stepX / 2},${toY(b[key])}` : null))
+        .filter(Boolean)
+        .join(' ');
+    const ma5Points = line('ma5');
+    const ma20Points = line('ma20');
+    const ma60Points = cur.count > 40 ? line('ma60') : '';
+    const decimals = maxP < 50 ? 2 : 1;
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => ({
-      val: (minP + range * t).toFixed(1),
+      val: (minP + range * t).toFixed(decimals),
       y: padTop + priceH * (1 - t),
     }));
-
     const hoverCx = padLeft + activeIdx * stepX + stepX / 2;
     const hoverCy = toY(activeBar.close);
+    const candleW = Math.max(stepX * 0.6, 0.8);
+    const labelEvery = Math.max(Math.floor(bars.length / 6), 1);
+    const atLatest = cur.offset === 0;
 
-    return (
-      <div className="bg-slate-950/95 border border-slate-800 rounded-xl p-4 space-y-3">
-        {/* 頂部工具列：K棒根數縮放 + 圖例 */}
+    const btn = 'px-2 py-0.5 text-[11px] font-mono rounded-md transition cursor-pointer';
+    const chart = (
+      <div
+        className={`bg-slate-950/95 border border-slate-800 rounded-xl p-4 space-y-3 ${
+          expanded ? 'fixed inset-2 md:inset-6 z-50 overflow-auto shadow-2xl' : ''
+        }`}
+      >
+        {/* 頂部工具列：範圍、縮放、放大 + 圖例 */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-slate-300">
               📊 互動式還權 K 線與成交量副圖
             </span>
             <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
-              {BAR_ZOOM_OPTIONS.map((cnt) => (
-                <button
-                  type="button"
-                  key={cnt}
-                  onClick={() => onChangeBarCount(cnt)}
-                  className={`px-2 py-0.5 text-[11px] font-mono rounded-md transition cursor-pointer ${
-                    barCount === cnt
-                      ? 'bg-sky-600 text-white font-bold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {cnt}
-                  {unit}
-                </button>
-              ))}
+              {RANGE_PRESETS.map(([label, n]) => {
+                const count = Math.min(
+                  total,
+                  n === Infinity ? total : unit === '週' ? Math.ceil(n / 5) : n,
+                );
+                return (
+                  <button
+                    type="button"
+                    key={label}
+                    onClick={() => setView({ count, offset: 0 })}
+                    className={`${btn} ${
+                      cur.count === count && atLatest
+                        ? 'bg-sky-600 text-white font-bold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+              <button
+                type="button"
+                aria-label="放大（顯示較少 K 棒）"
+                onClick={() => zoomAt(1 / 1.4)}
+                className={`${btn} text-slate-300 hover:text-white`}
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                aria-label="縮小（顯示較多 K 棒）"
+                onClick={() => zoomAt(1.4)}
+                className={`${btn} text-slate-300 hover:text-white`}
+              >
+                －
+              </button>
+              <button
+                type="button"
+                aria-label="回到最新"
+                onClick={() => setView((v) => ({ ...v, offset: 0 }))}
+                disabled={atLatest}
+                className={`${btn} text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-default`}
+              >
+                ⇥ 最新
+              </button>
+              <button
+                type="button"
+                aria-label={expanded ? '關閉全螢幕' : '全螢幕放大'}
+                onClick={() => setExpanded(!expanded)}
+                className={`${btn} text-slate-300 hover:text-white`}
+              >
+                {expanded ? '✕ 關閉' : '⛶ 放大'}
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-[11px] font-mono">
+          <div className="flex items-center gap-3 text-[11px] font-mono">
             <span className="flex items-center gap-1 text-amber-300">
               <span className="w-3 h-0.5 bg-amber-400 inline-block" /> MA5
             </span>
             <span className="flex items-center gap-1 text-sky-300">
               <span className="w-3 h-0.5 bg-sky-400 inline-block" /> MA20
             </span>
+            {ma60Points && (
+              <span className="flex items-center gap-1 text-violet-300">
+                <span className="w-3 h-0.5 bg-violet-400 inline-block" /> MA60
+              </span>
+            )}
             <span className="flex items-center gap-1 text-emerald-400">
               <span className="w-3 h-0.5 border-b border-dashed border-emerald-400 inline-block" />{' '}
-              支撐位
+              支撐
             </span>
             <span className="flex items-center gap-1 text-rose-400">
               <span className="w-3 h-0.5 border-b border-dashed border-rose-400 inline-block" />{' '}
-              壓力位
+              壓力
             </span>
           </div>
         </div>
 
-        {/* 動態十字準星 OHLCV 即時報價資訊條 */}
+        {/* 十字準星 OHLCV 資訊條 */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-slate-900/90 border border-slate-800/90 rounded-lg px-3 py-2 text-xs font-mono">
           <span className="text-sky-300 font-bold">📅 {activeBar.date}</span>
-          <span>
-            開:{' '}
-            <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>
-              {activeBar.open}
-            </strong>
-          </span>
-          <span>
-            高:{' '}
-            <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>
-              {activeBar.high}
-            </strong>
-          </span>
-          <span>
-            低:{' '}
-            <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>
-              {activeBar.low}
-            </strong>
-          </span>
-          <span>
-            收:{' '}
-            <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>
-              {activeBar.close}
-            </strong>
-          </span>
+          {[
+            ['開', activeBar.open],
+            ['高', activeBar.high],
+            ['低', activeBar.low],
+            ['收', activeBar.close],
+          ].map(([k, v]) => (
+            <span key={k}>
+              {k}:{' '}
+              <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>{v}</strong>
+            </span>
+          ))}
           <span
             className={`px-1.5 py-0.5 rounded font-bold ${
               (activeBar.change_pct || 0) >= 0
@@ -153,18 +286,27 @@
           </span>
           <span className="text-amber-300">MA5: {activeBar.ma5 ?? '-'}</span>
           <span className="text-sky-300">MA20: {activeBar.ma20 ?? '-'}</span>
+          {activeBar.ma60 != null && (
+            <span className="text-violet-300">MA60: {activeBar.ma60}</span>
+          )}
         </div>
 
-        {/* SVG 互動式畫布 */}
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-72 overflow-visible select-none"
-          onMouseLeave={() => setHoverIdx(null)}
+          className={`w-full ${expanded ? 'h-[calc(100vh-14rem)] min-h-[420px]' : 'h-72'} select-none touch-none ${
+            drag.current ? 'cursor-grabbing' : 'cursor-crosshair'
+          }`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onPointerLeave={() => setHoverIdx(null)}
+          onDoubleClick={() => setView({ count: barCount, offset: 0 })}
         >
-          <title>互動式 K 線與成交量副圖</title>
-          {/* 價格水平格線 */}
+          <title>互動式 K 線與成交量副圖（滾輪縮放、拖曳平移、雙擊還原）</title>
           {yTicks.map((tk) => (
-            <g key={tk.val}>
+            <g key={tk.y}>
               <line
                 x1={padLeft}
                 y1={tk.y}
@@ -185,8 +327,6 @@
               </text>
             </g>
           ))}
-
-          {/* 成交量副圖分隔線與標籤 */}
           <line
             x1={padLeft}
             y1={volTop - 6}
@@ -206,14 +346,13 @@
             VOL
           </text>
 
-          {/* 支撐虛線 */}
-          {(supports || []).map((s) => (
-            <g key={`sup-${s}`}>
+          {levelsS.map((v) => (
+            <g key={`sup-${v}`}>
               <line
                 x1={padLeft}
-                y1={toY(s)}
+                y1={toY(v)}
                 x2={width - padRight}
-                y2={toY(s)}
+                y2={toY(v)}
                 stroke="#10b981"
                 strokeWidth="1"
                 strokeDasharray="4 4"
@@ -221,24 +360,22 @@
               />
               <text
                 x={width - padRight + 4}
-                y={toY(s) + 3}
+                y={toY(v) + 3}
                 fill="#34d399"
                 fontSize="9.5"
                 fontFamily="monospace"
               >
-                S:{s}
+                S:{v}
               </text>
             </g>
           ))}
-
-          {/* 壓力虛線 */}
-          {(resistances || []).map((r) => (
-            <g key={`res-${r}`}>
+          {levelsR.map((v) => (
+            <g key={`res-${v}`}>
               <line
                 x1={padLeft}
-                y1={toY(r)}
+                y1={toY(v)}
                 x2={width - padRight}
-                y2={toY(r)}
+                y2={toY(v)}
                 stroke="#f43f5e"
                 strokeWidth="1"
                 strokeDasharray="4 4"
@@ -246,54 +383,25 @@
               />
               <text
                 x={width - padRight + 4}
-                y={toY(r) + 3}
+                y={toY(v) + 3}
                 fill="#fb7185"
                 fontSize="9.5"
                 fontFamily="monospace"
               >
-                R:{r}
+                R:{v}
               </text>
             </g>
           ))}
 
-          {/* 十字準星垂直線與水平線 */}
-          <line
-            x1={hoverCx}
-            y1={padTop}
-            x2={hoverCx}
-            y2={volTop + volH}
-            stroke="#94a3b8"
-            strokeWidth="1"
-            strokeDasharray="3 3"
-            opacity="0.75"
-          />
-          <line
-            x1={padLeft}
-            y1={hoverCy}
-            x2={width - padRight}
-            y2={hoverCy}
-            stroke="#94a3b8"
-            strokeWidth="1"
-            strokeDasharray="3 3"
-            opacity="0.75"
-          />
-
-          {/* K 線蠟燭與成交量柱狀體 */}
           {bars.map((b, idx) => {
             const cx = padLeft + idx * stepX + stepX / 2;
-            const isUp = b.close >= b.open;
-            const color = isUp ? '#ef4444' : '#10b981';
+            const color = b.close >= b.open ? '#ef4444' : '#10b981';
             const topY = toY(Math.max(b.open, b.close));
-            const botY = toY(Math.min(b.open, b.close));
-            const bodyH = Math.max(botY - topY, 2);
-            const candleW = Math.max(stepX * 0.6, 3);
+            const bodyH = Math.max(toY(Math.min(b.open, b.close)) - topY, 1);
             const vY = toVolY(b.volume || 0);
-            const vH = Math.max(volTop + volH - vY, 1.5);
             const isHovered = idx === activeIdx;
-
             return (
               <g key={b.date}>
-                {/* 高亮選中背景帶 */}
                 {isHovered && (
                   <rect
                     x={padLeft + idx * stepX}
@@ -304,36 +412,31 @@
                     opacity="0.08"
                   />
                 )}
-                {/* 上下影線 */}
                 <line
                   x1={cx}
                   y1={toY(b.high)}
                   x2={cx}
                   y2={toY(b.low)}
                   stroke={color}
-                  strokeWidth={isHovered ? '1.8' : '1.2'}
+                  strokeWidth={isHovered ? 1.8 : stepX < 3 ? 0.8 : 1.2}
                 />
-                {/* 實體蠟燭 */}
                 <rect
                   x={cx - candleW / 2}
                   y={topY}
                   width={candleW}
                   height={bodyH}
                   fill={color}
-                  rx="1"
+                  rx={stepX > 6 ? 1 : 0}
                 />
-                {/* 成交量柱 */}
                 <rect
                   x={cx - candleW / 2}
                   y={vY}
                   width={candleW}
-                  height={vH}
+                  height={Math.max(volTop + volH - vY, 1)}
                   fill={color}
-                  opacity={isHovered ? '0.95' : '0.5'}
-                  rx="1"
+                  opacity={isHovered ? 0.95 : 0.5}
                 />
-                {/* X 軸日期標籤 */}
-                {idx % Math.max(Math.floor(bars.length / 6), 3) === 0 && (
+                {idx % labelEvery === 0 && (
                   <text
                     x={cx}
                     y={height - 6}
@@ -342,25 +445,45 @@
                     fontSize="9.5"
                     fontFamily="monospace"
                   >
-                    {b.date.slice(5)}
+                    {cur.count > 250 ? b.date.slice(0, 7) : b.date.slice(5)}
                   </text>
                 )}
-                {/* 透明滑鼠感應區 */}
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: SVG crosshair hover sensor */}
-                <rect
-                  x={padLeft + idx * stepX}
-                  y={padTop}
-                  width={stepX}
-                  height={volTop + volH - padTop}
-                  fill="transparent"
-                  className="cursor-crosshair"
-                  onMouseEnter={() => setHoverIdx(idx)}
-                />
               </g>
             );
           })}
 
-          {/* MA5 與 MA20 折線 */}
+          <line
+            x1={hoverCx}
+            y1={padTop}
+            x2={hoverCx}
+            y2={volTop + volH}
+            stroke="#94a3b8"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+            opacity="0.75"
+            pointerEvents="none"
+          />
+          <line
+            x1={padLeft}
+            y1={hoverCy}
+            x2={width - padRight}
+            y2={hoverCy}
+            stroke="#94a3b8"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+            opacity="0.75"
+            pointerEvents="none"
+          />
+          {ma60Points && (
+            <polyline
+              fill="none"
+              stroke="#a78bfa"
+              strokeWidth="1.5"
+              points={ma60Points}
+              opacity="0.85"
+              pointerEvents="none"
+            />
+          )}
           {ma20Points && (
             <polyline
               fill="none"
@@ -382,7 +505,36 @@
             />
           )}
         </svg>
+
+        {/* 目前顯示範圍＋全部資料的位置條 */}
+        <div className="space-y-1">
+          <div className="relative h-1.5 bg-slate-800 rounded-full">
+            <div
+              className="absolute h-1.5 bg-sky-500/70 rounded-full"
+              style={{ left: `${(start / total) * 100}%`, width: `${(cur.count / total) * 100}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap justify-between gap-2 text-[10px] text-slate-500">
+            <span>
+              顯示 {bars[0]?.date} ～ {bars[bars.length - 1]?.date}（{cur.count} 根{unit} K，共{' '}
+              {total} 根）
+            </span>
+            <span>
+              滾輪縮放・拖曳左右平移・手機兩指縮放・雙擊還原{expanded ? '・Esc 關閉' : ''}
+            </span>
+          </div>
+        </div>
       </div>
+    );
+    return expanded ? (
+      <>
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: 背景點擊關閉，Esc 也可關閉 */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: 全螢幕背景 */}
+        <div className="fixed inset-0 z-40 bg-black/70" onClick={() => setExpanded(false)} />
+        {chart}
+      </>
+    ) : (
+      chart
     );
   }
 

@@ -27,13 +27,35 @@
     api_key: '',
   });
 
+  // 瀏覽器裡存的所有資料（第三欄：清除後要通知哪些畫面立即更新）
   const DATA_KEYS = [
-    ['tw_us_watchlist_v1', '自選股清單'],
-    ['tw_us_holdings_v1', '我的持股'],
-    ['tw_us_alerts_v1', '提醒'],
-    ['tw_us_cart_v1', '模擬下單暫存匣'],
-    ['tw_us_tour_done_v1', '新手導覽狀態（清除後會再次顯示導覽）'],
+    ['tw_us_watchlist_v1', '自選股清單', null],
+    ['tw_us_holdings_v1', '我的持股', 'portfolio-changed'],
+    ['tw_us_journal_v1', '交易紀錄', 'portfolio-changed'],
+    ['tw_us_rules_v1', '交易檢討產生的個人規則', 'portfolio-changed'],
+    ['tw_us_alerts_v1', '提醒', 'alerts-changed'],
+    ['tw_us_cart_v1', '模擬下單暫存匣', null],
+    ['tw_us_ai_v1', 'AI 連線設定（含金鑰）', 'ai-settings-changed'],
+    ['tw_us_ai_usage_v1', 'AI 用量紀錄', 'ai-usage-changed'],
+    ['tw_us_ai_prices_v1', 'AI 模型單價', 'ai-usage-changed'],
+    ['tw_us_activity_v1', '操作紀錄（瀏覽器端）', 'activity-changed'],
+    ['tw_us_sidebar_v1', '介面偏好：側邊欄收合', null],
+    ['tw_us_mkt_filter_v1', '介面偏好：看盤市場篩選', null],
+    ['tw_us_tour_done_v1', '新手導覽狀態（清除後會再次顯示導覽）', null],
   ];
+  const describe = (k) => {
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw === null) return '沒有資料';
+      const v = JSON.parse(raw);
+      if (Array.isArray(v)) return `${v.length} 筆`;
+      if (v && Array.isArray(v.rules)) return `${v.rules.length} 條`;
+      if (v && Array.isArray(v.profiles)) return `${v.profiles.length} 組連線`;
+      return '已設定';
+    } catch (_e) {
+      return '已設定';
+    }
+  };
 
   function ProfileEditor({ p, onChange, onSave, onCancel }) {
     const [models, setModels] = useState([]);
@@ -315,10 +337,336 @@
     );
   }
 
+  // AI 用量與費用：每次呼叫的 tokens（來自供應商回報）× 你填的單價（美元／每百萬 tokens）
+  function UsagePanel({ cfg }) {
+    const { useAIUsage, usageCost, savePrices, clearUsage } = window.TA;
+    const { usage, prices } = useAIUsage();
+    const [usdTwd, setUsdTwd] = useState(null);
+    const [confirmClear, setConfirmClear] = useState(false);
+    useEffect(() => {
+      fetch('/api/fx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currencies: ['USD'] }),
+      })
+        .then((r) => r.json())
+        .then((d) => setUsdTwd(d.rates?.USD?.rate || null))
+        .catch(() => {});
+    }, []);
+
+    const today = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD（本機時間）
+    const month = today.slice(0, 7);
+    const sum = (list) => {
+      let cost = 0;
+      let unpriced = 0;
+      for (const u of list) {
+        const c = usageCost(u, prices);
+        if (c == null) unpriced += 1;
+        else cost += c;
+      }
+      return {
+        calls: list.length,
+        input: list.reduce((a, u) => a + (u.input_tokens || 0), 0),
+        output: list.reduce((a, u) => a + (u.output_tokens || 0), 0),
+        cost,
+        unpriced,
+      };
+    };
+    const periods = [
+      ['今天', usage.filter((u) => String(u.time).startsWith(today))],
+      ['本月', usage.filter((u) => String(u.time).startsWith(month))],
+      ['全部紀錄', usage],
+    ].map(([label, list]) => [label, sum(list)]);
+    const models = [
+      ...new Map(
+        [
+          ...cfg.profiles
+            .filter((p) => p.model)
+            .map((p) => [p.model, p.type === 'openai_compatible']),
+          ...usage.map((u) => [u.model, !!u.local]),
+        ].reverse(),
+      ),
+    ].reverse();
+    const money = (usd) =>
+      `US$${usd.toFixed(usd < 1 ? 4 : 2)}${usdTwd ? `（約 NT$${(usd * usdTwd).toFixed(usd * usdTwd < 10 ? 2 : 0)}）` : ''}`;
+    const setPrice = (model, field, value) =>
+      savePrices({
+        ...prices,
+        [model]: { ...(prices[model] || {}), [field]: value === '' ? '' : Number(value) },
+      });
+
+    return (
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div>
+          <h3 className="font-bold text-white">💰 AI 用量與費用（估算）</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            每次呼叫 AI 用掉的 tokens 由 AI 供應商回報，記在這個瀏覽器；費用＝輸入 tokens × 輸入單價
+            ＋ 輸出 tokens × 輸出單價。單價請依供應商官網填寫（美元／每百萬
+            tokens），本地模型預設免費。這是估算，實際以供應商帳單為準。
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-2">
+          {periods.map(([label, t]) => (
+            <div key={label} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+              <div className="text-[11px] text-slate-400">{label}</div>
+              <div className="text-lg font-bold font-mono text-emerald-300">{money(t.cost)}</div>
+              <div className="text-[11px] text-slate-400 font-mono">
+                {t.calls} 次・入 {t.input.toLocaleString()}／出 {t.output.toLocaleString()} tokens
+              </div>
+              {t.unpriced > 0 && (
+                <div className="text-[11px] text-amber-300">{t.unpriced} 次因未設定單價未計入</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div className="text-xs text-slate-300 font-semibold mb-1">
+            各模型單價（美元／每百萬 tokens）
+          </div>
+          {models.length === 0 ? (
+            <div className="text-xs text-slate-500">還沒有 AI 連線或呼叫紀錄。</div>
+          ) : (
+            <div className="space-y-1.5">
+              {models.map(([model, local]) => (
+                <div key={model} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-mono text-slate-200 min-w-[12rem] truncate">{model}</span>
+                  {local && <span className="text-[10px] text-emerald-400">本地（預設免費）</span>}
+                  <label className="flex items-center gap-1 text-slate-400">
+                    輸入
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={prices[model]?.in ?? ''}
+                      placeholder={local ? '0' : '未設定'}
+                      onChange={(e) => setPrice(model, 'in', e.target.value)}
+                      className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1 text-slate-400">
+                    輸出
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={prices[model]?.out ?? ''}
+                      placeholder={local ? '0' : '未設定'}
+                      onChange={(e) => setPrice(model, 'out', e.target.value)}
+                      className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {usage.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-slate-300 font-semibold">最近 20 次呼叫</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!confirmClear) return setConfirmClear(true);
+                  clearUsage();
+                  setConfirmClear(false);
+                }}
+                className="text-[11px] px-2 py-1 rounded bg-rose-950/50 border border-rose-800/60 text-rose-200 cursor-pointer"
+              >
+                {confirmClear ? '再點一次確認清除紀錄' : '清除用量紀錄'}
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] font-mono">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="text-left font-normal py-1">時間</th>
+                    <th className="text-left font-normal">功能</th>
+                    <th className="text-left font-normal">模型</th>
+                    <th className="text-right font-normal">輸入</th>
+                    <th className="text-right font-normal">輸出</th>
+                    <th className="text-right font-normal">估算費用</th>
+                  </tr>
+                </thead>
+                <tbody className="text-slate-300">
+                  {usage
+                    .slice(-20)
+                    .reverse()
+                    .map((u, i) => {
+                      const c = usageCost(u, prices);
+                      return (
+                        <tr key={`${u.time}-${i}`} className="border-t border-slate-800/60">
+                          <td className="py-1 whitespace-nowrap">{String(u.time).slice(5, 16)}</td>
+                          <td className="font-sans">{u.label}</td>
+                          <td className="truncate max-w-[10rem]">{u.model}</td>
+                          <td className="text-right">{u.input_tokens?.toLocaleString() ?? '—'}</td>
+                          <td className="text-right">{u.output_tokens?.toLocaleString() ?? '—'}</td>
+                          <td className="text-right">
+                            {!u.reported
+                              ? '未回報'
+                              : c == null
+                                ? '未設定單價'
+                                : `US$${c.toFixed(4)}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 操作紀錄：本機（瀏覽器）與伺服器檔案 logs/activity-YYYYMMDD.jsonl
+  function ActivityPanel() {
+    const local = window.TA.useActivityLog();
+    const [src, setSrc] = useState('local');
+    const [onlyErr, setOnlyErr] = useState(false);
+    const [server, setServer] = useState(null);
+    const [confirmClear, setConfirmClear] = useState(false);
+    useEffect(() => {
+      if (src !== 'server') return;
+      fetch('/api/log/recent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 300, errors_only: onlyErr }),
+      })
+        .then((r) => r.json())
+        .then((d) => setServer(d.events || []))
+        .catch(() => setServer([]));
+    }, [src, onlyErr]);
+    const rows = (src === 'local' ? [...local].reverse() : server || []).filter(
+      (e) => !onlyErr || e.level === 'error',
+    );
+    const describe = (e) =>
+      e.type === 'click'
+        ? `點擊「${e.label}」${e.symbol ? `（${e.symbol}）` : ''}${e.checked !== undefined ? `→ ${e.checked ? '勾選' : '取消'}` : ''}`
+        : e.type === 'select'
+          ? `選擇 ${e.label}：${e.value}`
+          : e.type === 'page'
+            ? `切換到 ${e.to}`
+            : e.type === 'api'
+              ? `${e.path}${e.symbol ? ` ${e.symbol}` : ''} → ${e.status ?? ''}${e.ms != null ? ` ${e.ms}ms` : ''}${
+                  e.error ? `：${e.error}` : ''
+                }${e.ai_tokens ? `（AI tokens ${JSON.stringify(e.ai_tokens)}）` : ''}`
+              : e.type === 'notice'
+                ? `提示：${e.message}`
+                : e.type === 'error'
+                  ? `錯誤：${e.message} ${e.source || ''}`
+                  : e.type === 'open'
+                    ? `開啟系統（${e.screen}）`
+                    : JSON.stringify(e);
+    const download = () => {
+      const blob = new Blob([local.map((e) => JSON.stringify(e)).join('\n')], {
+        type: 'application/json',
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `操作紀錄_${new Date().toISOString().slice(0, 10)}.jsonl`;
+      a.click();
+    };
+    return (
+      <div
+        className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3"
+        data-no-log
+      >
+        <div>
+          <h3 className="font-bold text-white">📝 操作紀錄</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            記錄點擊、換頁、API
+            呼叫結果（自動更新的只記失敗）、錯誤與畫面提示，不記錄任何輸入內容或金鑰。
+            瀏覽器保留最近 3000 筆；同時寫到本機伺服器的{' '}
+            <span className="font-mono">logs/activity-日期.jsonl</span>
+            （保留 30 天，伺服器自己的 API 錯誤也在裡面），遇到問題時可以把檔案提供給開發者追查。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {[
+            ['local', `這個瀏覽器（${local.length} 筆）`],
+            ['server', '伺服器檔案'],
+          ].map(([k, label]) => (
+            <button
+              type="button"
+              key={k}
+              onClick={() => setSrc(k)}
+              className={`px-3 py-1.5 rounded-lg border cursor-pointer ${
+                src === k
+                  ? 'bg-sky-500/20 border-sky-400 text-white'
+                  : 'border-slate-700 text-slate-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <label className="flex items-center gap-1 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={onlyErr}
+              onChange={(e) => setOnlyErr(e.target.checked)}
+            />
+            只看錯誤
+          </label>
+          <button
+            type="button"
+            onClick={download}
+            className="ml-auto px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 cursor-pointer"
+          >
+            下載本機紀錄
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirmClear) return setConfirmClear(true);
+              window.TA.clearActivity();
+              setConfirmClear(false);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-rose-950/50 border border-rose-800/60 text-rose-200 cursor-pointer"
+          >
+            {confirmClear ? '再點一次確認清除' : '清除本機紀錄'}
+          </button>
+        </div>
+        <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/60">
+          {rows.length === 0 ? (
+            <div className="text-xs text-slate-500 p-3">
+              {src === 'server' && server === null ? '載入中…' : '沒有紀錄'}
+            </div>
+          ) : (
+            <table className="w-full text-[11px]">
+              <tbody>
+                {rows.slice(0, 300).map((e, i) => (
+                  <tr key={`${e.t}-${i}`} className="border-t border-slate-800/60 align-top">
+                    <td className="px-2 py-1 font-mono text-slate-500 whitespace-nowrap">
+                      {String(e.t).slice(5, 19).replace('T', ' ')}
+                    </td>
+                    <td className="px-1 py-1 text-slate-500 whitespace-nowrap">
+                      {e.src === 'server' ? '伺服器' : e.page}
+                    </td>
+                    <td
+                      className={`px-2 py-1 ${e.level === 'error' ? 'text-rose-300' : 'text-slate-300'}`}
+                    >
+                      {describe(e)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function SettingsPage() {
     const cfg = useAISettings();
     const [editing, setEditing] = useState(null);
     const [cleared, setCleared] = useState({});
+    const [restoreMsg, setRestoreMsg] = useState('');
     const save = (next) => saveAI(next);
     const saveProfile = () => {
       const exists = cfg.profiles.some((x) => x.id === editing.id);
@@ -485,36 +833,106 @@
           ))}
         </div>
 
+        <UsagePanel cfg={cfg} />
+
+        <ActivityPanel />
+
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
           <h3 className="font-bold text-white">🧹 資料管理</h3>
           <p className="text-xs text-slate-400">
-            以下資料只存在你的瀏覽器。點一次會變成「再點一次確認」。
+            以下資料只存在這個瀏覽器（換電腦或換瀏覽器不會跟著走，可以先下載備份再到新電腦還原）。清除要點兩次確認。
           </p>
           <div className="flex flex-wrap gap-2 text-xs">
-            {DATA_KEYS.map(([k, label]) => (
-              <button
-                type="button"
-                key={k}
-                onClick={() => {
-                  if (!cleared[k]) {
-                    setCleared({ ...cleared, [k]: 'confirm' });
-                    return;
-                  }
+            <button
+              type="button"
+              onClick={() => {
+                const data = {};
+                for (const [k] of DATA_KEYS) {
+                  const v = localStorage.getItem(k);
+                  if (v !== null) data[k] = v;
+                }
+                const blob = new Blob(
+                  [
+                    JSON.stringify(
+                      { app: 'stock-dashboard', savedAt: new Date().toISOString(), data },
+                      null,
+                      2,
+                    ),
+                  ],
+                  {
+                    type: 'application/json',
+                  },
+                );
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `我的資料備份_${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+              }}
+              className="px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white cursor-pointer"
+            >
+              ⬇️ 下載備份（含 AI 金鑰，請妥善保存）
+            </button>
+            <label className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 cursor-pointer">
+              ⬆️ 從備份還原
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
                   try {
-                    localStorage.removeItem(k);
-                  } catch (_e) {
-                    /* ignore */
+                    const j = JSON.parse(await f.text());
+                    const known = new Set(DATA_KEYS.map(([k]) => k));
+                    const entries = Object.entries(j.data || {}).filter(([k]) => known.has(k));
+                    if (!entries.length) throw new Error('檔案裡沒有可還原的資料');
+                    for (const [k, v] of entries)
+                      localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+                    setRestoreMsg(`已還原 ${entries.length} 項資料，重新載入中…`);
+                    setTimeout(() => window.location.reload(), 800);
+                  } catch (err) {
+                    setRestoreMsg(`還原失敗：${err.message}`);
                   }
-                  setCleared({ ...cleared, [k]: 'done' });
                 }}
-                className="px-3 py-1.5 rounded-lg bg-rose-950/50 border border-rose-800/60 text-rose-200 hover:bg-rose-900/60 cursor-pointer"
+              />
+            </label>
+            {restoreMsg && <span className="self-center text-amber-300">{restoreMsg}</span>}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2 text-xs">
+            {DATA_KEYS.map(([k, label, evt]) => (
+              <div
+                key={k}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-slate-800 bg-slate-950/60"
               >
-                {cleared[k] === 'done'
-                  ? '✅ 已清除（重新整理生效）'
-                  : cleared[k] === 'confirm'
-                    ? `再點一次確認清除：${label}`
-                    : `清除${label}`}
-              </button>
+                <span className="text-slate-200">
+                  {label}
+                  <span className="ml-2 text-slate-500">
+                    {cleared[k] === 'done' ? '已清除' : describe(k)}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={cleared[k] === 'done' || localStorage.getItem(k) === null}
+                  onClick={() => {
+                    if (cleared[k] !== 'confirm') {
+                      setCleared({ ...cleared, [k]: 'confirm' });
+                      return;
+                    }
+                    try {
+                      if (k === window.TA.LS_ACTIVITY) window.TA.clearActivity(); // 連記憶體裡的一起清
+                      localStorage.removeItem(k);
+                    } catch (_e) {
+                      /* ignore */
+                    }
+                    if (evt) window.dispatchEvent(new Event(evt)); // 相關畫面立即更新
+                    setCleared({ ...cleared, [k]: 'done' });
+                  }}
+                  className="shrink-0 px-2.5 py-1 rounded bg-rose-950/50 border border-rose-800/60 text-rose-200 hover:bg-rose-900/60 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  {cleared[k] === 'confirm' ? '再點一次確認' : '清除'}
+                </button>
+              </div>
             ))}
           </div>
         </div>

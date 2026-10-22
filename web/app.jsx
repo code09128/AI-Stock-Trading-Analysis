@@ -1,4 +1,4 @@
-const { useState, useEffect, useCallback, useRef } = React;
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
 const { NAV_ITEMS, NavIcon, NEWS_PRESETS, DEFAULT_HOLDINGS, DEFAULT_JOURNAL } = window.TA;
 function App() {
   const [activeTab, setActiveTab] = useState('watch');
@@ -66,15 +66,20 @@ function App() {
   const [testSuiteReport, setTestSuiteReport] = useState(null);
 
   const showToast = useCallback((msg) => {
+    // 畫面提示也記到操作紀錄；含失敗／錯誤字樣的標成錯誤，方便篩選
+    window.TA.logEvent?.(
+      'notice',
+      { message: String(msg).slice(0, 200) },
+      /失敗|錯誤|無法|⚠️/.test(String(msg)) ? 'error' : 'info',
+    );
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 2600);
   }, []);
 
   // 技術分析 分析與盤中動態跳動
   const runMod1 = useCallback(
-    async ({ overrideTicker, overrideBarCount, overrideTimeframe, useAI = true } = {}) => {
+    async ({ overrideTicker, overrideTimeframe, useAI = true } = {}) => {
       const targetTicker = overrideTicker || m1Ticker;
-      const targetBars = overrideBarCount || m1BarCount;
       const targetTf = overrideTimeframe || m1Timeframe;
       setM1Loading(true);
       try {
@@ -83,7 +88,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ticker: targetTicker,
-            bar_count: targetBars,
+            bar_count: 500, // 一次拿約 2 年，圖表在前端縮放／平移（targetBars 只決定預設顯示幾根）
             timeframe: targetTf,
             ai: (() => {
               const cfg = window.TA.loadAI();
@@ -188,6 +193,11 @@ function App() {
   }, [m3Form, showToast]);
 
   const runMod4 = useCallback(async () => {
+    if (!m4Holdings.some((h) => String(h.symbol || '').trim() && Number(h.shares) > 0)) {
+      setM4Data(null); // 沒有持股時不留著上一次的結果，避免誤會
+      showToast('目前沒有可計算的持股：請至少輸入一檔代號，且股數大於 0');
+      return;
+    }
     setM4Loading(true);
     try {
       const targetWeights = { CASH: Number(m4CashPct) || 0 };
@@ -291,7 +301,7 @@ function App() {
     sendHoldings(
       mine.map((h) => ({
         symbol: h.symbol,
-        market: window.TA.isTW(h.symbol) ? 'TW' : 'US',
+        market: window.TA.marketOf(h.symbol),
         shares: h.shares,
         price: h.cost,
       })),
@@ -400,22 +410,143 @@ function App() {
     showToast('已將各分頁參數重置為出廠預設值');
   };
 
-  const exportSnapshotJson = JSON.stringify(
-    {
+  // 匯出報告：只在開啟匯出視窗時才組資料（避免每 5 秒更新都重算一次大 JSON）
+  const exportReport = useMemo(() => {
+    if (!isExportModalOpen) return null;
+    const mine = window.TA.loadPortfolio();
+    const bt = m3Data?.backtest_result;
+    const report = {
       exportedAt: new Date().toISOString(),
-      health,
-      mod1_snapshot: m1Data?.snapshot || null,
-      mod1_decision: m1Data?.llm_result?.decision_payload || null,
-      mod2_news: m2Data || null,
-      mod3_backtest_summary: m3Data?.backtest_result || null,
-      mod4_risk_summary: m4Data?.rebalance_verification || null,
-      mod5_coach_rules: m5Data?.personalized_3_rules || null,
-    },
-    null,
-    2,
-  );
+      note: '本報告由程式計算產生；AI 內容與規則訊號僅供參考，不構成投資建議。',
+      fx: health && {
+        usd_twd: health.fx_usd_twd,
+        source: health.fx_source,
+        warning: health.fx_warning,
+      },
+      technical: m1Data && {
+        snapshot: m1Data.snapshot,
+        decision: m1Data.llm_result?.decision_payload,
+        engine: m1Data.llm_result?.execution_mode,
+        audit: m1Data.llm_result?.anti_hallucination_audit,
+        chips: window.TA.lastChips?.symbol === m1Data.snapshot?.symbol ? window.TA.lastChips : null,
+      },
+      news: m2Data || null,
+      backtest: bt && {
+        symbol: m3Data.symbol,
+        currency: m3Data.currency,
+        period: m3Data.period,
+        params: m3Data.strategy_params,
+        warnings: m3Data.strategy_warnings,
+        result: { ...bt, trades: undefined, trades_detail: undefined },
+        trade_count: (bt.trades_detail || bt.trades || []).length,
+      },
+      portfolio_risk: m4Data && {
+        usd_twd_rate: m4Data.usd_twd_rate,
+        fx_rates: m4Data.fx_rates,
+        fx_source: m4Data.fx_source,
+        valuation: m4Data.portfolio_valuation,
+        lookthrough_exposure_pct: m4Data.lookthrough_exposure_pct,
+        lookthrough_sources: m4Data.lookthrough_sources,
+        beta: {
+          used: m4Data.portfolio_beta_used,
+          source: m4Data.portfolio_beta_source,
+          detail: m4Data.beta_detail,
+        },
+        crash_20pct_stress_test: m4Data.crash_20pct_stress_test,
+        historical_replay: m4Data.historical_replay,
+        rebalance: m4Data.rebalance_verification,
+      },
+      journal_coach: m5Data && {
+        source: m5Source === 'mine' ? '我的交易紀錄' : '內建範例',
+        statistics: m5Data.statistics,
+        biases: m5Data.detected_biases,
+        rules: m5Data.personalized_3_rules,
+      },
+      my_holdings: mine.holdings,
+      my_journal: mine.journal,
+    };
+    const json = JSON.stringify(report, null, 2);
+    const d = report.technical?.decision;
+    const snap = report.technical?.snapshot;
+    const pr = report.portfolio_risk;
+    const lines = [
+      `# 股票分析報告（${new Date().toLocaleString('zh-TW', { hour12: false })}）`,
+      '',
+      `> ${report.note}`,
+      '',
+      report.fx
+        ? `- 美元匯率：${report.fx.usd_twd}（${report.fx.source}）${report.fx.warning ? `⚠️ ${report.fx.warning}` : ''}`
+        : '',
+      '',
+      '## 技術分析',
+      snap
+        ? [
+            `- 標的：${snap.symbol}　最新價：${snap.latest_close}（${snap.latest_date}，${snap.data_source}）`,
+            `- 趨勢評分：${snap.trend_score?.total ?? '--'}/100（${snap.trend_score?.signal_label ?? '--'}）`,
+            `- 決策：${d?.action}　${d?.action === 'SELL' ? '賣出／失效／下檔' : '進場／停損／目標'}：${d?.entry_price} / ${d?.stop_loss_price} / ${d?.take_profit_target}`,
+            `- 支撐：${(snap.support_levels || []).join('、')}　壓力：${(snap.resistance_levels || []).join('、')}`,
+            `- 失效條件：${d?.invalidation_criteria ?? '--'}`,
+            report.technical.chips?.notes?.length
+              ? `- 籌碼觀察：${report.technical.chips.notes.join('；')}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : '（尚未分析）',
+      '',
+      '## 策略回測',
+      report.backtest
+        ? `- ${report.backtest.symbol}（${report.backtest.period}，本金幣別 ${report.backtest.currency}）：總報酬 ${report.backtest.result.total_return_pct}%、勝率 ${report.backtest.result.win_rate}、最大回落 ${report.backtest.result.max_drawdown}、交易 ${report.backtest.trade_count} 筆`
+        : '（尚未回測）',
+      '',
+      '## 組合風控',
+      pr
+        ? [
+            `- 總市值：NT$ ${Math.round(pr.valuation?.total_value_twd || 0).toLocaleString()}`,
+            `- 組合 Beta：${pr.beta.used}（${pr.beta.source}）`,
+            `- 大盤 -20% 預估：${pr.crash_20pct_stress_test?.expected_portfolio_drawdown_pct}%`,
+            `- 穿透曝險：${Object.entries(pr.lookthrough_exposure_pct || {})
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8)
+              .map(([k, v]) => `${k} ${v}%`)
+              .join('、')}`,
+          ].join('\n')
+        : '（尚未計算）',
+      '',
+      '## 交易檢討',
+      report.journal_coach
+        ? (report.journal_coach.rules || [])
+            .map(
+              (r, i) =>
+                `${i + 1}. ${r.rule_name || r.name || ''}：${r.condition || ''} → ${r.action || ''}`,
+            )
+            .join('\n') || '（沒有規則）'
+        : '（尚未診斷）',
+    ];
+    return { json, markdown: lines.filter((x) => x !== null).join('\n') };
+  }, [isExportModalOpen, health, m1Data, m2Data, m3Data, m4Data, m5Data, m5Source]);
 
+  const downloadText = (text, filename, type) => {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const stamp = () => {
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}`;
+  };
+
+  // 操作紀錄：目前在哪一頁、換頁
+  useEffect(() => {
+    window.TA.currentPage = activeTab;
+    window.TA.logEvent?.('page', { to: activeTab });
+  }, [activeTab]);
   window.TA.goTab = handleSwitchTab;
+  window.TA.toast = showToast; // 背景任務（例如 AI 解讀）完成時用
   // 任何頁面都能要求「分析這檔」（看盤持股列、技術分析的持股切換）
   window.TA.analyzeSymbol = (sym) => {
     setM1Ticker(sym);
@@ -516,7 +647,7 @@ function App() {
           </div>
           {expanded && (
             <div className="min-w-0">
-              <div className="text-sm font-bold text-white truncate">台美股交易分析</div>
+              <div className="text-sm font-bold text-white truncate">股票交易分析</div>
               <div className="text-[10px] text-emerald-300">● 真實資料</div>
             </div>
           )}
@@ -736,7 +867,7 @@ function App() {
         >
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-white">📤 匯出量化分析報告 (JSON)</h3>
+              <h3 className="text-lg font-bold text-white">📤 匯出分析報告</h3>
               <button
                 type="button"
                 onClick={() => setIsExportModalOpen(false)}
@@ -745,19 +876,50 @@ function App() {
                 ✕ 關閉
               </button>
             </div>
-            <pre className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-emerald-300 overflow-y-auto flex-1">
-              {exportSnapshotJson}
+            <p className="text-[11px] text-slate-400 mb-2">
+              內容包含各頁目前的分析結果（技術分析＋籌碼、新聞、回測、組合風控、交易檢討）與你的持股、交易紀錄。下方預覽為文字摘要。
+            </p>
+            <pre className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-emerald-300 overflow-y-auto flex-1 whitespace-pre-wrap">
+              {exportReport?.markdown}
             </pre>
-            <div className="flex justify-end gap-3 mt-4">
+            <div className="flex flex-wrap justify-end gap-2 mt-4">
               <button
                 type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(exportSnapshotJson);
-                  showToast('已複製量化分析報告 JSON！');
-                }}
+                onClick={() =>
+                  downloadText(
+                    exportReport.markdown,
+                    `分析報告_${stamp()}.md`,
+                    'text/markdown;charset=utf-8',
+                  )
+                }
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+              >
+                下載摘要 (.md)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadText(
+                    exportReport.json,
+                    `分析報告_${stamp()}.json`,
+                    'application/json;charset=utf-8',
+                  )
+                }
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+              >
+                下載完整資料 (.json)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  navigator.clipboard
+                    .writeText(exportReport.json)
+                    .then(() => showToast('已複製完整資料（JSON）'))
+                    .catch(() => showToast('瀏覽器不允許複製，請改用「下載完整資料」'))
+                }
                 className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
               >
-                複製 JSON 內容
+                複製 JSON
               </button>
             </div>
           </div>
@@ -765,6 +927,9 @@ function App() {
       )}
 
       {/* Toast */}
+      {/* 全站提醒引擎：不論在哪一頁都檢查提醒 */}
+      <window.TA.AlertWatcher say={showToast} />
+
       {toastMsg && (
         <div className="fixed bottom-6 right-6 z-50 bg-emerald-950/95 border border-emerald-500/40 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-medium">
           <span>✅</span>

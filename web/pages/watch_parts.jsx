@@ -114,7 +114,7 @@
             本機 Python 伺服器（不是瀏覽器）向公開網站發出 HTTP 請求，
             {q.market === 'TW'
               ? '台股走證交所 MIS 即時行情（上市 tse_／上櫃 otc_ 都會試）'
-              : '美股走 Yahoo Finance Chart API'}
+              : `${window.TA.marketName(q.symbol)}走 Yahoo Finance Chart API（幣別 ${q.currency || '--'}）`}
             ，回傳的是 JSON，不是去解析網頁 HTML。
           </li>
           <li>伺服器整理欄位（價格、昨收、五檔…）後回傳，並有 3 秒快取避免被對方限流。</li>

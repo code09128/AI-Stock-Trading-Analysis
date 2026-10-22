@@ -8,6 +8,8 @@
     readLS,
     writeLS,
     isTW,
+    currencyOf,
+    marketName,
     normSym,
     baseCode,
     fmt,
@@ -55,7 +57,8 @@
     const setHoldings = window.TA.setHoldings;
     const [holdForm, setHoldForm] = useState({ symbol: '', shares: '', cost: '' });
     const [csvText, setCsvText] = useState('');
-    const [fx, setFx] = useState(null);
+    const [fx, setFx] = useState({}); // 幣別 -> 兌台幣匯率
+    const [fxWarn, setFxWarn] = useState(null);
     const searchRef = useRef(null);
     const listRef = useRef(null);
     const [order, setOrder] = useState({
@@ -103,7 +106,7 @@
     }, []);
     const [overviewRows, setOverviewRows] = useState({});
     const [overviewLoading, setOverviewLoading] = useState(false);
-    const { alerts, setAlerts, log: alertLog } = useAlerts({ quotes, overview: overviewRows, say });
+    const { alerts, setAlerts, log: alertLog } = useAlerts(); // 檢查由 App 上的 AlertWatcher 負責
 
     useEffect(() => writeLS(LS_WATCH, watch), [watch]);
     useEffect(() => writeLS(LS_CART, cart), [cart]);
@@ -191,13 +194,46 @@
         .catch(() => {});
     }, [sparkKey]);
 
-    // 匯率（持股換算台幣用）
+    // 匯率（持股換算台幣用）：依持股實際幣別向後端要各幣別兌台幣匯率，每 5 分鐘更新
+    const holdCurrencies = [
+      ...new Set(
+        holdings
+          .map((h) => quotes[baseCode(h.symbol)]?.currency || currencyOf(h.symbol))
+          .filter((c) => c && c !== 'TWD'),
+      ),
+    ]
+      .sort()
+      .join(',');
     useEffect(() => {
-      fetch('/api/health')
-        .then((r) => r.json())
-        .then((d) => setFx(d.fx_usd_twd || null))
-        .catch(() => {});
-    }, []);
+      if (!holdCurrencies) {
+        setFx({});
+        setFxWarn(null);
+        return undefined;
+      }
+      let stop = false;
+      const load = () =>
+        fetch('/api/fx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currencies: holdCurrencies.split(',') }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (stop) return;
+            setFx(Object.fromEntries(Object.entries(d.rates || {}).map(([c, r]) => [c, r.rate])));
+            const warns = Object.values(d.rates || {})
+              .map((r) => r.warning)
+              .filter(Boolean);
+            setFxWarn(warns.length ? warns.join('；') : null);
+          })
+          .catch(() => {});
+      load();
+      const id = setInterval(load, 300000);
+      return () => {
+        stop = true;
+        clearInterval(id);
+      };
+    }, [holdCurrencies]);
 
     // 選中標的的當日分時圖，每 30 秒更新
     useEffect(() => {
@@ -221,9 +257,8 @@
     }, [selected]);
 
     // 技術總覽 / RSI 提醒用的指標（後端快取 5 分鐘）
-    const needOverview =
-      listTab === 'overview' || alerts.some((a) => a.active && a.type.startsWith('rsi'));
-    const ovKey = [...new Set([...watch, ...alerts.map((a) => a.symbol)])].join(',');
+    const needOverview = listTab === 'overview';
+    const ovKey = watch.join(',');
     useEffect(() => {
       if (!needOverview) return undefined;
       let stop = false;
@@ -296,18 +331,21 @@
         holdings.map((h) => {
           const hq = quotes[baseCode(h.symbol)];
           const price = hq?.price;
-          const mult = isTW(h.symbol) ? 1 : fx || 0;
+          const currency = hq?.currency || currencyOf(h.symbol);
+          // 每 1 單位計價幣別＝幾台幣；匯率還沒拿到時為 null（不計入台幣合計，避免算出 0 元）
+          const mult = currency === 'TWD' ? 1 : (fx?.[currency] ?? null);
           const value = price != null ? price * h.shares : null;
           const cost = h.cost * h.shares;
           return {
             ...h,
             quote: hq,
             price,
+            currency,
             value,
             pnl: value != null ? value - cost : null,
             pnlPct: value != null && cost ? ((value - cost) / cost) * 100 : null,
-            valueTwd: value != null ? value * (isTW(h.symbol) ? 1 : mult) : null,
-            costTwd: cost * (isTW(h.symbol) ? 1 : mult),
+            valueTwd: value != null && mult != null ? value * mult : null,
+            costTwd: mult != null ? cost * mult : null,
           };
         }),
       [holdings, quotes, fx],
@@ -620,7 +658,7 @@
                 {[
                   ['ALL', '🌐 全部'],
                   ['TW', '🇹🇼 台股'],
-                  ['INTL', '🇺🇸 美股／海外'],
+                  ['INTL', '🌏 美股／海外'],
                 ].map(([k, label]) => (
                   <button
                     type="button"
@@ -818,7 +856,15 @@
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-500">
-                        美股以 USD/TWD {fx ?? '--'} 換算
+                        {holdCurrencies
+                          ? `海外持股以即時匯率換算台幣：${holdCurrencies
+                              .split(',')
+                              .map((c) => `${c} ${fx?.[c] ?? '--'}`)
+                              .join(
+                                '、',
+                              )}${holdCurrencies.includes('GBp') ? '（GBp＝英國便士，0.01 英鎊）' : ''}`
+                          : '全部為台股'}
+                        {fxWarn && <span className="text-amber-300">（⚠️ {fxWarn}）</span>}
                         {holdTotals.missing ? `；${holdTotals.missing} 檔查無即時價未計入` : ''}
                       </div>
                     </div>
@@ -1036,7 +1082,7 @@
                         <span className="text-2xl font-bold text-white">{q.name}</span>
                         <span className="mono text-sm text-slate-400">{q.symbol}</span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-sky-300">
-                          {tw ? '台股' : '美股'}
+                          {marketName(selected)}
                         </span>
                       </div>
                       {q.error ? (
@@ -1089,7 +1135,11 @@
                     <Stat
                       label={`成交量（${q.volume_unit || ''}）`}
                       value={fmt(q.volume, 0)}
-                      tip={tw ? '台股 1 張 = 1000 股' : '美股以股為單位'}
+                      tip={
+                        tw
+                          ? '台股 1 張 = 1000 股'
+                          : `${marketName(selected)}以股為單位（實際交易所可能有每手最少股數）`
+                      }
                     />
                     {tw ? (
                       <Stat
@@ -1191,7 +1241,7 @@
                     <div className="text-xs text-slate-500 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2">
                       {tw
                         ? '此時段沒有五檔資料（可能尚未開盤或無掛單）。'
-                        : 'ℹ️ 美股的公開免費資料源不提供五檔與內外盤，這裡不顯示（不會用假資料補上）。'}
+                        : `ℹ️ ${marketName(selected)}的公開免費資料源不提供五檔與內外盤，這裡不顯示（不會用假資料補上）。`}
                     </div>
                   )}
 

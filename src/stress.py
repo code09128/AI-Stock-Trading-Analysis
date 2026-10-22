@@ -57,7 +57,7 @@ def historical_stress(holdings: List[Dict[str, Any]], usd_twd: float) -> Dict[st
             s = str(h["symbol"])
             if d in series[s]:
                 last[s] = series[s][d]
-            mult = 1.0 if h.get("market", "TW").upper() == "TW" else usd_twd
+            mult = h.get("fx_rate") or (1.0 if h.get("market", "TW").upper() == "TW" else usd_twd)
             total += last.get(s, 0.0) * float(h["shares"]) * mult
         values.append(total)
     if len(values) < 40:
@@ -89,5 +89,5 @@ def historical_stress(holdings: List[Dict[str, Any]], usd_twd: float) -> Dict[st
         "worst_20d_window": f"{dates[w_pair[0]]} → {dates[w_pair[1]]}",
         "worst_20d_loss_twd": round(now * worst20, 0),
         "missing": missing,
-        "note": "以目前持股數量回推；假設匯率不變。歷史不代表未來，極端行情可能更大。",
+        "note": "以目前持股數量回推；各幣別假設匯率不變（用目前匯率換算）。歷史不代表未來，極端行情可能更大。",
     }

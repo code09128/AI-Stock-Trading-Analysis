@@ -5,7 +5,7 @@ ETF / 個股真實基本面資料層 (etf_data.py) — 取代原本人工維護�
 - 定期定額交易戶數排行（前 20 名 ETF）：TWSE OpenAPI /ETFReport/ETFRank
 - 近 12 個月配息 → 殖利率：Yahoo Finance Chart API (events=div) 的實際配息紀錄 ÷ 現價（自行計算）
 - ETF 前十大成分股：Yahoo Finance quoteSummary topHoldings（需 cookie + crumb）
-- Beta：近 1 年日報酬 vs 大盤（台股 ^TWII、美股 ^GSPC）的 cov/var（自行計算）
+- Beta：近 1 年日報酬 vs 該市場大盤（台 ^TWII、美 ^GSPC、港 ^HSI、日 ^N225…，見 markets.py）的 cov/var（自行計算）
 資料取不到時回傳 None，由呼叫端顯示「無資料」，不會填假數字。快取 6 小時。
 """
 
@@ -18,6 +18,7 @@ import urllib.parse
 import urllib.request
 
 from src import quote_provider as qp
+from src import markets
 from src.data_adapter import DualMarketDataAdapter
 
 TWSE_OPENAPI = "https://openapi.twse.com.tw/v1"
@@ -46,7 +47,7 @@ def _cached(key: str, loader, ttl: int = TTL):
 
 def _yahoo_candidates(symbol: str) -> List[str]:
     n = DualMarketDataAdapter.normalize_symbol(symbol)
-    if n["market"] == "US":
+    if n["market"] != "TW":  # 台股以外：Yahoo 代號就是正規化後的 symbol（含後綴）
         return [n["symbol"]]
     base = n["raw_code"]
     return [f"{base}.TW", f"{base}.TWO"]
@@ -166,7 +167,7 @@ def calc_beta(symbol: str) -> Optional[Dict[str, Any]]:
 
     def load():
         norm = DualMarketDataAdapter.normalize_symbol(symbol)
-        bench = "^TWII" if norm["market"] == "TW" else "^GSPC"
+        bench = markets.info(norm["market"])["index"]  # 各市場自己的大盤（台 ^TWII、美 ^GSPC、港 ^HSI…）
         ad = DualMarketDataAdapter()
         bench_bars = ad._fetch_from_yahoo(bench, days=250)
         bars = None

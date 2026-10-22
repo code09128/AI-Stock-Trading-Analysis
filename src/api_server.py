@@ -30,7 +30,7 @@ from src.portfolio_risk import PortfolioRiskManager
 from src.journal_coach import JournalCoach, JournalEntry
 from src import quote_provider
 from src.etf_reference import ETF_POOL
-from src import etf_data, chart_data, news_feed, stress, stock_info, ai_client, chip_data, finmind
+from src import etf_data, chart_data, news_feed, stress, stock_info, ai_client, chip_data, finmind, market_calendar, fx, markets, ai_context, activity_log
 import time
 
 
@@ -88,6 +88,58 @@ WATCHLIST_NAMES = {
     "0055": "元大MSCI金融",
 }
 
+def _hold_code(symbol: str) -> str:
+    """持股比對用的代號：台股去掉 .TW／.TWO（2330），其他市場保留後綴（0700.HK、7203.T），避免跨市場撞號。"""
+    return DualMarketDataAdapter.normalize_symbol(str(symbol))["raw_code"]
+
+
+def arg_num(payload: Dict[str, Any], key: str, default: float, label: str, integer: bool = False,
+            lo: float = None, hi: float = None) -> float:
+    """讀取數字參數；不是數字或超出範圍時拋出可直接顯示給使用者的 ValueError（API 回 400）。"""
+    raw = payload.get(key, default)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = default
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"「{label}」必須是數字（收到「{raw}」）") from None
+    if val != val or val in (float("inf"), float("-inf")):
+        raise ValueError(f"「{label}」必須是有效數字")
+    if integer:
+        val = int(round(val))
+    if (lo is not None and val < lo) or (hi is not None and val > hi):
+        rng = f"{lo:g}～{hi:g}" if lo is not None and hi is not None else (f"≥ {lo:g}" if lo is not None else f"≤ {hi:g}")
+        raise ValueError(f"「{label}」需在 {rng} 之間（收到 {raw}）")
+    return val
+
+
+def arg_ticker(payload: Dict[str, Any], *keys: str, default: str = "2330.TW") -> str:
+    """讀取股票代號；有帶欄位但是空白時回白話錯誤，而不是默默改分析 2330。"""
+    for k in keys:
+        if k in payload:
+            t = str(payload.get(k) or "").strip()
+            if not t:
+                raise ValueError("請輸入股票代號，例如 2330（台股）或 NVDA（美股）")
+            return t
+    return default
+
+
+BOND_NOTE = ("債券 ETF 的價格主要跟著利率走、波動很小，股票用的均線排列／乖離／RSI 門檻對它意義不大；"
+             "下方評分僅供參考，不產生買賣訊號。判斷債券請看殖利率、存續期間與利率方向。")
+
+
+def mark_bond_snapshot(snapshot: Dict[str, Any], ticker: str) -> None:
+    """債券 ETF：趨勢評分標示不適用，訊號固定為持有（規則引擎就不會據此給 BUY／SELL）。"""
+    try:
+        category = stock_info.classify(ticker)["category"]
+    except Exception:
+        return
+    snapshot["asset_category"] = category
+    score = snapshot.get("trend_score")
+    if category == "BOND" and score:
+        score.update(not_applicable=BOND_NOTE, signal="HOLD", signal_label="不適用（債券）")
+
+
 class TradingEngineDispatcher:
     """集中調度模組 1 ~ 5 的後端運算與外部串接"""
 
@@ -101,6 +153,7 @@ class TradingEngineDispatcher:
             "modules_ready": [1, 2, 3, 4, 5],
             "fx_usd_twd": fx["usd_twd"],
             "fx_source": fx["source"],
+            "fx_warning": fx.get("warning"),
             "finmind": finmind.pause_status(),
         }
 
@@ -162,14 +215,23 @@ class TradingEngineDispatcher:
             if action == "models":
                 return {"models": ai_client.list_models(profile)}
             if action == "explain":
-                return ai_client.explain(profile, str(payload.get("module", "")), payload.get("data"),
-                                         str(payload.get("question", "")))
+                module, data = str(payload.get("module", "")), payload.get("data")
+                context = None
+                symbol = ai_context.symbol_of(module, data)
+                if symbol and module in ai_context.SECTIONS_BY_MODULE and ai_client.is_enabled(profile):
+                    context = ai_context.build(symbol, ai_context.SECTIONS_BY_MODULE[module])
+                return ai_client.explain(profile, module, data, str(payload.get("question", "")), context)
         except ai_client.AIError as e:
             return {"error": str(e)}
         return {"error": f"未知的 AI 動作：{action}"}
 
     def handle_stockinfo(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return stock_info.stock_info(str(payload.get("symbol", "2330")))
+
+    def handle_fx(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """各幣別兌台幣匯率（看盤頁持股損益換算用）。"""
+        curs = [str(c) for c in payload.get("currencies", [])][:20]
+        return {"rates": fx.rates_to_twd(curs), "markets": markets.market_list()}
 
     def handle_chips(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return chip_data.chips(str(payload.get("symbol", "2330")))
@@ -181,7 +243,8 @@ class TradingEngineDispatcher:
         return {"categories": stock_info.categories([str(x) for x in payload.get("symbols", [])][:40])}
 
     def handle_candles(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return chart_data.candles(str(payload.get("symbol", "^TWII")), int(payload.get("n", 15)))
+        return chart_data.candles(str(payload.get("symbol", "^TWII")),
+                                  int(arg_num(payload, "n", 15, "K 棒數量", integer=True, lo=1, hi=250)))
 
     def handle_sparks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:40]
@@ -206,22 +269,25 @@ class TradingEngineDispatcher:
         }
 
     def handle_mod1_analyze(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        ticker = str(payload.get("ticker", "2330.TW")).strip()
+        ticker = arg_ticker(payload, "ticker")
         api_key = str(payload.get("api_key", "")).strip() or None
         provider = str(payload.get("provider", "AUTO")).strip()
-        bar_count = max(10, min(90, int(payload.get("bar_count", 30))))
+        # 圖表可縮放／平移：最多回傳 500 根日 K（約 2 年）或 104 根週 K，前端自己決定顯示範圍
+        bar_count = int(max(10, min(500, arg_num(payload, "bar_count", 30, "K 棒數量", integer=True))))
         timeframe = "W" if str(payload.get("timeframe", "D")).upper() == "W" else "D"
 
         snapshot = self.adapter.build_technical_snapshot(ticker)
+        mark_bond_snapshot(snapshot, ticker)
         # 週線：抓約 2 年日線（還權）再聚合成週 K，才有足夠的週均線樣本
-        feed = self.adapter.fetch_bars(ticker, days=520 if timeframe == "W" else max(90, bar_count + 25))
+        feed = self.adapter.fetch_bars(ticker, days=520 if timeframe == "W" else max(90, bar_count + 60))
         bars: List[Bar] = to_weekly_bars(feed["bars"]) if timeframe == "W" else feed["bars"]
 
         # 以真實即時報價覆蓋當日最後一根 K 棒（僅限報價日期與該 K 棒同一天），不再使用模擬跳動
         live_overlay: Dict[str, Any] = {"applied": False}
         try:
             lq = quote_provider.get_quotes([ticker], WATCHLIST_NAMES)[0]
-            q_date = "".join(ch for ch in (str(lq.get("quote_time", "")).split() or [""])[0] if ch.isdigit())
+            q_date = lq.get("quote_date_local") or "".join(
+                ch for ch in (str(lq.get("quote_time", "")).split() or [""])[0] if ch.isdigit())
             if bars and lq.get("is_live") and q_date == bars[-1].timestamp.replace("-", ""):
                 last_b = bars[-1]
                 px = float(lq["price"])
@@ -234,6 +300,7 @@ class TradingEngineDispatcher:
                     volume=last_b.volume,
                 )
                 snapshot["latest_close"] = px
+                DualMarketDataAdapter.reclassify_levels(snapshot, px)
                 live_overlay = {"applied": True, "price": px, "source": lq.get("source"),
                                 "quote_time": lq.get("quote_time")}
         except Exception as e:
@@ -242,6 +309,7 @@ class TradingEngineDispatcher:
         closes = [b.close for b in bars]
         ma5_series = calculate_ma(closes, 5)
         ma20_series = calculate_ma(closes, 20)
+        ma60_series = calculate_ma(closes, 60)
 
         recent_bars = []
         start_idx = max(0, len(bars) - bar_count)
@@ -259,6 +327,7 @@ class TradingEngineDispatcher:
                 "volume": int(b.volume),
                 "ma5": round(ma5_series[i], 2) if ma5_series[i] is not None else None,
                 "ma20": round(ma20_series[i], 2) if ma20_series[i] is not None else None,
+                "ma60": round(ma60_series[i], 2) if ma60_series[i] is not None else None,
             })
 
         runner = LLMRunner(provider=provider, api_key=api_key, profile=payload.get("ai"))
@@ -278,7 +347,7 @@ class TradingEngineDispatcher:
         }
 
     def handle_mod2_news(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        ticker = str(payload.get("target", payload.get("ticker", "2330.TW"))).strip()
+        ticker = arg_ticker(payload, "target", "ticker")
         headline = str(
             payload.get(
                 "headline",
@@ -295,29 +364,40 @@ class TradingEngineDispatcher:
             except ai_client.AIError as e:
                 sentiment_info = {"source": "使用者選擇（AI 判斷失敗）", "reason": str(e)}
         timestamp_iso = str(payload.get("timestamp_iso", "2026-10-19T08:15:00")).strip()
-        invalidation_text = str(
-            payload.get(
-                "invalidation_criteria",
-                "若突破缺口被完全回補且日收盤跌破關鍵支撐價位或單日跌逾 3% 立即停損出場",
-            )
-        ).strip()
-
         snapshot = self.adapter.build_technical_snapshot(ticker)
         market = snapshot["market"]
         analyzer = NewsStrategyAnalyzer(market=market)
 
-        session = analyzer.classify_market_session(timestamp_iso)
+        if "invalidation_criteria" in payload:
+            invalidation_text = str(payload.get("invalidation_criteria") or "").strip()
+        else:  # 沒填就用現價附近的真實支撐／壓力組出具體條件
+            bearish = sentiment.upper() in ("NEGATIVE", "BEARISH", "利空")
+            lvl = (snapshot["resistance_levels"] or [None])[0] if bearish else (snapshot["support_levels"] or [None])[-1]
+            invalidation_text = (
+                f"若日收盤站回 {lvl} 之上或單日漲逾 3%，利空判斷失效" if bearish
+                else f"若日收盤跌破 {lvl} 或單日跌逾 3% 立即停損出場"
+            )
+
+        # 時段：先看那天是不是交易日（有日 K 就以 K 棒為準，否則用證交所公告／NYSE 假日）
+        feed = self.adapter.fetch_bars(ticker, days=500)
+        trading = None
+        try:
+            trading = market_calendar.trading_day(
+                market, datetime.fromisoformat(timestamp_iso[:10]).date(), [b.timestamp for b in feed["bars"]]
+            )
+        except ValueError:
+            pass
+        session = analyzer.classify_market_session(timestamp_iso, trading_day=trading)
         price_ctx: Dict[str, Any] = {"available": False}
         event_local = str(payload.get("timestamp_iso", ""))
         if payload.get("use_event_date") and len(event_local) >= 10:
             # 以新聞發布當下已知的價格計算「事件前」漲幅，並回報事件後實際反應（真實日 K）
-            feed = self.adapter.fetch_bars(ticker, days=500)
             price_ctx = self._price_context(feed["bars"], event_local, session)
         if price_ctx.get("available"):
             ret_5d, ret_20d = price_ctx["ret_5d_pct"], price_ctx["ret_20d_pct"]
         else:
-            ret_5d = float(payload.get("ret_5d_pct", snapshot["ret_5d_pct"]))
-            ret_20d = float(payload.get("ret_20d_pct", snapshot["ret_20d_pct"]))
+            ret_5d = arg_num(payload, "ret_5d_pct", snapshot["ret_5d_pct"], "事件前 5 日漲跌幅")
+            ret_20d = arg_num(payload, "ret_20d_pct", snapshot["ret_20d_pct"], "事件前 20 日漲跌幅")
 
         priced_in = analyzer.evaluate_priced_in_risk(sentiment, ret_5d, ret_20d)
         atr_val = snapshot["indicators"]["ATR14"] or round(snapshot["latest_close"] * 0.02, 2)
@@ -333,6 +413,7 @@ class TradingEngineDispatcher:
             "headline": headline,
             "data_source": snapshot["data_source"],
             "session": session,
+            "session_note": trading[1] if trading else None,
             "event_price_context": price_ctx,
             "sentiment": sentiment,
             "sentiment_info": sentiment_info,
@@ -342,11 +423,13 @@ class TradingEngineDispatcher:
         }
 
     def handle_mod3_backtest(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        ticker = str(payload.get("target_asset", payload.get("ticker", "2330.TW"))).strip()
-        fast_ma = max(2, int(payload.get("fast_ma", 5)))
-        slow_ma = max(fast_ma + 1, int(payload.get("slow_ma", 20)))
-        initial_capital = max(10000.0, float(payload.get("initial_capital", 1_000_000.0)))
-        commission_discount = float(payload.get("commission_discount", 0.6))
+        ticker = arg_ticker(payload, "target_asset", "ticker")
+        fast_ma = int(arg_num(payload, "fast_ma", 5, "短均線週期", integer=True, lo=2, hi=250))
+        slow_ma = int(arg_num(payload, "slow_ma", 20, "長均線週期", integer=True, lo=3, hi=250))
+        if slow_ma <= fast_ma:
+            raise ValueError(f"長均線週期（{slow_ma}）必須大於短均線週期（{fast_ma}），例如 5 與 20")
+        initial_capital = arg_num(payload, "initial_capital", 1_000_000.0, "初始本金", lo=10000)
+        commission_discount = arg_num(payload, "commission_discount", 0.6, "手續費折數", lo=0, hi=1)
 
         feed = self.adapter.fetch_bars(ticker, days=250)
         bars: List[Bar] = feed["bars"]
@@ -413,6 +496,7 @@ class TradingEngineDispatcher:
             "module": 3,
             "symbol": feed["symbol"],
             "market": market,
+            "currency": feed["currency"],
             "data_source": feed["data_source"],
             "bars_tested": len(bars),
             "period": f"{bars[0].timestamp} ~ {bars[-1].timestamp}" if bars else "",
@@ -431,7 +515,7 @@ class TradingEngineDispatcher:
 
     def handle_mod4_risk(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         fx_info = self.adapter.fetch_usd_twd_rate()
-        usd_twd = float(payload.get("usd_twd_rate", fx_info["usd_twd"]))
+        usd_twd = arg_num(payload, "usd_twd_rate", fx_info["usd_twd"], "美元匯率", lo=1, hi=1000)
 
         holdings = payload.get(
             "holdings",
@@ -441,23 +525,54 @@ class TradingEngineDispatcher:
                 {"symbol": "NVDA", "market": "US", "shares": 100, "price": 138.6},
             ],
         )
+        # 只計算有代號且股數為正的持股；全部無效時回 400 與白話訊息（避免後面除以 0 或缺欄位而崩潰）
+        def _num(v: Any) -> float:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return 0.0
+
+        holdings = [
+            {**h, "symbol": str(h.get("symbol", "")).strip(), "shares": _num(h.get("shares")),
+             "price": _num(h.get("price"))}
+            for h in (holdings or []) if isinstance(h, dict)
+        ]
+        holdings = [h for h in holdings if h["symbol"] and h["shares"] > 0]
+        if not holdings:
+            raise ValueError("目前沒有可計算的持股：請至少輸入一檔代號，且股數大於 0")
+
         # 即時價格：use_live_prices（預設 True）時以真實報價覆蓋每檔持股價格；查不到才沿用你填的價格並標示
         price_notes: Dict[str, str] = {}
         live_q: Dict[str, Dict[str, Any]] = {}
         if payload.get("use_live_prices", True):
             syms = [str(h.get("symbol", "")) for h in holdings]
             for q in quote_provider.get_quotes(syms, WATCHLIST_NAMES):
-                live_q[q["symbol"].split(".")[0].upper()] = q
+                if q:
+                    live_q[_hold_code(q["symbol"])] = q
             holdings = [dict(h) for h in holdings]
             for h in holdings:
-                code = str(h.get("symbol", "")).upper().replace(".TW", "").replace(".TWO", "")
+                code = _hold_code(h["symbol"])
                 q = live_q.get(code)
                 if q and q.get("is_live"):
                     h["price"] = q["price"]
-                    h["market"] = q["market"]
-                    price_notes[code] = f"即時價 {q['price']}（{q['source']}，{q.get('quote_time', '')}）"
+                    h["currency"] = q.get("currency")
+                    price_notes[code] = f"即時價 {q['price']} {q.get('currency', '')}（{q['source']}，{q.get('quote_time', '')}）"
                 else:
                     price_notes[code] = "查無即時價，沿用輸入價格"
+
+        # 市場一律依代號判斷（使用者選的 TW／US 只當參考）；幣別：即時報價回傳的優先，否則用市場預設
+        for h in holdings:
+            n = DualMarketDataAdapter.normalize_symbol(h["symbol"])
+            h["market"] = n["market"]
+            h["currency"] = h.get("currency") or n["currency"]
+        fx_rates = fx.rates_to_twd(h["currency"] for h in holdings)
+        if "usd_twd_rate" in payload and "USD" in fx_rates:  # 使用者手動指定美元匯率
+            fx_rates["USD"] = {**fx_rates["USD"], "rate": usd_twd, "source": "使用者輸入", "warning": None}
+        missing_fx = [c for c, r in fx_rates.items() if not r.get("rate")]
+        if missing_fx:
+            raise ValueError("無法取得 " + "、".join(missing_fx) + " 兌台幣匯率，暫時無法換算這些持股的台幣價值，請稍後再試")
+        for h in holdings:
+            h["fx_rate"] = fx_rates[h["currency"]]["rate"]
 
         # 預先平行抓取各持股的 Beta / 歷史日 K / 前十大成分股（結果會快取，下面再呼叫時是即時的）
         def _warm(fn):
@@ -468,10 +583,10 @@ class TradingEngineDispatcher:
 
         warm_tasks = []
         for h in holdings:
-            code = str(h.get("symbol", "")).upper().replace(".TW", "").replace(".TWO", "")
+            code = _hold_code(h["symbol"])
             warm_tasks.append(lambda c=code: etf_data.calc_beta(c))
             warm_tasks.append(lambda c=code: stress._closes(c))
-            if code.startswith("00") or (live_q.get(code) or {}).get("instrument_type") == "ETF":
+            if (h["market"] == "TW" and code.startswith("00")) or (live_q.get(code) or {}).get("instrument_type") == "ETF":
                 warm_tasks.append(lambda c=code: etf_data.top_holdings(c))
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(_warm, warm_tasks))
@@ -480,10 +595,10 @@ class TradingEngineDispatcher:
         etf_holdings: Dict[str, Dict[str, float]] = {}
         lookthrough_sources: Dict[str, str] = {}
         for h in holdings:
-            code = str(h.get("symbol", "")).upper().replace(".TW", "").replace(".TWO", "")
+            code = _hold_code(h["symbol"])
             is_etf = (
                 code in etf_data.fund_registry()  # 台股 ETF（TWSE 基金清單）
-                or code.startswith("00")
+                or (h["market"] == "TW" and code.startswith("00"))
                 or (live_q.get(code) or {}).get("instrument_type") == "ETF"  # 美股 ETF
                 or code in ("QQQ", "SPY", "VOO", "VTI")
             )
@@ -515,8 +630,10 @@ class TradingEngineDispatcher:
                 f"近 1 年日報酬 vs 大盤自動計算（涵蓋持股 {round(covered / tot * 100, 1)}%）"
                 if covered else "無法計算，暫用 1.0"
             )
+            if len({h["market"] for h in holdings}) > 1:
+                beta_source += "；不同市場各自對自己的大盤計算，混合市場時「大盤 -20%」等於假設各市場同時跌 20%，僅供粗估"
         else:
-            portfolio_beta = float(raw_beta)
+            portfolio_beta = arg_num(payload, "portfolio_beta", 1.0, "Beta（留空＝自動計算）", lo=-5, hi=5)
             beta_source = "使用者手動輸入"
 
         target_weights = payload.get(
@@ -545,7 +662,9 @@ class TradingEngineDispatcher:
         return {
             "module": 4,
             "usd_twd_rate": usd_twd,
-            "fx_source": fx_info["source"],
+            "fx_rates": fx_rates,
+            "fx_source": fx_info["source"] if "usd_twd_rate" not in payload else "使用者輸入",
+            "fx_warning": "；".join(r["warning"] for r in fx_rates.values() if r.get("warning")) or None,
             "portfolio_valuation": weights_res,
             "lookthrough_exposure_pct": lookthrough,
             "lookthrough_sources": lookthrough_sources,
@@ -910,6 +1029,37 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤
+    QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/intraday", "/api/overview", "/api/fx",
+                   "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles")
+
+    def _log_request(self, status: int, started: float, payload: Any = None, res: Any = None) -> None:
+        path = self.path.split("?")[0]
+        if status < 400 and (path.startswith(self.QUIET_PATHS) or path == "/api/mod1/analyze"):
+            return  # 技術分析每 5 秒自動刷新，成功的不記；失敗一定記
+        p = payload if isinstance(payload, dict) else {}
+        ev = {"type": "api", "path": path, "status": status, "ms": int((time.time() - started) * 1000),
+              "symbol": p.get("ticker") or p.get("symbol") or p.get("target_asset") or p.get("target"),
+              "module": p.get("module")}
+        if isinstance(res, dict):
+            if res.get("error"):
+                ev["level"], ev["error"] = "error", str(res["error"])[:300]
+            if res.get("ai_usage"):
+                ev["ai_tokens"] = [(u.get("model"), u.get("input_tokens"), u.get("output_tokens")) for u in res["ai_usage"]]
+        if status >= 400:
+            ev["level"] = "error"
+        try:
+            activity_log.write([{k: v for k, v in ev.items() if v not in (None, "", [])}], "server")
+        except Exception:
+            pass
+
+    def _with_usage(self, res: Any) -> Any:
+        """把這次請求呼叫 AI 的用量附在回應（ai_usage），前端據此記錄與估算費用。"""
+        usage = ai_client.collect_usage()
+        if usage and isinstance(res, dict):
+            res = {**res, "ai_usage": [{**u, "endpoint": self.path} for u in usage]}
+        return res
+
     def do_POST(self) -> None:
         if not self.path.startswith("/api/"):
             self._send_json({"error": f"Unknown endpoint: {self.path}"}, status=404)
@@ -923,6 +1073,8 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": f"Invalid JSON payload: {e}"}, status=400)
             return
 
+        ai_client.begin_usage()  # 收集這個請求呼叫 AI 用掉的 tokens
+        started = time.time()
         try:
             if self.path == "/api/mod1/analyze":
                 res = DISPATCHER.handle_mod1_analyze(payload)
@@ -936,6 +1088,14 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
                 res = DISPATCHER.handle_ai(self.path.rsplit("/", 1)[1], payload)
             elif self.path == "/api/stockinfo":
                 res = DISPATCHER.handle_stockinfo(payload)
+            elif self.path == "/api/log":
+                events = payload.get("events") if isinstance(payload.get("events"), list) else []
+                res = {"written": activity_log.write(events[:200], "browser")}
+            elif self.path == "/api/log/recent":
+                res = {"events": activity_log.read_recent(int(arg_num(payload, "limit", 200, "筆數", integer=True, lo=1, hi=2000)),
+                                                          bool(payload.get("errors_only")))}
+            elif self.path == "/api/fx":
+                res = DISPATCHER.handle_fx(payload)
             elif self.path == "/api/chips":
                 res = DISPATCHER.handle_chips(payload)
             elif self.path == "/api/dividends":
@@ -960,10 +1120,17 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
                 res = DISPATCHER.handle_run_tests()
             else:
                 self._send_json({"error": f"Route not found: {self.path}"}, status=404)
+                self._log_request(404, started, payload, {"error": f"Route not found: {self.path}（伺服器可能是舊版，請重開）"})
                 return
+            res = self._with_usage(res)
             self._send_json(res, status=200)
+            self._log_request(200, started, payload, res)
+        except ValueError as err:  # 輸入有誤：回 400 與可直接顯示給使用者的訊息
+            self._send_json(self._with_usage({"error": str(err)}), status=400)
+            self._log_request(400, started, payload, {"error": str(err)})
         except Exception as err:
-            self._send_json({"error": str(err)}, status=500)
+            self._send_json(self._with_usage({"error": str(err)}), status=500)
+            self._log_request(500, started, payload, {"error": str(err)})
 
 
 def load_env_file(path: Path = Path(__file__).resolve().parent.parent / ".env") -> List[str]:

@@ -44,7 +44,7 @@ def _put(key: str, value: Any) -> None:
 
 def _yahoo_symbols(symbol: str) -> List[str]:
     n = DualMarketDataAdapter.normalize_symbol(symbol)
-    if n["market"] == "US":
+    if n["market"] != "TW":  # 台股以外：Yahoo 代號就是正規化後的 symbol（含後綴）
         return [n["symbol"]]
     return [f"{n['raw_code']}.TW", f"{n['raw_code']}.TWO"]
 

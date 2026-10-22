@@ -12,7 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List
-from zoneinfo import ZoneInfo
+from src import markets
+from src.tz import zone
 import json
 import os
 import threading
@@ -24,8 +25,8 @@ import xml.etree.ElementTree as ET
 from src import quote_provider as qp
 from src.data_adapter import DualMarketDataAdapter
 
-TW_TZ = ZoneInfo("Asia/Taipei")
-US_TZ = ZoneInfo("America/New_York")
+TW_TZ = zone("Asia/Taipei")
+US_TZ = zone("America/New_York")
 SEC_UA = os.environ.get("SEC_USER_AGENT", "local-trading-research-tool/1.0")
 TTL = 300
 _LOCK = threading.Lock()
@@ -66,7 +67,7 @@ def _get_text(url: str, headers: Dict[str, str], timeout: int = 25) -> bytes:
 
 def _item(title: str, source: str, link: str, dt_utc: datetime, kind: str, market: str,
           detail: str = "") -> Dict[str, Any]:
-    local = dt_utc.astimezone(TW_TZ if market == "TW" else US_TZ)
+    local = dt_utc.astimezone(TW_TZ if market == "TW" else zone(markets.info(market)["tz"]))
     return {
         "title": " ".join(title.split()),
         "source": source,

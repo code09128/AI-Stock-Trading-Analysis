@@ -65,7 +65,8 @@
             </div>
             <div>
               <label htmlFor="m3-cap" className="block text-xs text-slate-400 mb-1">
-                初始本金
+                初始本金（{window.TA.currencyOf(window.TA.normSym(m3Form.target_asset || ''))}）
+                <window.TA.Tip text="本金幣別跟著標的：台股新台幣、美股美元、港股港幣、日股日圓、英股便士（GBp）…。例如回測 NVDA 填 1,000,000 代表 100 萬美元；想比照台幣 100 萬，請自行換算。" />
               </label>
               <input
                 id="m3-cap"
@@ -128,7 +129,7 @@
                   <window.TA.Tip text="從初始本金開始，依序加上每筆交易扣除手續費與稅後的損益。" />
                 </div>
                 <div className="text-lg font-bold font-mono text-emerald-400 mt-1">
-                  {m3Data.backtest_result.final_equity?.toLocaleString()} (
+                  {m3Data.backtest_result.final_equity?.toLocaleString()} {m3Data.currency || ''} (
                   {m3Data.backtest_result.total_return_pct}%)
                 </div>
               </div>

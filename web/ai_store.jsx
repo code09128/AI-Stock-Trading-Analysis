@@ -41,6 +41,80 @@
     return cfg;
   };
 
+  // ---------- AI 用量與費用（只存在這個瀏覽器）----------
+  // 後端把每次請求呼叫 AI 的 tokens 附在回應的 ai_usage；這裡攔截所有 /api/ 回應記下來，
+  // 費用＝輸入 tokens × 輸入單價 ＋ 輸出 tokens × 輸出單價（單價：美元／每百萬 tokens，在「設定」填）。
+  const LS_USAGE = 'tw_us_ai_usage_v1';
+  const LS_PRICES = 'tw_us_ai_prices_v1';
+  const USAGE_MAX = 2000;
+  const ENDPOINT_LABELS = {
+    '/api/mod1/analyze': '技術分析 AI 決策',
+    '/api/mod2/news': '新聞 AI 情緒判斷',
+    '/api/mod5/coach': '交易檢討 AI 規則',
+    '/api/ai/explain': 'AI 解讀',
+    '/api/ai/test': '測試連線',
+  };
+  const loadUsage = () => readLS(LS_USAGE, []);
+  const loadPrices = () => readLS(LS_PRICES, {});
+  const savePrices = (p) => {
+    writeLS(LS_PRICES, p);
+    window.dispatchEvent(new Event('ai-usage-changed'));
+  };
+  const clearUsage = () => {
+    writeLS(LS_USAGE, []);
+    window.dispatchEvent(new Event('ai-usage-changed'));
+  };
+  const recordUsage = (items, extra = {}) => {
+    if (!items?.length) return;
+    const next = [
+      ...loadUsage(),
+      ...items.map((u) => ({ ...u, label: ENDPOINT_LABELS[u.endpoint] || u.endpoint, ...extra })),
+    ].slice(-USAGE_MAX);
+    writeLS(LS_USAGE, next);
+    window.dispatchEvent(new Event('ai-usage-changed'));
+  };
+  // 單筆估算費用（美元）；本地模型沒填單價視為 0；雲端模型沒填單價或沒回報 tokens 時回 null
+  const usageCost = (u, prices = loadPrices()) => {
+    const p = prices[u.model];
+    if (!p && u.local) return 0;
+    if (!p || u.input_tokens == null || u.output_tokens == null) return null;
+    return (
+      ((u.input_tokens || 0) * (Number(p.in) || 0) +
+        (u.output_tokens || 0) * (Number(p.out) || 0)) /
+      1e6
+    );
+  };
+  const useAIUsage = () => {
+    const [st, setSt] = useState(() => ({ usage: loadUsage(), prices: loadPrices() }));
+    useEffect(() => {
+      const on = () => setSt({ usage: loadUsage(), prices: loadPrices() });
+      window.addEventListener('ai-usage-changed', on);
+      window.addEventListener('storage', on);
+      return () => {
+        window.removeEventListener('ai-usage-changed', on);
+        window.removeEventListener('storage', on);
+      };
+    }, []);
+    return st;
+  };
+  // 全站攔截一次：任何 /api/ 回應帶 ai_usage 就記錄（用 clone，不影響原本讀取回應）
+  if (!window.__aiUsageHooked) {
+    window.__aiUsageHooked = true;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const res = await origFetch(input, init);
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.startsWith('/api/') || url.includes('/api/')) {
+        res
+          .clone()
+          .json()
+          .then((d) => d && Array.isArray(d.ai_usage) && recordUsage(d.ai_usage))
+          .catch(() => {});
+      }
+      return res;
+    };
+  }
+
   async function callAI(action, body) {
     const res = await fetch(`/api/ai/${action}`, {
       method: 'POST',
@@ -50,35 +124,80 @@
     return res.json();
   }
 
+  // AI 解讀任務放在全站共用的 store：換頁時元件會卸載，但請求會繼續跑、結果保留，回到該頁就看得到。
+  // key＝模組（基本資料另外加上代號）；完成時如果那一頁沒開著，就用全站提示通知。
+  const MODULE_NAMES = {
+    mod1: '技術分析',
+    mod2: '新聞判斷',
+    mod3: '策略回測',
+    mod4: '組合風控',
+    mod5: '交易檢討',
+    stock: '基本資料',
+  };
+  const aiTasks = {}; // key -> { busy, out, question, doneAt }
+  const mounted = {}; // key -> 目前顯示中的元件數
+  const emitTasks = () => window.dispatchEvent(new Event('ai-tasks-changed'));
+  const getTask = (key) => aiTasks[key] || { busy: false, out: null, question: '' };
+  const setTask = (key, patch) => {
+    aiTasks[key] = { ...getTask(key), ...patch };
+    emitTasks();
+  };
+  const startExplain = async (key, label, body) => {
+    if (getTask(key).busy) return;
+    setTask(key, { busy: true, out: null });
+    let out;
+    try {
+      out = await callAI('explain', body);
+    } catch (e) {
+      out = { error: e.message };
+    }
+    setTask(key, {
+      busy: false,
+      out,
+      doneAt: new Date().toLocaleTimeString('zh-TW', { hour12: false }),
+    });
+    if (!mounted[key]) {
+      window.TA.toast?.(
+        out?.error
+          ? `⚠️ ${label} 的 AI 解讀失敗：${out.error}`
+          : `🤖 ${label} 的 AI 解讀完成，回到該頁查看`,
+      );
+    }
+  };
+  const useAiTask = (key) => {
+    const [task, setLocal] = useState(() => getTask(key));
+    useEffect(() => {
+      mounted[key] = (mounted[key] || 0) + 1;
+      const on = () => setLocal(getTask(key));
+      on();
+      window.addEventListener('ai-tasks-changed', on);
+      return () => {
+        mounted[key] -= 1;
+        window.removeEventListener('ai-tasks-changed', on);
+      };
+    }, [key]);
+    return task;
+  };
+
   // 每個分頁底部的「AI 解讀」區塊：把系統算好的資料交給 AI 用白話解釋，並檢查 AI 回答中的數字是否真的來自資料
   function AiExplain({ module, data, title = '🤖 AI 解讀', provenance = [] }) {
     const cfg = useAISettings();
     const [pid, setPid] = useState('');
-    const [question, setQuestion] = useState('');
-    const [busy, setBusy] = useState(false);
-    const [out, setOut] = useState(null);
+    const code = module === 'stock' ? data?.code || data?.symbol || '' : '';
+    const key = code ? `${module}:${code}` : module;
+    const task = useAiTask(key);
+    const { busy, out, question } = task;
+    const setQuestion = (q) => setTask(key, { question: q });
     if (cfg.scope[module] === false) return null;
     const profile = cfg.profiles.find((p) => p.id === (pid || cfg.activeId)) || null;
-    const run = async () => {
-      setBusy(true);
-      setOut(null);
-      try {
-        setOut(
-          await callAI('explain', {
-            module,
-            data: provenance.length
-              ? { ...data, 資料來源說明: provenance.map((x) => x.text) }
-              : data,
-            question,
-            profile: cleanProfile(profile),
-          }),
-        );
-      } catch (e) {
-        setOut({ error: e.message });
-      } finally {
-        setBusy(false);
-      }
-    };
+    const label = `${MODULE_NAMES[module] || module}${code ? ` ${code}` : ''}`;
+    const run = () =>
+      startExplain(key, label, {
+        module,
+        data: provenance.length ? { ...data, 資料來源說明: provenance.map((x) => x.text) } : data,
+        question,
+        profile: cleanProfile(profile),
+      });
     return (
       <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -139,6 +258,11 @@
                 {busy ? '思考中…' : 'AI 解讀目前結果'}
               </button>
             </div>
+            {busy && (
+              <div className="text-[11px] text-violet-300">
+                AI 正在處理中，可以先切到其他頁面，完成後會通知你，結果會保留在這裡。
+              </div>
+            )}
             <div className="text-[11px] text-slate-500">
               只會把這一頁已計算好的資料送給「{profile.name}」；AI 只負責解釋，不負責算數字。
             </div>
@@ -166,7 +290,19 @@
               </div>
             )}
             <div className="text-[10px] text-slate-500">
-              {out.model}・{out.latency_ms} ms・AI 內容僅供參考，不構成投資建議
+              {out.model}・{out.latency_ms} ms・{task.doneAt ? `${task.doneAt} 完成・` : ''}
+              {(out.ai_usage || []).map((u) => {
+                if (!u.reported) return '供應商未回報用量・';
+                const c = usageCost(u);
+                const fee =
+                  u.local && !c
+                    ? '本地模型（免費）'
+                    : c == null
+                      ? '未設定單價'
+                      : `約 US$${c.toFixed(4)}`;
+                return `${u.input_tokens ?? '?'} 入／${u.output_tokens ?? '?'} 出 tokens・${fee}・`;
+              })}
+              AI 內容僅供參考，不構成投資建議
             </div>
           </div>
         )}
@@ -181,6 +317,12 @@
     cleanProfile,
     useAISettings,
     callAI,
+    useAIUsage,
+    usageCost,
+    savePrices,
+    clearUsage,
+    LS_USAGE,
+    LS_PRICES,
     AiExplain,
     SCOPE_LABELS,
   });

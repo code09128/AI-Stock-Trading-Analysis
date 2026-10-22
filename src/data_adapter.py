@@ -19,7 +19,7 @@ import re
 import threading
 import time
 
-from src import finmind
+from src import finmind, fx, markets
 from src.backtest_engine import Bar
 from src.indicators import (
     calculate_ma,
@@ -30,22 +30,20 @@ from src.indicators import (
 )
 from src.market_rules import align_tw_tick, get_tw_tick_size
 from src.trend_score import score_trend
-
-# 各市場當地時區與收盤時間，用來判斷最新一根日 K 是否還在盤中（成交量未收齊）
-SESSION_CLOSE = {"TW": ("Asia/Taipei", "13:30"), "US": ("America/New_York", "16:00")}
-
+from src.tz import zone
 
 def is_partial_session(market: str, bar_date: str, now: Optional[datetime] = None) -> bool:
-    from zoneinfo import ZoneInfo
-
-    tz, close_hm = SESSION_CLOSE.get(market, SESSION_CLOSE["US"])
-    local = (now or datetime.now(ZoneInfo("UTC"))).astimezone(ZoneInfo(tz))
+    """最新一根日 K 是否還在當地盤中（成交量未收齊）：用 markets.py 的時區與最後一段交易時段收盤時間。"""
+    m = markets.info(market)
+    tz, close_hm = m["tz"], m["sessions"][-1][1]
+    local = (now or datetime.now(zone("UTC"))).astimezone(zone(tz))
     return bar_date == local.strftime("%Y-%m-%d") and local.strftime("%H:%M") < close_hm
 
 
 # 日 K 快取：技術分析頁每 5 秒重跑分析，不快取的話同一檔每小時會打上千次 Yahoo／FinMind。
 # 失敗也快取（例如上櫃股查 .TW 會 404），60 秒內不重送；最新價另由即時報價覆蓋，不受影響。
 BAR_CACHE_TTL_SEC = 60
+_YAHOO_CURRENCY: Dict[str, str] = {}  # Yahoo 代號 -> 實際計價幣別
 _BAR_CACHE: Dict[Any, Any] = {}
 _BAR_LOCK = threading.Lock()
 
@@ -73,6 +71,30 @@ def clear_bar_cache() -> None:
         _BAR_CACHE.clear()
 
 
+def classify_levels(candidates: List[float], price: float, atr: Optional[float], market: str,
+                    keep: int = 3) -> Dict[str, Any]:
+    """依現價把價位分成支撐（< 現價，取最近的 keep 個）與壓力（> 現價，取最近的 keep 個）。
+    台股對齊跳動單位（支撐無條件捨去、壓力無條件進位）。某一側完全沒有歷史價位時（創新高／新低），
+    以現價 ± 2×ATR 推估並在 notes 標示。回傳的兩個陣列都由低到高排序。"""
+    atr = atr or price * 0.02
+
+    def fmt(v: float, mode: str) -> float:
+        return align_tw_tick(v, mode=mode) if market == "TW" else round(v, 2)
+
+    below = sorted({fmt(v, "floor") for v in candidates if v < price})
+    above = sorted({fmt(v, "ceil") for v in candidates if v > price})
+    supports = [v for v in below if v < price][-keep:]
+    resistances = [v for v in above if v > price][:keep]
+    notes = []
+    if not supports:
+        supports = [fmt(price - 2 * atr, "floor")]
+        notes.append(f"現價低於近期所有價位（創新低），支撐以現價 − 2×ATR 推估為 {supports[0]}")
+    if not resistances:
+        resistances = [fmt(price + 2 * atr, "ceil")]
+        notes.append(f"現價高於近期所有價位（創新高），壓力以現價 ＋ 2×ATR 推估為 {resistances[0]}")
+    return {"supports": supports, "resistances": resistances, "notes": notes}
+
+
 class DualMarketDataAdapter:
     """台美股雙市場資料串接器"""
 
@@ -92,16 +114,19 @@ class DualMarketDataAdapter:
     @staticmethod
     def normalize_symbol(raw_ticker: str) -> Dict[str, str]:
         """
-        正規化台美股代號：
-        - 輸入 '2330' 或 '2330.TW' -> {'market': 'TW', 'symbol': '2330.TW', 'raw_code': '2330', 'currency': 'TWD'}
-        - 輸入 '6488.TWO' -> {'market': 'TW', 'symbol': '6488.TWO', 'raw_code': '6488', 'currency': 'TWD'}
-        - 輸入 'NVDA' -> {'market': 'US', 'symbol': 'NVDA', 'raw_code': 'NVDA', 'currency': 'USD'}
+        正規化代號並判斷市場（見 src/markets.py）：
+        - '2330' 或 '2330.TW' -> {'market': 'TW', 'symbol': '2330.TW', 'raw_code': '2330', 'currency': 'TWD'}
+        - '6488.TWO' -> {'market': 'TW', 'symbol': '6488.TWO', 'raw_code': '6488', 'currency': 'TWD'}
+        - 'NVDA' -> {'market': 'US', 'symbol': 'NVDA', 'raw_code': 'NVDA', 'currency': 'USD'}
+        - '700.HK' -> {'market': 'HK', 'symbol': '0700.HK', 'raw_code': '0700.HK', 'currency': 'HKD'}
+        台股以外的 raw_code 保留後綴，避免日股 7203.T 與台股 7203 撞號。currency 是市場預設，
+        實際幣別以 Yahoo 回傳為準（英股為 GBp 便士）。
         """
         clean = raw_ticker.strip().upper()
         # 處理空白後附帶中文名稱的情況，例如 "2330.TW 台積電" -> 取第一段代號
         token = clean.split()[0] if clean else "2330.TW"
 
-        if re.match(r"^\d{4,6}[A-Z]?(\.TW|\.TWO)?$", token):
+        if markets.TW_PATTERN.match(token):
             raw_code = token.split(".")[0]
             symbol = token if "." in token else f"{token}.TW"
             return {
@@ -111,31 +136,22 @@ class DualMarketDataAdapter:
                 "currency": "TWD",
             }
 
+        token = markets.canonical(token)
+        market = markets.market_of(token)
         return {
-            "market": "US",
+            "market": market,
             "symbol": token,
             "raw_code": token,
-            "currency": "USD",
+            "currency": markets.info(market)["currency"],
         }
 
     def fetch_usd_twd_rate(self) -> Dict[str, Any]:
-        """抓取即時 USD/TWD 匯率，失敗時明確標示回退值"""
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/TWD=X?interval=1d&range=5d"
-        try:
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                meta = data["chart"]["result"][0]["meta"]
-                rate = float(meta.get("regularMarketPrice", 32.15))
-                return {"usd_twd": round(rate, 3), "source": "LIVE_YAHOO_FX"}
-        except Exception as e:
-            return {
-                "usd_twd": 32.15,
-                "source": "FALLBACK_DEFAULT",
-                "warning": f"無法連線即時匯率 API ({e})，改用預設基準匯率 32.15",
-            }
+        """USD/TWD（相容舊介面）。實作在 src/fx.py：失敗時沿用最後一次成功的匯率，從未成功才用 32.15，都會帶 warning。"""
+        r = fx.rate_to_twd("USD")
+        out = {"usd_twd": r["rate"], "source": r["source"]}
+        if r.get("warning"):
+            out["warning"] = r["warning"]
+        return out
 
     def fetch_bars(self, raw_ticker: str, days: int = 250) -> Dict[str, Any]:
         """
@@ -166,7 +182,7 @@ class DualMarketDataAdapter:
                 return {
                     "market": market,
                     "symbol": ysym,
-                    "currency": norm["currency"],
+                    "currency": _YAHOO_CURRENCY.get(ysym, norm["currency"]),
                     "data_source": "LIVE_YAHOO_FINANCE",
                     "is_live": True,
                     "bars": bars,
@@ -234,6 +250,9 @@ class DualMarketDataAdapter:
         # Yahoo 常在收盤後一段時間內把最新一根日 K 的 OHLC 回傳為 None；
         # 用 meta 的當日成交價/高低/量補上，避免技術分析比報價落後一天
         meta = result.get("meta", {})
+        gmtoffset = int(meta.get("gmtoffset") or 0)
+        if meta.get("currency"):
+            _YAHOO_CURRENCY[symbol] = meta["currency"]  # 英股是 GBp（便士），以 Yahoo 回傳為準
         last = len(timestamps) - 1
         if last >= 0 and last < len(closes) and closes[last] is None and meta.get("regularMarketPrice") \
                 and (meta.get("regularMarketTime") or 0) >= timestamps[last]:
@@ -261,7 +280,7 @@ class DualMarketDataAdapter:
             # 若有還權收盤價則按比例調整 OHLC
             adj_c = adj_close_list[i] if i < len(adj_close_list) and adj_close_list[i] else c
             ratio = (adj_c / c) if c and c > 0 else 1.0
-            dt_str = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+            dt_str = datetime.utcfromtimestamp(ts + gmtoffset).strftime("%Y-%m-%d")  # 交易所當地日期
             bars.append(
                 Bar(
                     timestamp=dt_str,
@@ -333,6 +352,15 @@ class DualMarketDataAdapter:
             )
         return bars
 
+    @staticmethod
+    def reclassify_levels(snapshot: Dict[str, Any], price: float) -> None:
+        """最新價被即時報價覆蓋後，依新的現價重新分類支撐／壓力（就地更新 snapshot）。"""
+        levels = classify_levels(snapshot.get("level_candidates") or [], price,
+                                 snapshot["indicators"].get("ATR14"), snapshot["market"])
+        snapshot["support_levels"] = levels["supports"]
+        snapshot["resistance_levels"] = levels["resistances"]
+        snapshot["level_notes"] = levels["notes"]
+
     def build_technical_snapshot(self, raw_ticker: str) -> Dict[str, Any]:
         """
         整合資料抓取 + 指標計算 + 台股 Tick 對齊，產出模組 1 所需的完整量化快照。
@@ -353,27 +381,20 @@ class DualMarketDataAdapter:
         rsi14 = calculate_rsi(closes, 14)[-1]
         macd_res = calculate_macd(closes)
         atr14 = calculate_atr(highs, lows, closes, 14)[-1]
-        swings = find_swing_levels(highs[-40:], lows[-40:], window=3)
-
         latest_close = closes[-1]
         recent_high_20 = max(highs[-20:])
         recent_low_20 = min(lows[-20:])
+        tick_size = get_tw_tick_size(latest_close) if market == "TW" else 0.01
 
-        # 台股強制對齊法定 Tick Size
-        if market == "TW":
-            supports = [align_tw_tick(s, mode="floor") for s in swings["supports"][-3:]]
-            resistances = [align_tw_tick(r, mode="ceil") for r in swings["resistances"][-3:]]
-            if not supports:
-                supports = [align_tw_tick(recent_low_20, mode="floor")]
-            if not resistances:
-                resistances = [align_tw_tick(recent_high_20, mode="ceil")]
-            tick_size = get_tw_tick_size(latest_close)
-        else:
-            supports = [round(s, 2) for s in swings["supports"][-3:]] or [round(recent_low_20, 2)]
-            resistances = [round(r, 2) for r in swings["resistances"][-3:]] or [
-                round(recent_high_20, 2)
-            ]
-            tick_size = 0.01
+        # 支撐／壓力候選：近 60 根的波段高低點 + 近 20／60 日高低 + 期間最高最低。
+        # 之後一律依「現價」分類：低於現價＝支撐、高於現價＝壓力（跌破的支撐會變壓力，反之亦然）
+        swings = find_swing_levels(highs[-60:], lows[-60:], window=3)
+        level_candidates = sorted({
+            *swings["supports"], *swings["resistances"],
+            recent_high_20, recent_low_20, max(highs[-60:]), min(lows[-60:]), max(highs), min(lows),
+        })
+        levels = classify_levels(level_candidates, latest_close, atr14, market)
+        supports, resistances = levels["supports"], levels["resistances"]
 
         # 計算近 5 日與近 20 日漲跌幅 (供模組 2 Priced-in 判斷共用)
         ret_5d_pct = (
@@ -419,8 +440,10 @@ class DualMarketDataAdapter:
                 "MACD_hist": macd_res["hist"][-1],
                 "ATR14": atr14,
             },
-            "support_levels": sorted(list(set(supports))),
-            "resistance_levels": sorted(list(set(resistances))),
+            "support_levels": supports,
+            "resistance_levels": resistances,
+            "level_candidates": level_candidates,
+            "level_notes": levels["notes"],
             "partial_session": partial,
             "trend_score": trend_score,
         }

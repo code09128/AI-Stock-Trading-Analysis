@@ -69,8 +69,8 @@
                 前十大成分股、Beta（留空時）、歷史回落皆為真實資料；持股來源見上方
               </span>
               <p className="text-xs text-slate-400">
-                直接編輯您的台美股與 ETF 部位，系統自動以即時 USD/TWD 折算總值、拆穿 0050/QQQ
-                成分股疊加曝險並執行 -20% 崩盤壓力測試
+                直接編輯您的台股、美股與海外（港、日、韓、英…）部位，系統自動以各幣別即時匯率折算台幣總值、拆穿
+                0050/QQQ 成分股疊加曝險並執行 -20% 崩盤壓力測試
               </p>
             </div>
             <button
@@ -97,7 +97,7 @@
             <table className="w-full text-left text-xs font-mono">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400">
-                  <th className="py-2 px-2">代號 (如 2330 / 0050 / NVDA)</th>
+                  <th className="py-2 px-2">代號（2330／NVDA／0700.HK／7203.T）</th>
                   <th className="py-2 px-2">市場</th>
                   <th className="py-2 px-2">持有股數</th>
                   <th className="py-2 px-2">目前單價 (原幣)</th>
@@ -121,18 +121,18 @@
                       />
                     </td>
                     <td className="py-2 px-2">
-                      <select
-                        value={h.market}
-                        onChange={(e) => {
-                          const next = [...m4Holdings];
-                          next[idx] = { ...next[idx], market: e.target.value };
-                          setM4Holdings(next);
-                        }}
-                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
-                      >
-                        <option value="TW">TW (TWD)</option>
-                        <option value="US">US (USD)</option>
-                      </select>
+                      {/* 市場與幣別依代號自動判斷（.HK 港股、.T 日股、.KS 韓股、.L 英股…；沒有後綴＝美股） */}
+                      <span className="whitespace-nowrap text-slate-200">
+                        {window.TA.MARKET_INFO[window.TA.marketOf(h.symbol || '')].flag}{' '}
+                        {window.TA.marketName(h.symbol || '')}
+                        <span className="ml-1 text-slate-500">
+                          (
+                          {m4Data?.portfolio_valuation?.holdings?.find(
+                            (x) => x.symbol === String(h.symbol).toUpperCase(),
+                          )?.currency || window.TA.currencyOf(h.symbol || '')}
+                          )
+                        </span>
+                      </span>
                     </td>
                     <td className="py-2 px-2">
                       <input
@@ -251,14 +251,24 @@
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                 <div className="text-xs text-slate-400">
                   組合折合新台幣總市值
-                  <window.TA.Tip text="每檔持股 × 即時價加總；美股用即時 USD/TWD 匯率換成台幣。" />
+                  <window.TA.Tip text="每檔持股 × 即時價加總；海外持股依各自幣別（USD、HKD、JPY、KRW、GBp 便士…）用即時匯率換成台幣。" />
                 </div>
                 <div className="text-xl font-bold font-mono text-white mt-1">
                   NT$ {m4Data.portfolio_valuation?.total_value_twd?.toLocaleString()}
                 </div>
                 <div className="text-[11px] font-mono text-slate-400 mt-1">
-                  匯率 USD/TWD: {m4Data.usd_twd_rate}
+                  匯率：
+                  {Object.entries(m4Data.fx_rates || { USD: { rate: m4Data.usd_twd_rate } })
+                    .filter(([c]) => c !== 'TWD')
+                    .map(
+                      ([c, r]) =>
+                        `${c} ${r.rate}${r.source === '使用者輸入' ? '（你輸入的）' : ''}`,
+                    )
+                    .join('、') || '全部為台幣'}
                 </div>
+                {m4Data.fx_warning && (
+                  <div className="text-[11px] text-amber-300 mt-1">⚠️ {m4Data.fx_warning}</div>
+                )}
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                 <div className="text-xs text-slate-400">
@@ -400,27 +410,37 @@
                     .join('，')}
                 </div>
               </div>
-              {Object.entries(m4Data.lookthrough_exposure_pct || {}).map(([sym, pct]) => (
-                <div key={sym} className="space-y-1">
-                  <div className="flex justify-between text-xs font-mono">
-                    <span className="text-slate-200 font-bold">
-                      {sym}{' '}
-                      {pct >= 30 && (
-                        <span className="text-rose-400 ml-1">⚠️ 單一實體過度集中 (&gt;30%)</span>
-                      )}
-                    </span>
-                    <span className={pct >= 30 ? 'text-rose-400 font-bold' : 'text-sky-300'}>
-                      {pct}%
-                    </span>
+              {Object.entries(m4Data.lookthrough_exposure_pct || {})
+                .sort((x, y) => y[1] - x[1]) // 數字代號的鍵在 JS 物件裡會被排到前面，這裡依曝險重新排序
+                .map(([sym, pct]) => (
+                  <div key={sym} className="space-y-1">
+                    <div className="flex justify-between text-xs font-mono">
+                      <span className="text-slate-200 font-bold">
+                        {sym}{' '}
+                        {pct >= 30 && !sym.endsWith('其他成分股') && (
+                          <span className="text-rose-400 ml-1">⚠️ 單一實體過度集中 (&gt;30%)</span>
+                        )}
+                      </span>
+                      <span
+                        className={
+                          pct >= 30 && !sym.endsWith('其他成分股')
+                            ? 'text-rose-400 font-bold'
+                            : 'text-sky-300'
+                        }
+                      >
+                        {pct}%
+                      </span>
+                    </div>
+                    <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                      <div
+                        className={`h-full rounded-full ${
+                          pct >= 30 && !sym.endsWith('其他成分股') ? 'bg-rose-500' : 'bg-sky-500'
+                        }`}
+                        style={{ width: `${Math.min(pct, 100)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                    <div
-                      className={`h-full rounded-full ${pct >= 30 ? 'bg-rose-500' : 'bg-sky-500'}`}
-                      style={{ width: `${Math.min(pct, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}

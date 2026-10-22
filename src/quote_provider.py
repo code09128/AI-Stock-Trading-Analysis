@@ -16,6 +16,7 @@ from typing import Any, Dict, List
 import json
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -156,6 +157,7 @@ def fetch_tw_quotes(
 
 
 def fetch_us_quote(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any]:
+    """台股以外（美、港、日、韓、英…）都走 Yahoo；幣別以 Yahoo 回傳為準（英股是 GBp 便士）。"""
     q = _base(norm, names)
     url = f"{YAHOO_URL}{urllib.parse.quote(norm['symbol'])}?interval=1d&range=1d"
     try:
@@ -168,7 +170,7 @@ def fetch_us_quote(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any
         quote = (res.get("indicators", {}).get("quote") or [{}])[0]
         opens = [x for x in quote.get("open", []) if x is not None]
         if q["name"] == norm["raw_code"]:
-            q["name"] = m.get("shortName") or m.get("longName") or q["name"]
+            q["name"] = " ".join(str(m.get("shortName") or m.get("longName") or q["name"]).split())
         q.update(
             is_live=price is not None,
             price=price,
@@ -181,15 +183,23 @@ def fetch_us_quote(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any
             volume=_num(m.get("regularMarketVolume")),
             volume_unit="股",
             instrument_type=m.get("instrumentType"),
+            currency=m.get("currency") or q["currency"],
+            exchange=m.get("fullExchangeName") or m.get("exchangeName"),
+            # 交易所當地日期（判斷即時價能不能覆蓋當日 K 棒用；quote_time 是本機時間）
+            quote_date_local=datetime.utcfromtimestamp(m["regularMarketTime"] + (m.get("gmtoffset") or 0)).strftime("%Y%m%d")
+            if m.get("regularMarketTime")
+            else "",
             bids=[],
             asks=[],
             bid_ask_ratio=None,
             quote_time=datetime.fromtimestamp(m["regularMarketTime"]).strftime("%Y-%m-%d %H:%M:%S")
             if m.get("regularMarketTime")
             else "",
-            source="Yahoo Finance v8 Chart API（盤中實測延遲約 0–5 秒，無五檔）",
+            source="Yahoo Finance v8 Chart API（美股盤中實測延遲約 0–5 秒；其他市場依交易所規定可能延遲 15–20 分鐘；無五檔）",
             endpoint=url,
         )
+    except urllib.error.HTTPError as e:
+        q["error"] = "Yahoo Finance 查無此代號" if e.code == 404 else f"Yahoo Finance 回應錯誤（HTTP {e.code}）"
     except Exception as e:
         q["error"] = f"Yahoo Finance 連線失敗: {e}"
     return q

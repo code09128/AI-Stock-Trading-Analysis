@@ -15,33 +15,33 @@ class NewsStrategyAnalyzer:
     def __init__(self, market: str = "TW"):
         self.market = market.upper()
 
-    def classify_market_session(self, timestamp_iso: str) -> str:
+    def classify_market_session(self, timestamp_iso: str, trading_day: Optional[tuple] = None) -> str:
         """
-        正規化時間戳記並判斷發布時段：
-        - TW (台股 09:00 ~ 13:30): PRE (00:00~08:59), REGULAR (09:00~13:30), POST (13:31~23:59)
-        - US (美股 09:30 ~ 16:00 美東): PRE (04:00~09:29), REGULAR (09:30~16:00), POST (16:01~20:00)
+        正規化時間戳記並判斷發布時段（trading_day＝market_calendar.trading_day() 的結果；非交易日回 CLOSED）：
+        - 交易時段來自 src/markets.py（當地時間；港、日、陸、星有午休，午休視同盤中）
+        - 開盤前＝PRE（美股 04:00 前算前一晚的 POST）、收盤後＝POST
         """
         try:
             dt = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
             t = dt.time()
         except Exception:
             return "UNKNOWN"
+        if dt.weekday() >= 5 or (trading_day is not None and not trading_day[0]):
+            return "CLOSED"  # 週末或假日休市：消息要到下一個交易日開盤才反應
 
-        if self.market == "TW":
-            if time(9, 0) <= t <= time(13, 30):
-                return "REGULAR" # 盤中
-            elif t < time(9, 0):
-                return "PRE"     # 盤前
-            else:
-                return "POST"    # 盤後
-        else:
-            # 簡易美股交易時段判定
-            if time(9, 30) <= t <= time(16, 0):
-                return "REGULAR"
-            elif time(4, 0) <= t < time(9, 30):
-                return "PRE"
-            else:
-                return "POST"
+        from src import markets
+
+        hm = lambda x: time(int(x[:2]), int(x[3:]))  # noqa: E731
+        windows = [(hm(a), hm(b)) for a, b in markets.sessions(self.market)]
+        if any(a <= t <= b for a, b in windows):
+            return "REGULAR"  # 盤中
+        if windows[0][0] > t:
+            pre = markets.info(self.market).get("pre_open")
+            # 美股 04:00 以前的消息歸到盤後（前一晚），其他市場開盤前都算盤前
+            return "PRE" if not pre or t >= hm(pre) else "POST"
+        if t > windows[-1][1]:
+            return "POST"  # 盤後
+        return "REGULAR"  # 午休：下午盤就會反應，視同盤中
 
     def evaluate_priced_in_risk(
         self,
@@ -119,9 +119,18 @@ class NewsStrategyAnalyzer:
 
         # 檢查是否含有數字或價位模式
         has_number = bool(re.search(r"\d+", criteria_text))
-        vague_phrases = ["市場轉差", "情緒不佳", "保持良好心態", "隨機應變", "若走勢不如預期"]
-        
+        vague_phrases = ["市場轉差", "情緒不佳", "保持良好心態", "隨機應變", "若走勢不如預期",
+                         "感覺", "不對勁", "氣氛", "看情況", "視情況"]
         has_vague = any(vp in criteria_text for vp in vague_phrases)
+        # 「關鍵支撐價位」這類參考點沒寫出價格：句子裡除了百分比、天數之外，要有一個真正的價位數字
+        vague_anchor = re.search(r"(關鍵|重要|主要)(支撐|壓力|價位|價格)|支撐價位|壓力價位", criteria_text)
+        price_numbers = re.findall(r"(?<![\d.])\d+(?:\.\d+)?(?![\d.]|\s*(?:%|％|日|天|週|周|月|年|根|倍|分鐘|小時|萬|張|股|次|檔))",
+                                   criteria_text)
+        if vague_anchor and not price_numbers:
+            return {
+                "valid": False,
+                "reason": f"「{vague_anchor.group(0)}」沒有寫出具體價位，請改成例如「跌破 1035 元」。"
+            }
 
         if not has_number:
             return {

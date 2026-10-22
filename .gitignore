@@ -8,3 +8,6 @@ dist/
 
 # 本機金鑰（FINMIND_TOKEN 等），不要提交
 .env
+
+# 操作紀錄（每日 JSONL，保留 30 天）
+logs/

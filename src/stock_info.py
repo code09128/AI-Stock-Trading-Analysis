@@ -234,8 +234,11 @@ def _profile_yahoo(symbol: str) -> Dict[str, Any]:
 
 
 def stock_info(symbol: str) -> Dict[str, Any]:
-    cls = classify(symbol)
     q = _quote(symbol)
+    if not q or (not q.get("is_live") and q.get("error")):
+        # 報價都查不到就不要猜分類（以前會把不存在的代號標成「股票」並用代號當名稱）
+        raise ValueError(f"查無 {symbol.strip()} 的資料：{(q or {}).get('error') or '代號可能不存在'}")
+    cls = classify(symbol)
     price = q.get("price")
     with ThreadPoolExecutor(max_workers=3) as ex:
         f_div = ex.submit(dividend_events, symbol)

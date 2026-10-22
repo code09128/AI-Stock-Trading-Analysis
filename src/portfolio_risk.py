@@ -10,6 +10,7 @@
 
 from typing import List, Dict, Any, Tuple
 import math
+import re
 
 class PortfolioRiskManager:
     # 常用 ETF 權重成分預設表 (穿透式拆解用)
@@ -37,23 +38,25 @@ class PortfolioRiskManager:
             shares = h.get("shares", 0)
             price = h.get("price", 0.0)
 
-            if mkt == "TW":
-                val_twd = price * shares
-            else:
-                # 美股以 USD 計價，換算為 TWD
-                val_twd = (price * shares) * self.usd_twd_rate
+            # 換算台幣：有 fx_rate（每 1 單位計價幣別＝幾台幣）就用；沒有時沿用舊規則（台股 1、其他以美元匯率）
+            rate = h.get("fx_rate")
+            if rate is None:
+                rate = 1.0 if mkt == "TW" else self.usd_twd_rate
+            val_twd = price * shares * rate
 
             total_value_twd += val_twd
             parsed_items.append({
                 "symbol": sym,
                 "market": mkt,
+                "currency": h.get("currency") or ("TWD" if mkt == "TW" else "USD"),
+                "fx_rate": rate,
                 "shares": shares,
                 "price": price,
                 "value_twd": val_twd
             })
 
         if total_value_twd == 0:
-            return {"total_value_twd": 0.0, "weights": []}
+            return {"total_value_twd": 0.0, "holdings": []}
 
         # 計算權重
         for item in parsed_items:
@@ -64,21 +67,40 @@ class PortfolioRiskManager:
             "holdings": parsed_items
         }
 
+    OTHER_SUFFIX = " 其他成分股"
+
+    @staticmethod
+    def _code(sym: str) -> str:
+        """台股代號去掉 .TW／.TWO，美股維持原樣（大寫）。"""
+        return re.sub(r"\.(TWO|TW)$", "", str(sym).upper())
+
     def calculate_lookthrough_exposure(self, holdings_result: Dict[str, Any]) -> Dict[str, float]:
         """
-        穿透式曝險檢查：將 ETF 內含的個股權重拆解並與直接持有的個股累加。
+        穿透式曝險：ETF 拆成成分股後與直接持有的個股累加。
+        ETF 本身的權重會被拆掉（不重複計算）；沒拆到的部分（前十大以外）列為「<ETF> 其他成分股」。
+        回傳依曝險由大到小排序，合計 = 100%（四捨五入誤差除外）。
         """
-        direct_weights = {h["symbol"].replace(".TW", ""): h["weight_pct"] for h in holdings_result["holdings"]}
-        final_exposures = dict(direct_weights)
+        direct_weights: Dict[str, float] = {}
+        for h in holdings_result.get("holdings", []):
+            code = self._code(h["symbol"])
+            direct_weights[code] = direct_weights.get(code, 0.0) + h["weight_pct"]
 
-        for sym, direct_pct in direct_weights.items():
-            if sym in self.etf_holdings:
-                breakdown = self.etf_holdings[sym]
-                for sub_ticker, sub_share in breakdown.items():
-                    indirect_pct = direct_pct * sub_share
-                    final_exposures[sub_ticker] = round(final_exposures.get(sub_ticker, 0.0) + indirect_pct, 2)
+        exposures: Dict[str, float] = {}
+        for code, direct_pct in direct_weights.items():
+            breakdown = self.etf_holdings.get(code)
+            if not breakdown:
+                exposures[code] = exposures.get(code, 0.0) + direct_pct
+                continue
+            covered = 0.0
+            for sub, share in breakdown.items():
+                sub_code = self._code(sub)
+                exposures[sub_code] = exposures.get(sub_code, 0.0) + direct_pct * share
+                covered += share
+            rest = direct_pct * max(0.0, 1.0 - covered)
+            if rest > 0:
+                exposures[code + self.OTHER_SUFFIX] = exposures.get(code + self.OTHER_SUFFIX, 0.0) + rest
 
-        return final_exposures
+        return {k: round(v, 2) for k, v in sorted(exposures.items(), key=lambda kv: -kv[1])}
 
     def calculate_correlation(self, returns_a: List[float], returns_b: List[float]) -> float:
         """

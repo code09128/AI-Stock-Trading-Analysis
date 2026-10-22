@@ -64,6 +64,9 @@
             </div>
           ))}
         </div>
+        {score.not_applicable && (
+          <div className="mt-2 text-[11px] text-sky-300">ℹ️ {score.not_applicable}</div>
+        )}
         {score.hard_rules?.length > 0 && (
           <div className="mt-2 text-[11px] text-amber-300">
             ⛔ 嚴進規則：{score.hard_rules.join('；')}
@@ -92,7 +95,14 @@
         body: JSON.stringify({ symbol }),
       })
         .then((r) => r.json())
-        .then((d) => !stop && (d.error ? setErr(d.error) : setData(d)))
+        .then((d) => {
+          if (stop) return;
+          if (d.error) setErr(d.error);
+          else {
+            setData(d);
+            window.TA.lastChips = d; // 給「匯出報告」用
+          }
+        })
         .catch((e) => !stop && setErr(String(e)));
       return () => {
         stop = true;
@@ -104,6 +114,8 @@
     if (!data) return <div className={`${box} text-xs text-slate-500`}>籌碼資料載入中…</div>;
     if (!data.supported)
       return <div className={`${box} text-xs text-slate-500`}>籌碼面：{data.reason}</div>;
+    if (data.empty)
+      return <div className={`${box} text-xs text-amber-300`}>籌碼面：{data.reason}</div>;
 
     const inst = data.institutional;
     const mg = data.margin;
@@ -315,7 +327,7 @@
         <span className="font-bold text-white">{info.name}</span>
         <span className="text-slate-500">
           {' '}
-          ・{info.market === 'TW' ? '台股' : '美股'}・現價 {info.price} {info.currency}
+          ・{window.TA.marketName(info.symbol || ticker)}・現價 {info.price} {info.currency}
         </span>
       </div>
     );
@@ -324,7 +336,7 @@
   // 技術分析 × 我的持股：快速切換持股、並用這次分析的停損／目標價換算你的部位損益
   function MyPositionCard({ m1Data, onAnalyze }) {
     const { holdings } = window.TA.usePortfolio();
-    const { fmt, colorOf, baseCode, normSym, isTW } = window.TA;
+    const { fmt, colorOf, baseCode, normSym } = window.TA;
     if (!holdings.length) {
       return (
         <div
@@ -339,10 +351,11 @@
     const sym = m1Data?.snapshot?.symbol ? baseCode(m1Data.snapshot.symbol) : null;
     const h = sym ? holdings.find((x) => baseCode(normSym(x.symbol)) === sym) : null;
     const d = m1Data?.llm_result?.decision_payload || {};
+    const isSell = d.action === 'SELL';
     const price = m1Data?.snapshot?.latest_close;
     const pnlAt = (p) => (h && p != null ? (p - h.cost) * h.shares : null);
     const pctAt = (p) => (h && p != null ? (p / h.cost - 1) * 100 : null);
-    const cur = isTW(h?.symbol || '') ? 'TWD' : 'USD';
+    const cur = m1Data?.snapshot?.currency || window.TA.currencyOf(h?.symbol || '');
     return (
       <div
         data-tour="mod1-holding"
@@ -381,15 +394,20 @@
                 {fmt(pnlAt(price), 0)} {cur}（{fmt(pctAt(price))}%）
               </div>
             </div>
+            {/* SELL：停損欄位是「空方失效價」（高於現價），對持有者改顯示「現在賣出」與「續跌到下檔」 */}
             <div>
-              <div className="text-slate-400 font-sans">若跌到停損 {d.stop_loss_price ?? '--'}</div>
-              <div className={colorOf(pnlAt(d.stop_loss_price))}>
-                {fmt(pnlAt(d.stop_loss_price), 0)}（{fmt(pctAt(d.stop_loss_price))}%）
+              <div className="text-slate-400 font-sans">
+                {isSell ? '若現在賣出' : '若跌到停損'}{' '}
+                {(isSell ? d.entry_price : d.stop_loss_price) ?? '--'}
+              </div>
+              <div className={colorOf(pnlAt(isSell ? d.entry_price : d.stop_loss_price))}>
+                {fmt(pnlAt(isSell ? d.entry_price : d.stop_loss_price), 0)}（
+                {fmt(pctAt(isSell ? d.entry_price : d.stop_loss_price))}%）
               </div>
             </div>
             <div>
               <div className="text-slate-400 font-sans">
-                若漲到目標 {d.take_profit_target ?? '--'}
+                {isSell ? '若續抱跌到下檔' : '若漲到目標'} {d.take_profit_target ?? '--'}
               </div>
               <div className={colorOf(pnlAt(d.take_profit_target))}>
                 {fmt(pnlAt(d.take_profit_target), 0)}（{fmt(pctAt(d.take_profit_target))}%）
@@ -398,7 +416,8 @@
             <div className="col-span-2 md:col-span-4 font-sans text-slate-300 flex flex-wrap items-center gap-2">
               {d.action === 'SELL' && (
                 <span className="text-rose-300">
-                  ⚠️ 這次分析建議偏「賣出」，而你持有這檔，請對照你的停損規則。
+                  ⚠️ 這次分析建議偏「賣出」，而你持有這檔，請對照你的停損規則；收盤站回{' '}
+                  {d.stop_loss_price} 代表這個判斷失效。
                 </span>
               )}
               {d.action === 'BUY' && (
@@ -440,7 +459,6 @@
       countdownSec,
       handleSwitchTab,
       isLivePolling,
-      m1BarCount,
       m1Context,
       m1Data,
       m1Loading,
@@ -451,7 +469,6 @@
       runMod1,
       setCountdownSec,
       setIsLivePolling,
-      setM1BarCount,
       setM1Context,
       setM1Ticker,
       setM1Timeframe,
@@ -532,7 +549,7 @@
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end" data-tour="mod1-query">
             <div className="md:col-span-4">
               <label htmlFor="m1-ticker" className="block text-xs text-slate-400 mb-1 font-medium">
-                股票代號 (支援台股數字或美股 Ticker)
+                股票代號（台股 2330、美股 NVDA、港股 0700.HK、日股 7203.T…）
               </label>
               <input
                 id="m1-ticker"
@@ -553,7 +570,7 @@
             <div className="md:col-span-6 text-[11px] text-slate-400 leading-relaxed">
               推論引擎：
               <b className="text-slate-200">
-                {m1Data?.llm_result?.execution_mode?.startsWith('LIVE_AI')
+                {m1Data?.llm_result?.execution_mode?.startsWith('LIVE')
                   ? 'AI 模型'
                   : '內建規則引擎'}
               </b>
@@ -641,10 +658,12 @@
                   {m1Data.llm_result?.decision_payload?.action}
                 </div>
                 <div className="text-[11px] text-slate-400 font-mono">
-                  {m1Data.llm_result?.decision_payload?.order_type} ・ 進場{' '}
-                  {m1Data.llm_result?.decision_payload?.entry_price} ・ 停損{' '}
-                  {m1Data.llm_result?.decision_payload?.stop_loss_price} ・ 目標{' '}
-                  {m1Data.llm_result?.decision_payload?.take_profit_target}
+                  {(() => {
+                    const p = m1Data.llm_result?.decision_payload || {};
+                    const [a, b, c] =
+                      p.action === 'SELL' ? ['賣出', '失效', '下檔'] : ['進場', '停損', '目標'];
+                    return `${p.order_type} ・ ${a} ${p.entry_price} ・ ${b} ${p.stop_loss_price} ・ ${c} ${p.take_profit_target}`;
+                  })()}
                 </div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
@@ -746,12 +765,9 @@
               bars={m1Data.recent_bars}
               supports={m1Data.snapshot.support_levels}
               resistances={m1Data.snapshot.resistance_levels}
-              barCount={m1BarCount}
+              key={`${m1Data.snapshot.symbol}-${m1Timeframe}`}
+              barCount={m1Timeframe === 'W' ? 52 : 60}
               unit={m1Timeframe === 'W' ? '週' : '日'}
-              onChangeBarCount={(cnt) => {
-                setM1BarCount(cnt);
-                runMod1({ overrideBarCount: cnt, simulateTick: false });
-              }}
             />
 
             {/* 支撐壓力檔位與 AI 決策依據 */}
@@ -759,7 +775,7 @@
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
                 <div className="text-xs font-semibold text-slate-300">
                   🎯 關鍵支撐與壓力價位（已隨最新 Tick 對齊{' '}
-                  {m1Data.snapshot.market === 'TW' ? '台股六級跳動單位' : '美股 $0.01 精度'}）
+                  {m1Data.snapshot.market === 'TW' ? '台股六級跳動單位' : '0.01 精度'}）
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center font-mono">
                   <div className="bg-emerald-950/30 border border-emerald-700/40 rounded-lg p-2.5">

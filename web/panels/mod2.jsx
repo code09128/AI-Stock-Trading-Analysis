@@ -297,9 +297,21 @@
               <div className="mt-3 pt-3 border-t border-slate-800/80 flex justify-between text-xs font-mono text-slate-400">
                 <span>
                   發布時段:{' '}
-                  {{ PRE: '盤前', REGULAR: '盤中', POST: '盤後' }[m2Data.session] || m2Data.session}
+                  {{ PRE: '盤前', REGULAR: '盤中', POST: '盤後', CLOSED: '休市日' }[
+                    m2Data.session
+                  ] || m2Data.session}
+                  {m2Data.session_note && (
+                    <span className="ml-1 text-[11px] text-slate-500">
+                      （{m2Data.session_note}）
+                    </span>
+                  )}
                 </span>
-                <span>市場首次反應: {m2Data.session === 'POST' ? '下一個交易日' : '當日'}</span>
+                <span>
+                  市場首次反應:{' '}
+                  {m2Data.session === 'POST' || m2Data.session === 'CLOSED'
+                    ? '下一個交易日'
+                    : '當日'}
+                </span>
               </div>
             </div>
 

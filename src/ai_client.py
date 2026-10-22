@@ -14,6 +14,7 @@ from typing import Any, Dict, List
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -27,10 +28,62 @@ DEFAULTS = {
 ENV_KEYS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
 
 SYSTEM_GUARD = (
-    "你是台股／美股的量化分析助理。你只能使用使用者提供的資料中的數字，"
-    "不得自行編造或回憶任何價格、指標、日期或統計值；資料沒有的就說「資料中沒有」。"
-    "請用繁體中文，條列、精簡、客觀，並在結尾提醒這不是投資建議。"
+    "你是台股／美股（含其他海外市場）的量化分析助理。你只能使用使用者提供的資料中的數字，"
+    "不得自行編造或回憶任何價格、指標、日期或統計值；資料沒有的面向要明說「資料不足」，不要猜。"
+    "請用繁體中文，有條理且完整地分析：同時呈現支持與反對的理由，指出資料彼此矛盾之處（例如技術面偏多但籌碼面偏空），"
+    "不要只挑單一指標下結論；在結尾提醒這不是投資建議。"
 )
+
+
+# ---------- 用量紀錄 ----------
+# 每個 API 請求在自己的執行緒裡收集這次呼叫 AI 用掉的 tokens；api_server 會附在回應的 ai_usage 欄位，
+# 前端記到瀏覽器並依「設定」頁填的單價估算費用。伺服器本身不保存。
+_TLS = threading.local()
+
+
+def begin_usage() -> None:
+    _TLS.items = []
+
+
+def collect_usage() -> List[Dict[str, Any]]:
+    items = getattr(_TLS, "items", None) or []
+    _TLS.items = None
+    return items
+
+
+def usage_from_response(provider: str, r: Any) -> Dict[str, Any]:
+    """從各家回應取出 tokens：Gemini usageMetadata（思考 tokens 算輸出）、Claude／OpenAI 相容 usage。"""
+    try:
+        if provider == "gemini":
+            u = r.get("usageMetadata") or {}
+            out = (u.get("candidatesTokenCount") or 0) + (u.get("thoughtsTokenCount") or 0)
+            return {"input_tokens": u.get("promptTokenCount"), "output_tokens": out if u else None}
+        u = r.get("usage") or {}
+        if provider == "anthropic":
+            inp = (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0) + (
+                u.get("cache_read_input_tokens") or 0)
+            return {"input_tokens": inp if u else None, "output_tokens": u.get("output_tokens")}
+        return {"input_tokens": u.get("prompt_tokens"), "output_tokens": u.get("completion_tokens")}
+    except AttributeError:
+        return {"input_tokens": None, "output_tokens": None}
+
+
+def record_usage(provider: str, model: str, name: str, r: Any, started: float) -> None:
+    items = getattr(_TLS, "items", None)
+    if items is None:
+        return
+    u = usage_from_response(provider, r)
+    items.append({
+        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "provider": provider,
+        "local": provider == "openai_compatible",
+        "model": model,
+        "profile": name or provider,
+        "input_tokens": u["input_tokens"],
+        "output_tokens": u["output_tokens"],
+        "reported": u["input_tokens"] is not None or u["output_tokens"] is not None,
+        "latency_ms": int((time.time() - started) * 1000),
+    })
 
 
 class AIError(RuntimeError):
@@ -81,6 +134,7 @@ def complete(profile: Dict[str, Any], system: str, user: str, json_mode: bool = 
     key, base = _key(profile), _base(profile)
     if t != "openai_compatible" and not key:
         raise AIError("尚未填入 API Key")
+    started = time.time()
     if t == "gemini":
         body: Dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -89,6 +143,7 @@ def complete(profile: Dict[str, Any], system: str, user: str, json_mode: bool = 
         if json_mode:
             body["generationConfig"] = {"responseMimeType": "application/json"}
         r = _request(f"{base}/v1beta/models/{model}:generateContent", {"x-goog-api-key": key}, body, timeout, key)
+        record_usage(t, model, profile.get("name", ""), r, started)
         try:
             return "".join(p.get("text", "") for p in r["candidates"][0]["content"]["parts"])
         except (KeyError, IndexError):
@@ -97,6 +152,7 @@ def complete(profile: Dict[str, Any], system: str, user: str, json_mode: bool = 
         r = _request(f"{base}/v1/messages", {"x-api-key": key, "anthropic-version": "2023-06-01"},
                      {"model": model, "max_tokens": 2048, "system": system,
                       "messages": [{"role": "user", "content": user}]}, timeout, key)
+        record_usage(t, model, profile.get("name", ""), r, started)
         try:
             return "".join(b.get("text", "") for b in r["content"] if b.get("type") == "text")
         except (KeyError, TypeError):
@@ -119,6 +175,7 @@ def complete(profile: Dict[str, Any], system: str, user: str, json_mode: bool = 
             r = _request(f"{base}/chat/completions", headers, body, timeout, key)
         else:
             raise
+    record_usage(t, model, profile.get("name", ""), r, started)
     try:
         return r["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError):
@@ -192,22 +249,56 @@ def unverified_numbers(answer: str, data_text: str) -> List[str]:
     return sorted(set(bad))[:12]
 
 
+MULTI_ANGLE = (
+    "請依序用小標題回答：\n"
+    "1. 一句話結論（偏多／中性／偏空，以及信心高低與主要原因）\n"
+    "2. 技術面（趨勢、均線、動能、支撐壓力、趨勢評分）\n"
+    "3. 價格位置（各期間報酬、距 52 週高低點）\n"
+    "4. 籌碼面（台股才有；三大法人、融資融券的方向與是否和股價一致）\n"
+    "5. 基本面與評價（本益比、淨值比、殖利率、配息；和同業比較只能用資料中有的）\n"
+    "6. 消息面（列出相關的新聞／公告標題與可能影響，無關的新聞要略過）\n"
+    "7. 大盤環境（該市場指數的趨勢對這檔的影響）\n"
+    "8. 多方理由 vs 空方理由（各至少 2 點，並指出彼此矛盾的訊號）\n"
+    "9. 觀察條件：什麼價位或事件會讓看法改變（引用資料中的支撐壓力價位）\n"
+    "10. 主要風險\n"
+    "缺資料的段落寫「資料不足」並說明缺什麼。"
+)
 MODULE_TASKS = {
-    "mod1": "請根據以下技術分析數據，用白話解釋目前趨勢、關鍵支撐壓力、動能狀態，並說明買進／觀望／賣出各自的條件與風險。",
-    "mod2": "請根據以下新聞事件與事件前價格資料，解釋市場是否已提前反映（Priced-in）、可能的波動範圍，以及哪些情況會讓判斷失效。",
+    "mod1": "請根據以下技術分析數據與補充資料，做多面向的完整分析。" + MULTI_ANGLE,
+    "mod2": ("請根據以下新聞事件、事件前後價格與補充資料，解釋市場是否已提前反映（Priced-in）、可能的波動範圍、"
+             "其他近期新聞是否支持或抵銷這則消息，以及哪些情況會讓判斷失效。請同時列出利多與利空的解讀。"),
     "mod3": "請根據以下回測結果解讀策略優缺點（勝率、獲利因子、最大回撤、交易次數是否足夠），指出可能的過度擬合風險與可測試的改進方向。",
-    "mod4": "請根據以下投資組合風控資料，指出最大的集中度與隱藏相關性風險、壓力測試的意義，並用白話建議可考慮的調整方向。",
+    "mod4": "請根據以下投資組合風控資料，指出最大的集中度與隱藏相關性風險、各市場與幣別曝險、壓力測試的意義，並用白話建議可考慮的調整方向。",
     "mod5": "請根據以下交易紀錄統計與偵測到的行為偏誤，用白話說明最需要改善的習慣，並把建議寫成可以立即執行的規則。",
-    "stock": "請根據以下標的基本資料與配息紀錄，用白話整理這檔標的的特性、配息節奏與需要留意的風險。",
+    "stock": "請根據以下標的基本資料、配息紀錄與補充資料，做多面向的完整整理。" + MULTI_ANGLE,
 }
 
 
-def explain(profile: Dict[str, Any], module: str, data: Any, question: str = "") -> Dict[str, Any]:
+NOISY_KEYS = {"level_candidates", "MACD_hist", "trades", "equity_curve", "endpoint", "ai_usage"}
+MAX_DATA_CHARS = 24000
+
+
+def _clean(obj: Any) -> Any:
+    """去掉對解讀沒幫助、又佔篇幅的欄位（重複的逐筆交易、全部候選價位…）。"""
+    if isinstance(obj, dict):
+        return {k: _clean(v) for k, v in obj.items() if k not in NOISY_KEYS and v not in (None, "", [], {})}
+    if isinstance(obj, list):
+        return [_clean(v) for v in obj]
+    return obj
+
+
+def explain(profile: Dict[str, Any], module: str, data: Any, question: str = "",
+            context: Dict[str, Any] | None = None) -> Dict[str, Any]:
     if not is_enabled(profile):
         raise AIError("尚未設定 AI 連線，請先到「設定」頁新增")
-    data_text = json.dumps(data, ensure_ascii=False)[:12000]
+    page = json.dumps(_clean(data), ensure_ascii=False, separators=(",", ":"))
+    extra = json.dumps(_clean(context), ensure_ascii=False, separators=(",", ":")) if context else ""
+    data_text = f"【本頁資料】{page}" + (f"\n【補充資料（系統另外整理的同一檔標的多面向資料）】{extra}" if extra else "")
+    truncated = len(data_text) > MAX_DATA_CHARS
+    if truncated:  # 很少發生；真的超過就明講，不讓 AI 以為資料完整
+        data_text = data_text[:MAX_DATA_CHARS] + "\n（資料過長已截斷，後段缺少的面向請標示資料不足）"
     task = MODULE_TASKS.get(module, "請解讀以下資料。")
-    user = f"{task}\n{('使用者補充問題：' + question) if question else ''}\n\n【系統計算好的資料（JSON）】\n{data_text}"
+    user = f"{task}\n{('使用者補充問題：' + question) if question else ''}\n\n{data_text}"
     started = time.time()
     answer = complete(profile, SYSTEM_GUARD, user)
     return {
@@ -215,6 +306,9 @@ def explain(profile: Dict[str, Any], module: str, data: Any, question: str = "")
         "model": f"{profile.get('type')}:{profile.get('model')}",
         "latency_ms": int((time.time() - started) * 1000),
         "unverified_numbers": unverified_numbers(answer, data_text),
+        "input_chars": len(data_text),
+        "context_sections": [k for k in (context or {}) if k not in ("標的", "名稱")],
+        "truncated": truncated,
     }
 
 
