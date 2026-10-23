@@ -350,7 +350,10 @@
         profile: cleanProfile(profile),
       });
     return (
-      <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3">
+      <div
+        className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3"
+        data-tour={`ai-explain-${module}`}
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm font-bold text-violet-200">{title}</div>
           <div className="flex items-center gap-2 text-xs">
@@ -467,9 +470,7 @@
         {out?.answer && (
           <div className="space-y-2">
             <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3">
-              <window.TA.Markdown
-                text={out.streaming ? `${out.answer} ▍` : out.answer}
-              />
+              <window.TA.Markdown text={out.streaming ? `${out.answer} ▍` : out.answer} />
             </div>
             {!out.streaming && out.context_note && (
               <div className="text-[11px] text-rose-300 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1">

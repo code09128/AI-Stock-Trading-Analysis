@@ -4,16 +4,27 @@
   function MyHoldingsBar({ m4Holdings, loadMyHoldings }) {
     const { holdings } = window.TA.usePortfolio();
     const isSample = JSON.stringify(m4Holdings) === JSON.stringify(window.TA.DEFAULT_HOLDINGS);
+    // 帶入後看盤頁的持股又變了（成交、修改、刪除）：這裡分析的是舊版本，要提醒
+    const key = (list) =>
+      list
+        .map((h) => `${window.TA.normSym(String(h.symbol))}:${Number(h.shares)}`)
+        .sort()
+        .join('|');
+    const stale = !isSample && holdings.length > 0 && key(m4Holdings) !== key(holdings);
     return (
       <div
         data-tour="mod4-source"
         className={`rounded-xl border px-4 py-2 text-xs flex flex-wrap items-center gap-2 ${
-          isSample
+          isSample || stale
             ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
             : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-100'
         }`}
       >
-        {isSample ? '⚠️ 目前用的是範例持股。' : '✅ 目前分析的是你帶入的持股。'}
+        {isSample
+          ? '⚠️ 目前用的是範例持股。'
+          : stale
+            ? '⚠️ 這裡的持股和看盤頁「我的持股」不一致（看盤頁後來有成交或修改，或你在這裡手動改過）。要分析最新持股請按「重新帶入我的持股」。'
+            : '✅ 目前分析的是你帶入的持股。'}
         <span className="text-slate-400">
           看盤頁「我的持股」有 {holdings.length} 檔（含模擬成交）。
         </span>
@@ -39,7 +50,8 @@
     );
   }
 
-  const pctColor = (v) => (v == null ? 'text-slate-500' : v >= 0 ? 'text-emerald-400' : 'text-rose-400');
+  const pctColor = (v) =>
+    v == null ? 'text-slate-500' : v >= 0 ? 'text-emerald-400' : 'text-rose-400';
   const ntd = (v) => (v == null ? '--' : `NT$ ${Math.round(v).toLocaleString()}`);
 
   function Bars({ items }) {
@@ -50,9 +62,13 @@
             <div className="flex justify-between text-[11px]">
               <span className="text-slate-300">
                 {x.name}
-                {x.symbols && <span className="text-slate-500 font-mono">（{x.symbols.join('、')}）</span>}
+                {x.symbols && (
+                  <span className="text-slate-500 font-mono">（{x.symbols.join('、')}）</span>
+                )}
               </span>
-              <span className={`font-mono ${x.weight_pct >= 50 ? 'text-rose-400 font-bold' : 'text-sky-300'}`}>
+              <span
+                className={`font-mono ${x.weight_pct >= 50 ? 'text-rose-400 font-bold' : 'text-sky-300'}`}
+              >
                 {x.weight_pct}%
               </span>
             </div>
@@ -74,19 +90,29 @@
     if (data.error) return <div className="text-xs text-amber-300">⚠️ {data.error}</div>;
     const { exposures: ex, correlation: cor } = data;
     return (
-      <div data-tour="mod4-scenarios" className="bg-slate-900 border border-rose-500/30 rounded-xl p-5 space-y-4">
+      <div
+        data-tour="mod4-scenarios"
+        className="bg-slate-900 border border-rose-500/30 rounded-xl p-5 space-y-4"
+      >
         <div className="text-xs font-semibold text-rose-300">
           多情境壓力測試
           <window.TA.Tip text="同時看 4 種情境：大盤修正 -10%、熊市 -20%（用 Beta 線性估算），以及「利率快速上升」「經濟衰退」兩段真實歷史：把你現在的持股套回當時的真實收盤價，看會跌多少。歷史不代表未來。" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           {data.beta_scenarios.map((b) => (
-            <div key={b.market_move_pct} className="rounded-lg bg-slate-950/70 border border-slate-800 p-3">
+            <div
+              key={b.market_move_pct}
+              className="rounded-lg bg-slate-950/70 border border-slate-800 p-3"
+            >
               <div className="text-slate-400">
                 {b.market_move_pct === -10 ? '市場修正' : '熊市下跌'} {b.market_move_pct}%
-                <window.TA.Tip text={`組合預估跌幅＝大盤跌幅 × 組合 Beta。線性估算，真實下跌時個股可能跌得更多。`} />
+                <window.TA.Tip
+                  text={`組合預估跌幅＝大盤跌幅 × 組合 Beta。線性估算，真實下跌時個股可能跌得更多。`}
+                />
               </div>
-              <div className="text-lg font-bold font-mono text-rose-400">{b.portfolio_move_pct}%</div>
+              <div className="text-lg font-bold font-mono text-rose-400">
+                {b.portfolio_move_pct}%
+              </div>
               <div className="font-mono text-slate-300">{ntd(b.loss_twd)}</div>
               <div className="text-[10px] text-slate-500">Beta 線性估算</div>
             </div>
@@ -99,7 +125,9 @@
               </div>
               {h.available ? (
                 <>
-                  <div className={`text-lg font-bold font-mono ${pctColor(h.portfolio_return_pct)}`}>
+                  <div
+                    className={`text-lg font-bold font-mono ${pctColor(h.portfolio_return_pct)}`}
+                  >
                     {h.portfolio_return_pct}%
                   </div>
                   <div className="font-mono text-slate-300">{ntd(h.loss_twd_now)}</div>
@@ -119,7 +147,8 @@
           .map((h) => (
             <div key={`t-${h.key}`} className="overflow-x-auto">
               <div className="text-[11px] text-slate-400 mb-1">
-                {h.name}（{h.event}，{h.start} ~ {h.end}）各持股真實漲跌・涵蓋持股 {h.coverage_pct}%・同期大盤：
+                {h.name}（{h.event}，{h.start} ~ {h.end}）各持股真實漲跌・涵蓋持股 {h.coverage_pct}
+                %・同期大盤：
                 {h.benchmarks.map((b) => ` ${b.name} ${b.return_pct}%`).join('、')}
               </div>
               <table className="w-full text-xs font-mono">
@@ -137,10 +166,21 @@
                     <tr key={r.symbol} className="border-t border-slate-800">
                       <td className="py-1 text-white font-bold">{r.symbol}</td>
                       <td>{r.weight_pct}%</td>
-                      <td className={pctColor(r.return_pct)}>{r.return_pct == null ? '--' : `${r.return_pct}%`}</td>
-                      <td className={pctColor(r.worst_pct)}>{r.worst_pct == null ? '--' : `${r.worst_pct}%`}</td>
+                      <td className={pctColor(r.return_pct)}>
+                        {r.return_pct == null ? '--' : `${r.return_pct}%`}
+                      </td>
+                      <td className={pctColor(r.worst_pct)}>
+                        {r.worst_pct == null ? '--' : `${r.worst_pct}%`}
+                      </td>
                       <td className="font-sans text-slate-400">
-                        {r.note || (r.drags ? <span className="text-rose-300">跌幅比組合多 5% 以上，拋售時拖累最大</span> : '')}
+                        {r.note ||
+                          (r.drags ? (
+                            <span className="text-rose-300">
+                              跌幅比組合多 5% 以上，拋售時拖累最大
+                            </span>
+                          ) : (
+                            ''
+                          ))}
                       </td>
                     </tr>
                   ))}
@@ -177,7 +217,9 @@
                 <span
                   key={`${p.a}-${p.b}`}
                   className={`px-2 py-1 rounded border ${
-                    p.high ? 'border-rose-500/50 bg-rose-500/10 text-rose-200' : 'border-slate-700 text-slate-300'
+                    p.high
+                      ? 'border-rose-500/50 bg-rose-500/10 text-rose-200'
+                      : 'border-slate-700 text-slate-300'
                   }`}
                 >
                   {p.a} × {p.b}：{p.corr}
@@ -242,9 +284,7 @@
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-white">
-                持股與目標權重
-              </h2>
+              <h2 className="text-base font-semibold text-white">持股與目標權重</h2>
               <span className="block mt-1 text-xs text-slate-500">
                 資料狀態：匯率、即時價、ETF
                 前十大成分股、Beta（留空時）、歷史回落皆為真實資料；持股來源見上方

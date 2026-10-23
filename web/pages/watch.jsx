@@ -33,7 +33,7 @@
   } = window.TA;
 
   // ---------- 看盤頁 ----------
-  function WatchPage({ onSendToMod1, onSendHoldings, onShowTour }) {
+  function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
     const [watch, setWatch] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH));
     const [listTab, setListTab] = useState('watch');
     const [etfs, setEtfs] = useState({ etfs: [], pending_yields: 0, sources: {} });
@@ -422,7 +422,14 @@
     const tax = tw && order.side === 'SELL' ? amount * (etfFlag ? 0.001 : 0.003) : 0;
     const orderIssues = [];
     if (!(priceNum > 0)) orderIssues.push('請輸入價格');
-    if (!(qtyNum > 0) || !Number.isInteger(qtyNum)) orderIssues.push('數量需為正整數');
+    // 數量：台股整張與零股買進要整數；台股零股賣出允許小數（把銀行碎股記錄平倉用）；美股可交易碎股
+    if (!(qtyNum > 0)) orderIssues.push('數量需大於 0');
+    else if (tw && order.lotType === 'ROUND' && !Number.isInteger(qtyNum))
+      orderIssues.push('整張數量需為整數');
+    else if (tw && !Number.isInteger(qtyNum) && order.side === 'BUY')
+      orderIssues.push('台股零股買進需為整數股');
+    else if (tw && !Number.isInteger(qtyNum))
+      orderIssues.push('提醒：台股實際不能交易小數股，這裡只是把持股裡的碎股記錄平倉');
     if (tw && order.lotType === 'ODD' && qtyNum >= 1000) orderIssues.push('零股需少於 1000 股');
     if (tw && priceNum > 0 && !isOnTick(priceNum, twTick(priceNum, etfFlag)))
       orderIssues.push(`價格不符台股跳動檔位（此價位應為 ${twTick(priceNum, etfFlag)} 的倍數）`);
@@ -450,7 +457,7 @@
     const addToCart = () => {
       if (hardIssues.length) {
         say(`無法加入：${hardIssues[0]}`);
-        return;
+        return false;
       }
       const item = {
         id: Date.now(),
@@ -468,6 +475,7 @@
       };
       setCart([item, ...cart]);
       say('已加入暫存匣（模擬，不會真的下單）');
+      return true;
     };
 
     const bestAsk = q?.asks?.[0];
@@ -773,18 +781,24 @@
                   selected={selected}
                   onSelect={setSelected}
                   onSell={(r) => {
-                    const twLot = isTW(r.symbol) && r.shares % 1000 === 0;
+                    // 台股：整張用張；不足 1000 股用零股；超過 1000 股又不是整張，先帶整張，零頭要再下一筆零股
+                    const t = isTW(r.symbol);
+                    const lots = Math.floor(r.shares / 1000);
+                    const rest = Math.round((r.shares - lots * 1000) * 10000) / 10000;
+                    const round = t && lots > 0;
                     setSelected(r.symbol);
                     setRightTab('quote');
                     setOrder((o) => ({
                       ...o,
                       side: 'SELL',
-                      lotType: isTW(r.symbol) ? (twLot ? 'ROUND' : 'ODD') : o.lotType,
-                      qty: twLot ? r.shares / 1000 : r.shares,
+                      lotType: t ? (round ? 'ROUND' : 'ODD') : o.lotType,
+                      qty: round ? lots : r.shares,
                       price: String(r.price ?? r.cost),
                     }));
                     say(
-                      '已帶入賣出委託：確認右側下單面板後「加入暫存匣」再按「成交」，就會寫入交易紀錄',
+                      round && rest > 0
+                        ? `已帶入賣出 ${lots} 張；剩下的 ${rest} 股請成交後再切「零股」下一筆`
+                        : '已帶入賣出委託：確認右側下單面板後「加入暫存匣」再按「成交」，就會寫入交易紀錄',
                     );
                   }}
                   say={say}
@@ -824,6 +838,7 @@
               {[
                 ['quote', '行情與下單'],
                 ['info', '基本資料與配息'],
+                ['heatmap', '股市熱力圖'],
               ].map(([k, label]) => (
                 <button
                   type="button"
@@ -849,6 +864,21 @@
                 )}
               </span>
             </div>
+
+            {rightTab === 'heatmap' && (
+              <window.TA.HeatmapPanel
+                watch={watch}
+                holdings={holdings}
+                selected={selected}
+                onSelect={setSelected}
+                onOpenQuote={(s) => {
+                  setSelected(s);
+                  setRightTab('quote');
+                }}
+                onSendMod1={(it) => onSendToMod1(quotes[baseCode(it.symbol)] || it)}
+                onSendMod2={(it) => onSendToMod2(it.symbol, it.name)}
+              />
+            )}
 
             {rightTab === 'info' && (
               <div data-tour="stock-info">

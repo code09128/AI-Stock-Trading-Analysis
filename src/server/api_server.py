@@ -53,6 +53,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/categories": D.handle_categories,
     "/api/candles": D.handle_candles,
     "/api/sparks": D.handle_sparks,
+    "/api/heatmap": D.handle_heatmap,
     # 五個分析功能
     "/api/mod1/analyze": D.handle_mod1_analyze,
     "/api/news": D.handle_news,
@@ -109,7 +110,7 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤
-    QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/intraday", "/api/overview", "/api/fx",
+    QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
                    "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles")
 
     def _log_request(self, status: int, started: float, payload: Any = None, res: Any = None) -> None:

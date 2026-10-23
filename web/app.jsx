@@ -286,6 +286,23 @@ function App() {
     showToast(`已將 ${quote.symbol} ${quote.name} 送入技術分析`);
   };
 
+  // 看盤頁熱力圖 → 新聞判斷：換成這檔、清掉舊的標題與事件前漲跌，並自動抓最新新聞
+  const sendToMod2 = (symbol, name) => {
+    setM2Form({
+      label: '',
+      target: symbol,
+      headline: '',
+      sentiment: 'POSITIVE',
+      ret_5d_pct: '',
+      ret_20d_pct: '',
+      invalidation_criteria: '',
+    });
+    setM2Data(null);
+    window.TA._autoNews = symbol;
+    setActiveTab('mod2');
+    showToast(`已帶入 ${symbol} ${name || ''} 到新聞判斷，正在抓最新新聞`);
+  };
+
   // 看盤頁「我的持股」→ 組合風控：帶入持股並自動平均配置目標權重（現金沿用目前設定）
   const sendHoldings = (list) => {
     const each = list.length
@@ -380,7 +397,9 @@ function App() {
     if (tabId === 'mod5') {
       // 交易檢討預設使用「我的交易紀錄」（模擬成交或匯入），沒有才用範例
       const journal = window.TA.loadPortfolio().journal;
-      if (journal.length && m5Source !== 'mine') {
+      // 我的交易紀錄若在別頁有變動（例如看盤頁成交賣出），重新讀取並診斷
+      const stale = m5Source === 'mine' && JSON.stringify(journal) !== JSON.stringify(m5Entries);
+      if (journal.length && (m5Source !== 'mine' || stale)) {
         setM5Source('mine');
         setM5Entries(journal);
         setM5Data(null);
@@ -701,7 +720,9 @@ function App() {
           >
             <NavIcon name="bot" className="w-4 h-4 shrink-0" />
             {expanded && (
-              <span className="truncate">{aiProfile ? aiProfile.name : 'AI 未啟用（使用內建規則）'}</span>
+              <span className="truncate">
+                {aiProfile ? aiProfile.name : 'AI 未啟用（使用內建規則）'}
+              </span>
             )}
           </button>
           <button
@@ -783,6 +804,7 @@ function App() {
             {activeTab === 'watch' && (
               <window.TA.WatchPage
                 onSendToMod1={sendToMod1}
+                onSendToMod2={sendToMod2}
                 onSendHoldings={sendHoldings}
                 onShowTour={() => window.TA.startTour(0)}
               />

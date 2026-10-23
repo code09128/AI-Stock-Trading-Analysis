@@ -115,7 +115,7 @@
             <input
               value={order.qty}
               onChange={(e) => setOrder({ ...order, qty: e.target.value })}
-              inputMode="numeric"
+              inputMode="decimal"
               aria-label="委託數量"
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 mono text-white"
             />
@@ -166,8 +166,7 @@
         <button
           type="button"
           onClick={() => {
-            addToCart();
-            setChecked({});
+            if (addToCart()) setChecked({}); // 沒加成功（例如價格不對）就保留已勾選的規則
           }}
           disabled={!allChecked}
           title={allChecked ? '' : '請先勾選上方所有交易規則'}

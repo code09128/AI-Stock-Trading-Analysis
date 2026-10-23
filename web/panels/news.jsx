@@ -1,4 +1,15 @@
 (() => {
+  // 新聞類型標籤：官方公告（重大訊息、公司公告、8-K）琥珀色、分析專欄紫灰、一般新聞藍
+  function KindBadge({ kind }) {
+    const official = ['重大訊息', '公司公告', '8-K'].includes(kind);
+    const cls = official
+      ? 'bg-amber-500/15 text-amber-300'
+      : kind === '分析專欄'
+        ? 'bg-slate-700/60 text-slate-300'
+        : 'bg-slate-800 text-sky-300';
+    return <span className={`text-[10px] px-1 rounded ${cls}`}>{kind}</span>;
+  }
+
   // 近期新聞彙整：逐則 5 個面向＋真實價格反應，依重要性排序
   function NewsDigest({ symbol, aiOn }) {
     const { useState } = React;
@@ -23,14 +34,22 @@
         setLoading(false);
       }
     };
-    const pctCls = (v) => (v == null ? 'text-slate-500' : v >= 0 ? 'text-emerald-400' : 'text-rose-400');
+    const pctCls = (v) =>
+      v == null ? 'text-slate-500' : v >= 0 ? 'text-emerald-400' : 'text-rose-400';
     return (
-      <div data-tour="mod2-digest" className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3 space-y-2">
+      <div
+        data-tour="mod2-digest"
+        className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3 space-y-2"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-violet-200">
             近期重要新聞彙整（依重要性排序）
-            <window.TA.Tip text={`把「${symbol}」近期新聞逐則整理：發生什麼事、為何要關注、影響偏短期或長期、可能影響哪些財務指標、市場隱含的假設，並附上新聞發布前後的真實股價反應。有設定 AI 時由 AI 依標題整理；沒有 AI 時只能用關鍵字判斷期間與財務指標。`} />
-            <span className="ml-2 text-slate-400">{aiOn ? '將使用 AI 整理' : '未啟用 AI：只用關鍵字規則'}</span>
+            <window.TA.Tip
+              text={`把「${symbol}」近期新聞逐則整理：發生什麼事、為何要關注、影響偏短期或長期、可能影響哪些財務指標、市場隱含的假設，並附上新聞發布前後的真實股價反應。有設定 AI 時由 AI 依標題整理；沒有 AI 時只能用關鍵字判斷期間與財務指標。`}
+            />
+            <span className="ml-2 text-slate-400">
+              {aiOn ? '將使用 AI 整理' : '未啟用 AI：只用關鍵字規則'}
+            </span>
           </div>
           <button
             type="button"
@@ -45,11 +64,13 @@
         {d && !d.fail && (
           <div className="space-y-2">
             <div className="text-[11px] text-slate-400">
-              整理方式：{d.mode === 'RULES' ? '關鍵字規則（未使用 AI）' : d.mode}・{d.sources?.join('・')}
+              整理方式：{d.mode === 'RULES' ? '關鍵字規則（未使用 AI）' : d.mode}・
+              {d.sources?.join('・')}
               {d.ai_error && <span className="block text-amber-300">⚠️ {d.ai_error}</span>}
               {d.unverified_numbers?.length > 0 && (
                 <span className="block text-amber-300">
-                  ⚠️ AI 提到這些標題裡沒有的數字，可能是自己編的，請勿採信：{d.unverified_numbers.join('、')}
+                  ⚠️ AI 提到這些標題裡沒有的數字，可能是自己編的，請勿採信：
+                  {d.unverified_numbers.join('、')}
                 </span>
               )}
             </div>
@@ -58,7 +79,10 @@
                 const ai = it.ai || {};
                 const r = it.reaction || {};
                 return (
-                  <div key={`${it.local_iso}-${it.title}`} className="rounded-lg bg-slate-950/70 border border-slate-800 p-2.5 text-xs space-y-1">
+                  <div
+                    key={`${it.local_iso}-${it.title}`}
+                    className="rounded-lg bg-slate-950/70 border border-slate-800 p-2.5 text-xs space-y-1"
+                  >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-slate-500">#{i + 1}</span>
                       {ai.importance && (
@@ -67,13 +91,27 @@
                           {'☆'.repeat(5 - ai.importance)}
                         </span>
                       )}
-                      <span className="text-[10px] px-1 rounded bg-slate-800 text-sky-300">{it.kind}</span>
-                      <span className="text-slate-500 font-mono">{it.local_iso.replace('T', ' ').slice(0, 16)}</span>
-                      {!it.mentions && <span className="text-[10px] text-slate-500">（標題沒提到這檔，可能只是相關報導）</span>}
+                      <KindBadge kind={it.kind} />
+                      <span className="text-slate-500 font-mono">
+                        {it.local_iso.replace('T', ' ').slice(0, 16)}
+                      </span>
+                      {!it.mentions && (
+                        <span className="text-[10px] text-slate-500">
+                          （標題沒提到這檔，可能只是相關報導）
+                        </span>
+                      )}
                     </div>
-                    <a href={it.link} target="_blank" rel="noreferrer" className="block text-slate-100 hover:text-sky-300">
+                    <a
+                      href={it.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block text-slate-100 hover:text-sky-300"
+                    >
                       {it.title} <span className="text-slate-500">— {it.source}</span>
                     </a>
+                    {it.detail && (
+                      <div className="text-[11px] text-slate-400 line-clamp-2">{it.detail}</div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5 text-slate-300">
                       <div>
                         <span className="text-slate-500">發生什麼事：</span>
@@ -85,11 +123,15 @@
                       </div>
                       <div>
                         <span className="text-slate-500">影響期間：</span>
-                        {ai.horizon || it.horizon || <span className="text-slate-500">無法判斷</span>}
+                        {ai.horizon || it.horizon || (
+                          <span className="text-slate-500">無法判斷</span>
+                        )}
                       </div>
                       <div>
                         <span className="text-slate-500">可能影響的財務指標：</span>
-                        {(ai.metrics?.length ? ai.metrics : it.metrics).join('、') || <span className="text-slate-500">無法判斷</span>}
+                        {(ai.metrics?.length ? ai.metrics : it.metrics).join('、') || (
+                          <span className="text-slate-500">無法判斷</span>
+                        )}
                       </div>
                       <div className="md:col-span-2">
                         <span className="text-slate-500">市場隱含的假設：</span>
@@ -108,9 +150,14 @@
                             <span className="text-slate-500">
                               {' '}
                               （{r.from} 收盤 → {r.to} 收盤
-                              {d.atr_pct ? `，約 ${(Math.abs(r.pct) / d.atr_pct).toFixed(1)} 個 ATR` : ''}）
+                              {d.atr_pct
+                                ? `，約 ${(Math.abs(r.pct) / d.atr_pct).toFixed(1)} 個 ATR`
+                                : ''}
+                              ）
                             </span>
-                            {r.note && <span className="text-amber-300 font-sans ml-1">{r.note}</span>}
+                            {r.note && (
+                              <span className="text-amber-300 font-sans ml-1">{r.note}</span>
+                            )}
                           </>
                         )}
                       </div>
@@ -120,7 +167,9 @@
               })}
             </div>
             <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5 text-xs">
-              <div className="text-slate-300 font-semibold mb-1">哪些因素可能改變目前的市場反應</div>
+              <div className="text-slate-300 font-semibold mb-1">
+                哪些因素可能改變目前的市場反應
+              </div>
               {d.reaction_changers.map((x) => (
                 <div key={x} className="text-slate-300">
                   • {x}
@@ -140,6 +189,7 @@
     const { NEWS_PRESETS } = window.TA;
     const { useState } = React;
     const [news, setNews] = useState(null);
+    const [newsKind, setNewsKind] = useState('全部');
     const aiCfg = window.TA.useAISettings();
     const aiOn =
       aiCfg.scope.mod2 !== false && !!aiCfg.profiles.find((p) => p.id === aiCfg.activeId);
@@ -161,6 +211,14 @@
         setNewsLoading(false);
       }
     };
+    // 從看盤頁熱力圖「查今天的新聞」過來：自動抓一次
+    React.useEffect(() => {
+      if (window.TA._autoNews && window.TA._autoNews === m2Form.target) {
+        window.TA._autoNews = null;
+        loadNews();
+      }
+      // eslint-disable-next-line
+    }, [m2Form.target]);
     const pickNews = (it) => {
       // 用新聞發布當下已知的真實價格計算「事件前」漲幅（use_event_date），情緒方向仍由你判斷
       const f = {
@@ -177,9 +235,7 @@
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-white">
-                新聞事件
-              </h2>
+              <h2 className="text-base font-semibold text-white">新聞事件</h2>
               <span className="block mt-1 text-xs text-slate-500">
                 資料狀態：新聞標題與情緒是「範例輸入」，可自行修改；股價、ATR、事件前漲幅來自真實日
                 K（Yahoo/FinMind）
@@ -212,9 +268,11 @@
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-sky-200">
-                抓取「{m2Form.target}」最新真實新聞／公告（Google
-                News、Yahoo、證交所重大訊息、SEC 8-K）。 點一則 →
+                抓取「{m2Form.target}」最新真實新聞／公告。台股：Google
+                News、鉅亨網、Yahoo奇摩股市、MoneyDJ、證交所重大訊息，加上玩股網、財報狗分析專欄；美股：Google
+                News、Yahoo Finance、鉅亨網、SEC 8-K，加上 TradingView、ETFdb 分析專欄。 點一則 →
                 自動帶入標題與發布時間，並用當時已知的真實價格算事件前漲幅。
+                <window.TA.Tip text="新聞＝發生了什麼事；公告（重大訊息、公司公告、8-K）＝公司自己發布的官方資訊，可信度最高；分析專欄＝作者的觀點與解讀，不是新事件，判斷「利多是否已反映」時請以新聞與公告為主。同一則新聞被多個網站轉載只會顯示一次。" />
               </div>
               <button
                 type="button"
@@ -235,24 +293,49 @@
                     </span>
                   ))}
                 </div>
-                <div className="max-h-60 overflow-y-auto space-y-1">
-                  {news.items.map((it) => (
-                    <button
-                      type="button"
-                      key={`${it.published_utc}-${it.title}`}
-                      onClick={() => pickNews(it)}
-                      className="w-full text-left px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 hover:border-sky-400 text-xs cursor-pointer"
-                    >
-                      <span className="text-slate-500 font-mono mr-2">
-                        {it.local_iso.replace('T', ' ').slice(0, 16)}
-                      </span>
-                      <span className="text-[10px] px-1 rounded bg-slate-800 text-sky-300 mr-2">
-                        {it.kind}
-                      </span>
-                      <span className="text-slate-200">{it.title}</span>
-                      <span className="text-slate-500 ml-2">— {it.source}</span>
-                    </button>
-                  ))}
+                {news.items.length > 0 && (
+                  <div className="flex gap-1 text-[11px]">
+                    {['全部', '新聞', '公告', '分析專欄'].map((k) => (
+                      <button
+                        type="button"
+                        key={k}
+                        onClick={() => setNewsKind(k)}
+                        className={`px-2 py-0.5 rounded cursor-pointer ${newsKind === k ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                      >
+                        {k}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="max-h-72 overflow-y-auto space-y-1">
+                  {news.items
+                    .filter((it) =>
+                      newsKind === '全部'
+                        ? true
+                        : newsKind === '公告'
+                          ? ['重大訊息', '公司公告', '8-K'].includes(it.kind)
+                          : it.kind === newsKind,
+                    )
+                    .map((it) => (
+                      <button
+                        type="button"
+                        key={`${it.published_utc}-${it.title}`}
+                        onClick={() => pickNews(it)}
+                        className="w-full text-left px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 hover:border-sky-400 text-xs cursor-pointer"
+                      >
+                        <span className="text-slate-500 font-mono mr-2">
+                          {it.local_iso.replace('T', ' ').slice(0, 16)}
+                        </span>
+                        <KindBadge kind={it.kind} />
+                        <span className="text-slate-200 ml-2">{it.title}</span>
+                        <span className="text-slate-500 ml-2">— {it.source}</span>
+                        {it.detail && (
+                          <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                            {it.detail}
+                          </div>
+                        )}
+                      </button>
+                    ))}
                   {news.items.length === 0 && (
                     <div className="text-xs text-slate-500">
                       沒有抓到新聞（可能該代號近期無報導）。
@@ -313,7 +396,12 @@
                 type="number"
                 step="0.1"
                 value={m2Form.ret_5d_pct ?? ''}
-                onChange={(e) => setM2Form({ ...m2Form, ret_5d_pct: e.target.value === '' ? '' : Number(e.target.value) })}
+                onChange={(e) =>
+                  setM2Form({
+                    ...m2Form,
+                    ret_5d_pct: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
                 placeholder="留空＝用真實日 K 計算"
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
               />
@@ -327,7 +415,12 @@
                 type="number"
                 step="0.1"
                 value={m2Form.ret_20d_pct ?? ''}
-                onChange={(e) => setM2Form({ ...m2Form, ret_20d_pct: e.target.value === '' ? '' : Number(e.target.value) })}
+                onChange={(e) =>
+                  setM2Form({
+                    ...m2Form,
+                    ret_20d_pct: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
                 placeholder="留空＝用真實日 K 計算"
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
               />
@@ -346,7 +439,8 @@
             </div>
             <div className="md:col-span-9">
               <label htmlFor="m2-inv" className="block text-xs text-slate-400 mb-1">
-                停損／判斷失效條件（Invalidation，要寫出具體價格或百分比，例如「跌破 980 停損」；太模糊會被系統退回）
+                停損／判斷失效條件（Invalidation，要寫出具體價格或百分比，例如「跌破 980
+                停損」；太模糊會被系統退回）
               </label>
               <input
                 id="m2-inv"

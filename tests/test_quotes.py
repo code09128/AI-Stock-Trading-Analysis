@@ -103,7 +103,9 @@ class WeeklyNewsStressTests(unittest.TestCase):
         news_feed._CACHE.clear()
         with patch.object(news_feed, "_google_news", side_effect=OSError("rss down")), patch.object(
             news_feed, "_twse_material", return_value=[]
-        ):
+        ), patch.object(news_feed, "_cnyes_news", return_value=[]), patch.object(
+            news_feed, "_yahoo_tw_rss", return_value=[]
+        ), patch.object(news_feed, "_google_site", return_value=[]):
             r = news_feed.fetch_news("2330", "台積電")
         self.assertEqual(r["items"], [])
         self.assertTrue(any("rss down" in e for e in r["errors"]))

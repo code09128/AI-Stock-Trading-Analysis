@@ -5,7 +5,7 @@ import time
 
 from src.market import quote_provider
 from src.market.etf_reference import ETF_POOL
-from src.market import etf_data, chart_data, chip_data, finmind, fx, markets
+from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, markets
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
 from src.server.params import arg_num
@@ -65,6 +65,13 @@ class MarketDataHandlers:
     def handle_candles(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return chart_data.candles(str(payload.get("symbol", "^TWII")),
                                   int(arg_num(payload, "n", 15, "K 棒數量", integer=True, lo=1, hi=250)))
+
+    def handle_heatmap(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """股市熱力圖：pool＝mine（帶 symbols、holdings）／tw_hot／us_core。"""
+        out = heatmap.build(str(payload.get("pool", "mine")), [str(x) for x in payload.get("symbols", [])],
+                            payload.get("holdings") if isinstance(payload.get("holdings"), dict) else None)
+        out["timestamp"] = time.strftime("%H:%M:%S")
+        return out
 
     def handle_sparks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:40]

@@ -103,7 +103,8 @@
       setHoldings(next);
       return { ok: true, msg: `已成交買進 ${symbol} ${shares} 股，持股已更新` };
     }
-    if (!h || h.shares < shares)
+    const EPS = 1e-6; // 碎股小數運算的誤差：差不到百萬分之一股就當作全部賣完
+    if (!h || h.shares < shares - EPS)
       return {
         ok: false,
         msg: `賣出失敗：持股中沒有足夠的 ${symbol}（目前 ${h ? h.shares : 0} 股）`,
@@ -122,9 +123,11 @@
     };
     setJournal([...journal, trade]);
     setHoldings(
-      h.shares === shares
+      h.shares - shares < EPS
         ? holdings.filter((x) => x.symbol !== symbol)
-        : holdings.map((x) => (x.symbol === symbol ? { ...x, shares: x.shares - shares } : x)),
+        : holdings.map((x) =>
+            x.symbol === symbol ? { ...x, shares: Math.round((x.shares - shares) * 1e6) / 1e6 } : x,
+          ),
     );
     return { ok: true, msg: `已成交賣出 ${symbol} ${shares} 股，已寫入交易紀錄 ${trade.trade_id}` };
   };

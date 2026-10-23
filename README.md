@@ -1,76 +1,123 @@
-# 台美股看盤與 AI 分析系統
+# AI Stock Trading Analysis（台美股看盤與 AI 分析系統）
 
-## 啟動
-需要 Python 3.10+（只用標準函式庫，不用 pip install）與網路。
+在自己電腦上執行的台股＋美股看盤、技術分析、新聞判斷、策略回測、組合風控與交易檢討工具。
+行情全部來自公開的真實資料來源，分析由程式計算；AI（雲端或本地模型）是選配，用來解讀程式算好的數字。
+
+> ⚠️ 本工具僅供研究與學習，不構成投資建議。模擬下單不會送出任何真實委託。
+
+## 功能一覽
+
+| 頁面 | 做什麼 |
+|---|---|
+| **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
+| **技術分析** | 還權日 K、均線、RSI、MACD、ATR、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
+| **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
+| **策略回測** | 均線策略，訊號隔日開盤成交、含手續費與稅；1／3／5／10 年、多空盤整環境拆解、前後段驗證 |
+| **組合風控** | 集中度、ETF 穿透曝險、Beta、相關係數、大盤下跌情境、歷史回落重演（2020 疫情、2022 升息） |
+| **交易檢討** | 分析交易紀錄的勝率、賺賠比、處置效應、報復性交易，產生 3 條個人規則，並成為下單前的勾選清單 |
+| **AI 解讀** | 每頁底部，研究主管／交易員口吻的報告格式（表格與段落），依你的持股給建議，回答中的數字自動與資料核對 |
+| **設定** | 雲端 AI（Gemini／OpenAI／Claude／OpenRouter）或本地模型（Ollama／LM Studio 自動偵測）；金鑰與資料額度直接在畫面填寫 |
+
+各頁之間會互相連動（看盤 → 技術分析 → 回測；熱力圖 → 查新聞；模擬成交 → 交易檢討 → 規則回到下單），程式內「說明」頁有完整流程圖與新手導覽。
+
+## 快速開始
+
+**需求**：Windows／macOS／Linux、Python 3.10 以上、網路連線。**不需要 `pip install`**（只用 Python 標準函式庫）。
 
 ```bash
+git clone https://github.com/code09128/AI-Stock-Trading-Analysis.git
+cd AI-Stock-Trading-Analysis
 python run.py
 ```
-會自動打開 http://127.0.0.1:8088/ 。Windows 也可雙擊 `啟動.bat`。停止：關閉視窗或按 Ctrl+C。
-只開伺服器不開瀏覽器：`python -m src.server.api_server [埠號]`。服務只綁定 127.0.0.1，僅本機可連。
 
-## 打包成 Windows 執行檔 / 安裝包
-程式更新後，有兩種方式重新打包：
-1. **一鍵點擊（最方便）**：直接雙擊專案目錄下的 `打包.bat`。
-2. **命令列執行**：
-   ```bash
-   python build_app.py
-   ```
-打包完成後會自動更新 `dist/` 資料夾：
-- `dist/股票交易分析系統.exe`：單一免安裝便攜版。
-- `dist/股票交易分析系統_Setup.exe`：一鍵安裝包（自動建立桌面與開始功能表捷徑）。
+會自動打開 http://127.0.0.1:8088/ 。Windows 也可以直接雙擊 `start.bat`。停止：關閉視窗或按 Ctrl+C。
 
-## 使用
-- **看盤**：左側自選股／ETF 精選／我的持股，右側分時圖、五檔、模擬下單。快捷鍵：`/` 搜尋、`↑↓` 切換標的。
-- **我的持股**：輸入或貼上 CSV（代號,股數,成本價），即時算損益，並可一鍵送去「組合風控」。
-- **設定**：連接雲端 AI（Gemini／OpenAI／Claude／OpenRouter，OpenRouter 一把金鑰可用多家模型、可篩選免費模型並自動記錄實際花費）或本地模型（Ollama、LM Studio…），全系統共用；不設定也能用內建規則引擎。
-- 其餘分頁：技術分析、新聞判斷、策略回測、組合風控、交易檢討、系統自檢、說明（含新手導覽）。
-- 資料來源與真實／範例的區分請看「說明」頁或 `Continu.md`。
+- 換埠號：`python run.py 8090`
+- 只開伺服器不開瀏覽器：`python -m src.server.api_server [埠號]`
+- 服務只綁定 127.0.0.1，只有本機能連線。
+
+> 更新程式碼（`git pull`）後，**要重新啟動** `start.bat`／`run.py` 後端才會載入新功能；只重新整理瀏覽器會出現「Route not found」。
+
+## 設定（全部選填）
+
+不設定任何東西也能完整使用（AI 部分改用內建規則引擎）。需要時到程式的 **設定** 頁：
+
+1. **金鑰與資料額度**：直接填寫，存檔後立即生效，會寫進專案根目錄的 `.env`（已在 `.gitignore`，不會被提交）。
+   - `FINMIND_TOKEN`：FinMind 額度由每小時 300 次提高到 600 次（[finmindtrade.com](https://finmindtrade.com) 免費註冊）。
+   - `GEMINI_API_KEY`／`OPENAI_API_KEY`／`ANTHROPIC_API_KEY`／`OPENROUTER_API_KEY`：AI 金鑰。
+   - `SEC_USER_AGENT`：抓美股 SEC 公告用的聯絡資訊（SEC 要求，可填自己的 email）。
+2. **AI 連線**：選雲端模型，或讓程式自動掃描本機的 Ollama／LM Studio。OpenRouter 一把金鑰可用多家模型，並可篩選免費模型。
+
+也可以手動複製 `.env.example` 為 `.env` 再編輯；系統環境變數優先於 `.env`。
+
+## 資料存放與隱私
+
+| 資料 | 位置 |
+|---|---|
+| 持股、交易紀錄、交易規則、自選股、提醒、AI 設定 | `data/userdata.json`（修改後 0.5 秒自動存檔；每天備份到 `data/backups/`，保留 14 天） |
+| 金鑰 | `.env` |
+| 操作紀錄 | `logs/`（每日一檔，保留 30 天） |
+| 報價、日 K、新聞 | 只暫存在記憶體，不存檔 |
+
+`data/`、`.env`、`logs/` 都已排除在 Git 之外，不會上傳。搬移程式資料夾時連同這些一起搬，資料就不會遺失。
+
+## 資料來源
+
+全部是公開資料介面（JSON／RSS），不是爬網頁畫面；抓不到時直接顯示錯誤，不會用假資料補位。
+
+- **台股報價**：證交所 MIS（約延遲 5 秒）；公司與基金基本資料、本益比、ETF 發行單位數：TWSE OpenAPI
+- **美股與海外報價、日 K、指數、匯率**：Yahoo Finance
+- **台股備援日 K、籌碼、配息、月營收、財報**：FinMind
+- **新聞**：Google News RSS、鉅亨網、Yahoo 奇摩股市 RSS、MoneyDJ／玩股網／財報狗／TradingView／ETFdb（經 Google News 限定站台）、證交所重大訊息、SEC EDGAR 8-K
+
+每次請求的網址、狀態與耗時都會記錄，看盤頁「看資料怎麼抓的」可以查看。公開資料源可能改版、限流或延遲。
+
+## 打包成 Windows 執行檔／安裝包
+
+```bash
+python build_app.py      # 或雙擊 package.bat
+```
+
+需要 `pip install pyinstaller`；有 Node.js 時會先用 esbuild 把前端 JSX 預先編譯（沒有就自動用原始碼版）。產出：
+
+- `dist/股票交易分析系統.exe`：免安裝單一執行檔
+- `dist/股票交易分析系統_Setup.exe`：安裝精靈（安裝到「執行安裝程式所在資料夾\股票交易分析系統」，建立桌面與開始功能表捷徑；重新安裝會帶過上次的 `data/` 與 `.env`，解除安裝會保留它們）
 
 ## 開發
+
 ```bash
-python -m unittest discover tests   # 後端測試
-npx @biomejs/biome check web        # 前端語法/無障礙檢查
+python -m unittest discover tests     # 後端測試（全部離線，不連網）
+npx @biomejs/biome lint web           # 前端語法／無障礙檢查
 ```
-## 資料存放
-- **持股、交易紀錄、交易規則、自選股、提醒、AI 設定**：自動存成程式資料夾的 `data\userdata.json`（瀏覽器只當暫存，修改後 0.5 秒自動存檔）。
-  整個程式資料夾搬家，資料跟著走；換瀏覽器、清除瀏覽紀錄不會遺失。每天自動備份到 `data\backups\`，保留 14 天。
-- 重新安裝到別的資料夾時，安裝程式會把上次安裝位置的 `data\` 與 `.env` 帶過來；解除安裝會保留這兩者。
-- 報價、日 K、新聞等行情資料只暫存在記憶體，不存檔。
 
-## 金鑰與資料額度（.env）
-全部選填，不設定也能用。到程式的 **設定 → 金鑰與資料額度** 直接填寫即可，存檔後立即生效，不用自己建立或搬移檔案：
-- `FINMIND_TOKEN`：FinMind 額度由每小時 300 提高到 600 次（到 finmindtrade.com 免費註冊）。
-- `GEMINI_API_KEY`／`OPENAI_API_KEY`／`ANTHROPIC_API_KEY`／`OPENROUTER_API_KEY`：填這裡就不必把金鑰存在瀏覽器（「AI 連線」的 Key 欄位留空）。
-- `SEC_USER_AGENT`：抓美股 SEC 公告用的聯絡資訊。
+開發時可設環境變數 `TRADING_ALLOW_SAMPLE=1`：查不到行情時改用離線範例資料（預設會直接報錯）。
 
-內容存在程式資料夾的 `.env`（安裝版 `%LOCALAPPDATA%\TradingSystem\.env`、免安裝版在 exe 旁、原始碼在專案根目錄），
-不會被打包進執行檔。也可以手動編輯，格式見 `.env.example`；已設定的系統環境變數優先。
-開發測試可設 `TRADING_ALLOW_SAMPLE=1`（查不到行情時用離線範例資料，預設會報錯）。
+### 程式碼架構
 
-## 程式碼架構
-後端 `src/` 依功能分資料夾：
+後端 `src/`（純 Python 標準函式庫）依功能分資料夾：
 
 ```
 src/
-├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar（K 棒資料結構）、
-│                finmind、chip_data（籌碼）、etf_data、etf_reference、chart_data、fx、markets、market_calendar、market_rules、tz
+├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar、
+│                finmind、chip_data（籌碼）、etf_data、etf_reference、chart_data、heatmap（股市熱力圖）、
+│                fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
-├── news/        新聞：news_feed（抓取）、news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
+├── news/        新聞：news_feed（多來源抓取與去重）、news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
 ├── backtest/    策略回測：backtest_engine（Next Bar Open）、backtest_analysis（環境拆分、前後段驗證）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）
 ├── journal/     交易檢討：journal_coach
 ├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）
 ├── ai/          AI：ai_client、ai_context、llm_runner、anti_hallucination（防幻覺稽核）
-└── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、config（路徑、.env 載入）、
-                 params（參數檢查）、env_settings（設定頁寫入 .env）、activity_log
+└── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、config、params、
+                 env_settings（設定頁寫入 .env）、user_data（資料存檔與備份）、activity_log
 ```
 
-前端 `web/`（React 18 + Tailwind，套件放在 `web/vendor/` 可離線使用）：
-- 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效。
-- 打包時 `build_web.py` 先用 esbuild 把 JSX 編譯並合併成 `app.bundle.js`（輸出到 `build/web_dist/`），打包版不帶 Babel、開啟較快；
-  JSX 有語法錯誤會讓打包失敗。需要 Node.js，沒有的話自動退回原始碼版。
-- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx` 共用元件
+前端 `web/`（React 18 + Tailwind，套件放在 `web/vendor/`，可離線使用）：
+
+- 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效；打包時 `build_web.py` 用 esbuild 預先編譯成 `app.bundle.js`。
+- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
 - `panels/`：technical、news、backtest、portfolio、journal、selftest（各分析頁）
-- `pages/`：watch（看盤）、holdings_panel（我的持股）、order_panel、stock_info_panel、overview_alerts、
+- `pages/`：watch（看盤）、heatmap（股市熱力圖）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
+
+開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。

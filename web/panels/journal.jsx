@@ -106,14 +106,17 @@
 
   function Mod5Panel({ ctx }) {
     const { m5Data, m5Entries, m5Loading, m5Source, runMod5, setM5Entries, setM5Source } = ctx;
+    // 「我的交易紀錄」模式：表格就是交易紀錄本身，改動立刻存回（否則回看盤頁成交後再診斷，會用舊表格蓋掉新紀錄）
+    const edit = (next) => {
+      setM5Entries(next);
+      if (m5Source === 'mine') window.TA.setJournal(next);
+    };
     return (
       <div className="space-y-5">
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-white">
-                交易紀錄
-              </h2>
+              <h2 className="text-base font-semibold text-white">交易紀錄</h2>
               <span className="block mt-1 text-xs text-slate-500">
                 資料狀態：見下方「交易紀錄來源」；統計與偏誤偵測由程式計算，規則來源會另外標示
               </span>
@@ -122,30 +125,33 @@
               </p>
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  setM5Entries([
-                    ...m5Entries,
-                    {
-                      trade_id: window.TA.nextTradeId(m5Entries),
-                      symbol: '2330.TW',
-                      entry_time: '09:03',
-                      exit_time: '10:15',
-                      entry_price: 1060.0,
-                      exit_price: 1030.0,
-                      shares: 2000,
-                      net_pnl: -60000.0,
-                      return_pct: -2.8,
-                      emotion_score: 9,
-                      high_5d_after_exit: 1055.0,
-                    },
-                  ])
-                }
-                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 cursor-pointer"
-              >
-                新增一筆交割日誌
-              </button>
+              {m5Source !== 'mine' && (
+                <button
+                  type="button"
+                  title="加一筆範例交易（只在內建範例模式；你的交易請用模擬成交或 CSV 匯入）"
+                  onClick={() =>
+                    setM5Entries([
+                      ...m5Entries,
+                      {
+                        trade_id: window.TA.nextTradeId(m5Entries),
+                        symbol: '2330.TW',
+                        entry_time: '09:03',
+                        exit_time: '10:15',
+                        entry_price: 1060.0,
+                        exit_price: 1030.0,
+                        shares: 2000,
+                        net_pnl: -60000.0,
+                        return_pct: -2.8,
+                        emotion_score: 9,
+                        high_5d_after_exit: 1055.0,
+                      },
+                    ])
+                  }
+                  className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 cursor-pointer"
+                >
+                  新增一筆範例交易
+                </button>
+              )}
               <button
                 type="button"
                 onClick={runMod5}
@@ -190,7 +196,7 @@
                         onChange={(e) => {
                           const next = [...m5Entries];
                           next[idx] = { ...next[idx], symbol: e.target.value };
-                          setM5Entries(next);
+                          edit(next);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-24 text-white"
                       />
@@ -205,7 +211,7 @@
                             ...next[idx],
                             entry_time: e.target.value,
                           };
-                          setM5Entries(next);
+                          edit(next);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-16 text-white"
                       />
@@ -229,7 +235,7 @@
                             ...next[idx],
                             return_pct: Number(e.target.value),
                           };
-                          setM5Entries(next);
+                          edit(next);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-16 text-white"
                       />
@@ -246,7 +252,7 @@
                             ...next[idx],
                             emotion_score: Number(e.target.value),
                           };
-                          setM5Entries(next);
+                          edit(next);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-14 text-amber-300"
                       />
@@ -255,7 +261,7 @@
                     <td className="py-1.5 px-1.5">
                       <button
                         type="button"
-                        onClick={() => setM5Entries(m5Entries.filter((_, i) => i !== idx))}
+                        onClick={() => edit(m5Entries.filter((_, i) => i !== idx))}
                         className="text-rose-400 hover:text-rose-300 cursor-pointer"
                       >
                         刪除

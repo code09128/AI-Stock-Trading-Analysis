@@ -44,6 +44,13 @@
       target: 'watch-subtabs',
     },
     {
+      title: '股市熱力圖',
+      body: '第 3 個分頁「股市熱力圖」：一格一檔，方塊大小＝成交金額（可切換市值、等權重、我的持股市值），顏色＝今天漲跌（紅漲綠跌）。範圍可選「我的自選＋持股」「台股熱門族群」「美股核心」。單擊選股、雙擊看行情，下方按鈕可一鍵送技術分析或「查今天的新聞」。',
+      go: 'watch',
+      watch: { rightTab: 'heatmap' },
+      target: 'heatmap',
+    },
+    {
       title: '我的持股（所有頁面共用）',
       body: '在左側「我的持股」輸入代號、股數、成本，或貼券商 CSV。每檔有「分析」（跳到技術分析並對照你的成本）、「賣出」（帶入賣出委託）。這份持股會自動同步到技術分析與組合風控。',
       go: 'watch',
@@ -84,7 +91,7 @@
     },
     {
       title: '新聞判斷',
-      body: '按「抓取最新新聞」取得真實新聞與公告，點一則就會用發布當下已知的價格算「事件前漲了多少」（是否已反映）與事件後實際反應。接了 AI 可勾選「改由 AI 判斷」情緒。',
+      body: '按「抓取最新新聞」同時從多個來源（台股：Google News、鉅亨網、Yahoo奇摩、MoneyDJ、證交所重訊與分析專欄）取得真實新聞，附摘要、可用「新聞／公告／分析專欄」篩選。點一則就會用發布當下已知的價格算「事件前漲了多少」（是否已反映）與事件後實際反應。接了 AI 可勾選「改由 AI 判斷」情緒。',
       go: 'mod2',
       target: 'mod2-news',
     },
@@ -107,6 +114,12 @@
       target: 'settings-local',
     },
     {
+      title: '各頁底部「AI 解讀」',
+      body: '每個分析頁最下面都有「AI 解讀」：把這頁算好的數字交給 AI，用研究報告的口吻整理重點，並依你的持股給建議；「可以這樣問」的按鈕可直接帶入常見問題。回答裡的數字會自動和資料核對，對不上的會標示出來。沒接 AI 時這一區會提示到設定頁連線。',
+      go: 'mod1',
+      target: 'ai-explain-mod1',
+    },
+    {
       title: '說明頁',
       body: '說明頁有「功能怎麼串在一起」的流程圖（每個方塊都能點去那一頁或從那一步開始導覽）、K 線怎麼看、基本交易策略與名詞辭典。隨時可以從左側「說明」或看盤頁「新手導覽」重看。',
       go: 'guide',
@@ -120,13 +133,16 @@
       setRect(null);
       if (!active || !selector) return undefined;
       let tries = 0;
-      let scrolled = false;
+      let scrolls = 0;
       const tick = () => {
         const el = document.querySelector(`[data-tour="${selector}"]`);
         if (el) {
-          if (!scrolled) {
-            el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            scrolled = true;
+          // 切頁後頁面可能又被捲回頂端（或上方資料載入把它推下去）：目標不在畫面內就再捲一次，最多 4 次
+          const pre = el.getBoundingClientRect();
+          const outOfView = pre.bottom < 0 || pre.top > window.innerHeight;
+          if (scrolls === 0 || (outOfView && scrolls < 4)) {
+            el.scrollIntoView({ block: 'center', behavior: scrolls === 0 ? 'smooth' : 'auto' });
+            scrolls += 1;
           }
           const r = el.getBoundingClientRect();
           // 目標在畫面外（例如手機版收起來的選單）就不畫框，也不顯示「還在載入」
@@ -273,7 +289,15 @@
       text: '在看盤頁選好標的 → 按「送入技術分析」看支撐壓力與買賣條件 → 按「回測這檔」用歷史資料驗證策略。想知道消息面，再到新聞判斷抓這檔的新聞。',
     },
     {
-      title: '② 持股 技術分析 組合風控',
+      title: '② 熱力圖找異動 → 查新聞',
+      nodes: [
+        ['watch', '看盤：股市熱力圖', 'heatmap'],
+        ['mod2', '新聞判斷：自動抓這檔新聞', 'mod2-news'],
+      ],
+      text: '在熱力圖看到某檔大漲大跌 → 點方塊選它 → 按「查今天的新聞」，會直接切到新聞判斷、帶入代號並自動抓最新新聞與公告，馬上知道為什麼動。也可以按「送技術分析」看位階。',
+    },
+    {
+      title: '③ 持股 技術分析 組合風控',
       nodes: [
         ['watch', '看盤：我的持股', 'watch-list'],
         ['mod1', '技術分析：持股卡', 'mod1-holding'],
@@ -282,19 +306,19 @@
       text: '持股只要輸入一次：技術分析會顯示你這檔的成本、停損／目標時的賺賠；組合風控自動用這份持股算集中度、Beta 與歷史最大回撤。持股列的「分析」「賣出」可在各頁之間來回。',
     },
     {
-      title: '③ 模擬交易 → 交易檢討 → 規則回到下單',
+      title: '④ 模擬交易 → 交易檢討 → 規則回到下單',
       nodes: [
         ['watch', '模擬下單「成交」', 'watch-order'],
         ['mod5', '交易檢討：我的交易紀錄', 'mod5-source'],
         ['watch', '下單前勾選我的規則', 'watch-order'],
       ],
-      text: '買進成交 → 加入持股；賣出成交 → 寫入交易紀錄。交易檢討分析這些紀錄、找出壞習慣並產生 3 條規則，規則會出現在技術分析、組合風控，並成為下單前必須勾選的清單，形成閉環。',
+      text: '買進成交 → 加入持股；賣出成交 → 寫入交易紀錄（持股列的「賣出」會自動帶入股數，碎股與非整張也能平倉）。交易檢討分析這些紀錄、找出壞習慣並產生 3 條規則，規則會出現在技術分析、組合風控，並成為下單前必須勾選的清單，形成閉環。',
     },
     {
-      title: '④ AI（選配）貫穿各頁',
+      title: '⑤ AI（選配）貫穿各頁',
       nodes: [
         ['settings', '設定：雲端或本地模型', 'settings-local'],
-        ['mod1', '各頁底部「AI 解讀」', 'mod1-query'],
+        ['mod1', '各頁底部「AI 解讀」', 'ai-explain-mod1'],
       ],
       text: '在設定接好一次 AI，技術分析的決策、新聞情緒、交易規則與每頁的 AI 解讀都會使用；不接也能完整使用，畫面會標明是「規則引擎」還是「AI」。',
     },

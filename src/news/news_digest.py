@@ -1,6 +1,6 @@
 """
 近期新聞彙整 (news_digest.py)
-對一檔標的的近期新聞（news_feed 抓的真實標題）逐則整理 5 個面向，並依重要性排序：
+對一檔標的的近期新聞（news_feed 抓的真實標題與摘要）逐則整理 5 個面向，並依重要性排序：
   1. 實際發生什麼事  2. 投資人為何需要關注  3. 影響偏短期或長期
   4. 哪些財務指標可能受影響  5. 市場可能隱含哪些假設
 另外用真實日 K 計算每則新聞「發布前最後收盤 → 發布後第一個收盤」的實際價格反應，當作客觀的重要性依據。
@@ -32,7 +32,8 @@ METRIC_RULES = [
 ]
 LONG_TERM = re.compile(r"擴產|建廠|產能|併購|收購|新產品|技術|製程|政策|法規|關稅|管制|策略|合作|capacity|acqui|merger|tariff|regulat|partnership|launch", re.I)
 SHORT_TERM = re.compile(r"財報|季報|月營收|營收|法說|除息|目標價|評等|EPS|earnings|guidance|price target|upgrade|downgrade", re.I)
-OFFICIAL_KINDS = ("重大訊息", "8-K")
+OFFICIAL_KINDS = ("重大訊息", "公司公告", "8-K")
+COLUMN_KIND = "分析專欄"  # 觀點文章，不是事件；新聞不夠 MAX_ITEMS 則時才補進來
 HORIZONS = ("短期", "長期", "短期與長期")
 
 
@@ -66,8 +67,8 @@ def _mentions(title: str, symbol: str, name: str) -> bool:
     return any(k and len(k) >= 2 and k.lower() in t for k in keys)
 
 
-def _rule_fields(title: str, kind: str) -> Dict[str, Any]:
-    metrics = [m for pat, m in METRIC_RULES if re.search(pat, title, re.I)]
+def _rule_fields(title: str, kind: str, detail: str = "") -> Dict[str, Any]:
+    metrics = [m for pat, m in METRIC_RULES if re.search(pat, f"{title} {detail}", re.I)]
     lt, st = bool(LONG_TERM.search(title)), bool(SHORT_TERM.search(title))
     horizon = "短期與長期" if lt and st else "長期" if lt else "短期" if st else None
     return {"metrics": metrics, "horizon": horizon, "official": any(k in kind for k in OFFICIAL_KINDS)}
@@ -85,12 +86,13 @@ def _rule_score(it: Dict[str, Any], atr_pct: Optional[float]) -> float:
 
 def _ai_fields(profile: Dict[str, Any], symbol: str, name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     rows = [{"no": i + 1, "date": it["local_iso"][:16], "kind": it["kind"], "source": it["source"],
-             "title": it["title"], "price_reaction_pct": (it.get("reaction") or {}).get("pct")}
+             "title": it["title"], **({"summary": it["detail"]} if it.get("detail") else {}),
+             "price_reaction_pct": (it.get("reaction") or {}).get("pct")}
             for i, it in enumerate(items)]
     data = json.dumps(rows, ensure_ascii=False)
     out = ai_client._json_call(profile, (
-        f"以下是 {name or symbol}（{symbol}）近期的新聞標題，price_reaction_pct 是發布前最後收盤到發布後第一個收盤的真實漲跌幅（null＝尚無）。"
-        "請逐則整理，只能根據標題與提供的數字，不要編造標題以外的細節或數字；標題資訊不足就寫「標題資訊不足」。\n"
+        f"以下是 {name or symbol}（{symbol}）近期的新聞標題（部分附 summary 摘要），kind＝分析專欄的是觀點文章不是事件；price_reaction_pct 是發布前最後收盤到發布後第一個收盤的真實漲跌幅（null＝尚無）。"
+        "請逐則整理，只能根據標題、摘要與提供的數字，不要編造以外的細節或數字；資訊不足就寫「標題資訊不足」。\n"
         f"【新聞】{data}\n"
         '回傳 JSON：{"items": [{"no": 編號, "what": "實際發生什麼事（一句話）", "why": "投資人為何需要關注", '
         '"horizon": "短期"|"長期"|"短期與長期", "metrics": ["可能受影響的財務指標，如營收、毛利率、EPS、資本支出"], '
@@ -128,10 +130,14 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
     price = bars[-1].close if bars else None
     atr_pct = round(atr / price * 100, 2) if atr and price else None
     items = []
-    for it in news.get("items", [])[:MAX_ITEMS]:
+    raw = news.get("items", [])
+    picked = [it for it in raw if it["kind"] != COLUMN_KIND][:MAX_ITEMS]
+    picked += [it for it in raw if it["kind"] == COLUMN_KIND][:MAX_ITEMS - len(picked)]
+    for it in picked:
         x = {k: it[k] for k in ("title", "source", "link", "kind", "local_iso")}
+        x["detail"] = it.get("detail", "")
         x["reaction"] = price_reaction(bars, it["local_iso"], market)
-        x.update(_rule_fields(it["title"], it["kind"]))
+        x.update(_rule_fields(it["title"], it["kind"], x["detail"]))
         x["mentions"] = x["official"] or _mentions(it["title"], symbol, name)
         x["rule_score"] = _rule_score(x, atr_pct)
         items.append(x)
