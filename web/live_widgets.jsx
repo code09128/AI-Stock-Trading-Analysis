@@ -46,13 +46,27 @@
   };
 
   // ---------- 當日分時圖 (TradingView / Yahoo 風格)：折線 + 昨收虛線 + 成交量 + 十字游標 ----------
-  const IntradayChart = ({ data }) => {
+  const IntradayChart = ({ data, lastTrade, tz }) => {
     const [hover, setHover] = useState(null);
     const pts = data?.points || [];
     if (pts.length < 2) {
+      // lastTrade 例如 "20261022 13:30:00"：最後成交不是今天＝今天沒有交易（假日、颱風停市），而不是「尚未開盤」
+      const d = String(lastTrade || '').match(/^(\d{4})-?(\d{2})-?(\d{2})\s*(\d{2}:\d{2})?/);
+      let today;
+      try {
+        today = new Date().toLocaleDateString('sv-SE', { timeZone: tz }); // 交易所當地日期 YYYY-MM-DD
+      } catch {
+        today = new Date().toLocaleDateString('sv-SE');
+      }
+      const lastDay = d ? `${d[1]}-${d[2]}-${d[3]}` : null;
+      const msg = data?.error
+        ? `分時資料取得失敗：${data.error}`
+        : lastDay && lastDay < today
+          ? `今天沒有成交資料（休市或停止交易）。最後成交：${lastDay}${d[4] ? ` ${d[4]}` : ''}`
+          : '目前沒有分時資料（尚未開盤）';
       return (
-        <div className="h-40 flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-700 rounded-xl">
-          {data?.error ? `分時資料取得失敗：${data.error}` : '目前沒有分時資料（可能尚未開盤）'}
+        <div className="h-40 flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-700 rounded-xl px-4 text-center">
+          {msg}
         </div>
       );
     }

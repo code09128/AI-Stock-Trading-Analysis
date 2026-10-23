@@ -40,6 +40,7 @@ function App() {
     slow_ma: 20,
     initial_capital: 1000000,
     commission_discount: 0.6,
+    period_years: 1,
   });
   const [m3Loading, setM3Loading] = useState(false);
   const [m3Data, setM3Data] = useState(null);
@@ -401,6 +402,7 @@ function App() {
       slow_ma: 20,
       initial_capital: 1000000,
       commission_discount: 0.6,
+      period_years: 1,
     });
     setM4Holdings(DEFAULT_HOLDINGS);
     setM4CashPct(20.0);
@@ -437,6 +439,9 @@ function App() {
         period: m3Data.period,
         params: m3Data.strategy_params,
         warnings: m3Data.strategy_warnings,
+        regime_breakdown: m3Data.regime_breakdown,
+        walk_forward: m3Data.walk_forward,
+        next_step_ideas: m3Data.next_step_ideas,
         result: { ...bt, trades: undefined, trades_detail: undefined },
         trade_count: (bt.trades_detail || bt.trades || []).length,
       },
@@ -689,14 +694,14 @@ function App() {
           <button
             type="button"
             onClick={() => goTab('settings')}
-            title={aiProfile ? `AI：${aiProfile.name}` : 'AI：內建規則引擎（點此設定）'}
+            title={aiProfile ? `AI：${aiProfile.name}` : 'AI 未啟用，點此設定'}
             className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] text-slate-300 hover:bg-slate-800 cursor-pointer ${
               expanded ? '' : 'justify-center px-0'
             }`}
           >
             <NavIcon name="bot" className="w-4 h-4 shrink-0" />
             {expanded && (
-              <span className="truncate">{aiProfile ? aiProfile.name : '規則引擎（未接 AI）'}</span>
+              <span className="truncate">{aiProfile ? aiProfile.name : 'AI 未啟用（使用內建規則）'}</span>
             )}
           </button>
           <button
@@ -755,7 +760,7 @@ function App() {
                 aria-label="匯出報告"
                 className="text-xs px-2.5 md:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer"
               >
-                📤<span className="hidden sm:inline"> 匯出報告</span>
+                <span className="hidden sm:inline"> 匯出報告</span>
               </button>
               <button
                 type="button"
@@ -867,7 +872,7 @@ function App() {
         >
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-white">📤 匯出分析報告</h3>
+              <h3 className="text-lg font-bold text-white">匯出分析報告</h3>
               <button
                 type="button"
                 onClick={() => setIsExportModalOpen(false)}
@@ -941,4 +946,7 @@ function App() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+// 先把 data/userdata.json 的資料讀回瀏覽器再顯示畫面（最多等 4 秒，伺服器沒回應也照常開啟）
+Promise.race([window.TA.userDataReady, new Promise((r) => setTimeout(r, 4000))]).finally(() =>
+  root.render(<App />),
+);

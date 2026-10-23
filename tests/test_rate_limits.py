@@ -6,8 +6,8 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from src import data_adapter, finmind
-from src.data_adapter import DualMarketDataAdapter, clear_bar_cache
+from src.market import data_adapter, finmind
+from src.market.data_adapter import DualMarketDataAdapter, clear_bar_cache
 
 
 class _Resp(io.BytesIO):
@@ -123,7 +123,7 @@ class FinMindTokenTests(unittest.TestCase):
         finmind.reset_pause()
 
     def test_token_sent_as_header_not_in_url_or_log(self):
-        from src import quote_provider as qp
+        from src.market import quote_provider as qp
 
         seen = {}
 
@@ -155,7 +155,7 @@ class EnvFileTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from src.api_server import load_env_file
+        from src.server.api_server import load_env_file
 
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / ".env"

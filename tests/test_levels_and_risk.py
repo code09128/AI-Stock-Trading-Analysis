@@ -2,11 +2,11 @@
 
 import unittest
 
-from src.api_server import TradingEngineDispatcher
-from src.data_adapter import DualMarketDataAdapter, classify_levels
-from src.llm_runner import LLMRunner
-from src.portfolio_risk import PortfolioRiskManager
-from src.trend_score import score_trend
+from src.server.api_server import TradingEngineDispatcher
+from src.market.data_adapter import DualMarketDataAdapter, classify_levels
+from src.ai.llm_runner import LLMRunner
+from src.portfolio.portfolio_risk import PortfolioRiskManager
+from src.technical.trend_score import score_trend
 
 
 class ClassifyLevelsTests(unittest.TestCase):

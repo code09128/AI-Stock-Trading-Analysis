@@ -4,7 +4,9 @@ import unittest
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from src import ai_client, stock_info
+from src.ai import ai_client
+
+from src.company import stock_info
 
 
 class FakeLLM(BaseHTTPRequestHandler):
@@ -25,6 +27,19 @@ class FakeLLM(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         user = body["messages"][-1]["content"]
+        if body.get("stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.end_headers()
+            chunks = [
+                {"choices": [{"delta": {"reasoning": "先檢查趨勢與支撐價位"}}]},
+                {"choices": [{"delta": {"content": "【觀點】收盤 2405 元，"}}]},
+                {"choices": [{"delta": {"content": "目標價 99999 元。"}}], "usage": {"prompt_tokens": 120, "completion_tokens": 25}},
+            ]
+            for c in chunks:
+                self.wfile.write(f"data: {json.dumps(c, ensure_ascii=False)}\n\n".encode("utf-8"))
+            self.wfile.write(b"data: [DONE]\n\n")
+            return
         text = "OK" if "回覆「OK」" in user else "收盤 2405 元，目標價 99999 元。"
         self._send({"choices": [{"message": {"content": text}}]})
 
@@ -49,6 +64,33 @@ class AiClientTests(unittest.TestCase):
         r = ai_client.explain(self.profile, "mod1", {"close": 2405.0})
         self.assertIn("99999", r["unverified_numbers"])
         self.assertNotIn("2405", r["unverified_numbers"])
+
+    def test_unverified_numbers_allows_unit_conversion_and_index_names(self):
+        data = "avg20: 3086175, vol_need: 27800, foreign_20d: -149120, index: ^GSPC"
+        ans = "標普 500（^GSPC）盤整，20日均量約 3.08 百萬股（308.6 萬股），外資賣超 14.9 萬張，量能需達 2.78 萬張，假目標 8888 元。"
+        self.assertEqual(ai_client.unverified_numbers(ans, data), ["8888"])
+
+    def test_clean_math_replaces_latex_and_preserves_currency(self):
+        raw = "組合內存在多組相關係數 $\\ge 0.7$ 的配對，波動 $\\pm 2.5\\%$，區間 $100 ～ $120（約 US$0.05）。"
+        cleaned = ai_client.to_traditional(raw)
+        self.assertIn("相關係數 ≥ 0.7 的配對", cleaned)
+        self.assertIn("波動 ± 2.5%", cleaned)
+        self.assertIn("$100 ～ $120（約 US$0.05）", cleaned)
+
+    def test_explain_stream_emits_thinking_deltas_and_done(self):
+        ai_client.begin_usage()
+        events = list(ai_client.explain_stream(self.profile, "mod1", {"close": 2405.0}))
+        types = [e["type"] for e in events]
+        self.assertIn("status", types)
+        self.assertIn("delta", types)
+        self.assertEqual(events[-1]["type"], "done")
+        done = events[-1]
+        self.assertEqual(done["answer"], "【觀點】收盤 2405 元，目標價 99999 元。")
+        self.assertIn("99999", done["unverified_numbers"])
+        self.assertNotIn("2405", done["unverified_numbers"])
+        usage = ai_client.collect_usage()
+        self.assertEqual(usage[0]["input_tokens"], 120)
+        self.assertEqual(usage[0]["output_tokens"], 25)
 
     def test_cloud_without_key_or_model_is_rejected(self):
         with self.assertRaises(ai_client.AIError):
@@ -89,7 +131,7 @@ if __name__ == "__main__":
 
 class AiDecisionSanityTests(unittest.TestCase):
     def test_bad_ai_decision_is_rejected(self):
-        from src.llm_runner import LLMRunner
+        from src.ai.llm_runner import LLMRunner
         bad = {"action": "BUY", "order_type": "LIMIT", "entry_price": 2420.0, "stop_loss_price": 2380.0,
                "take_profit_target": 2590, "invalidation_criteria": " price < stop_loss_price 除外",
                "rationale": ["價格 2500.0"]}
@@ -98,7 +140,7 @@ class AiDecisionSanityTests(unittest.TestCase):
         self.assertTrue(any("失效條件" in i for i in issues))
 
     def test_good_ai_decision_passes(self):
-        from src.llm_runner import LLMRunner
+        from src.ai.llm_runner import LLMRunner
         good = {"action": "HOLD", "order_type": "ROD", "entry_price": 2370.0, "stop_loss_price": 2320.0,
                 "take_profit_target": 2590, "invalidation_criteria": "日線收盤跌破 2320 元停損",
                 "rationale": ["收盤 2420.0 低於 MA20 2490.0"]}
@@ -125,8 +167,8 @@ class AiRuleValidationTests(unittest.TestCase):
 class JournalEnrichTests(unittest.TestCase):
     def test_pnl_days_and_post_exit_high_are_computed(self):
         from unittest.mock import patch
-        from src.api_server import DISPATCHER
-        from src.backtest_engine import Bar
+        from src.server.api_server import DISPATCHER
+        from src.market.bar import Bar
         bars = [Bar(f"2026-08-{d:02d}", 100, 100 + d, 99, 100, 1) for d in range(1, 31)]
         with patch.object(DISPATCHER.adapter, "fetch_bars", return_value={"bars": bars}):
             out = DISPATCHER._enrich_journal([{"symbol": "X", "entry_time": "2026-08-01", "exit_time": "2026-08-10",

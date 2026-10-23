@@ -131,7 +131,7 @@
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-white">📖 使用說明</h2>
+              <h2 className="text-lg font-bold text-white">使用說明</h2>
               <p className="text-xs text-slate-400">
                 第一次使用？按右邊按鈕跟著導覽走一遍，導覽會自動切換頁面並框出要看的位置。
               </p>
@@ -141,7 +141,7 @@
               onClick={onShowTour}
               className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm cursor-pointer"
             >
-              🎓 開始新手導覽
+              開始新手導覽
             </button>
           </div>
         </div>
@@ -149,7 +149,7 @@
         <window.TA.FlowGuide onGo={onGo} />
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-3">🧭 建議操作流程</h3>
+          <h3 className="font-bold text-white mb-3">建議操作流程</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {[
               ['watch', '① 看盤', '挑標的、看報價五檔、模擬下單'],
@@ -173,7 +173,7 @@
         </div>
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
-          <h3 className="font-bold text-white">📡 資料從哪裡來？（透明說明）</h3>
+          <h3 className="font-bold text-white">資料從哪裡來？（透明說明）</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -287,7 +287,7 @@
         <window.TA.StrategyGuide />
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-3">📚 名詞小辭典</h3>
+          <h3 className="font-bold text-white mb-3">名詞小辭典</h3>
           <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
             {GLOSSARY.map(([t, d]) => (
               <div key={t}>
@@ -299,7 +299,7 @@
         </div>
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
-          <h3 className="font-bold text-white">❓ 常見問題</h3>
+          <h3 className="font-bold text-white">常見問題</h3>
           {[
             [
               '為什麼畫面上沒有五檔？',

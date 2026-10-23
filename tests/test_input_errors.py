@@ -3,8 +3,10 @@
 import unittest
 from unittest.mock import patch
 
-from src import chip_data, stock_info
-from src.api_server import TradingEngineDispatcher, arg_num, arg_ticker
+from src.market import chip_data
+
+from src.company import stock_info
+from src.server.api_server import TradingEngineDispatcher, arg_num, arg_ticker
 
 
 class ArgParsingTests(unittest.TestCase):

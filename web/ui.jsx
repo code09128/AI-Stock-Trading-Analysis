@@ -24,17 +24,17 @@
   const isTW = (sym) => /^\d{4,6}[A-Z]?(\.TW|\.TWO)?$/i.test(sym);
   // 多市場：與後端 src/markets.py 同一份後綴規則（沒有後綴＝美股）
   const MARKET_INFO = {
-    TW: { name: '台股', currency: 'TWD', flag: '🇹🇼' },
-    US: { name: '美股', currency: 'USD', flag: '🇺🇸' },
-    HK: { name: '港股', currency: 'HKD', flag: '🇭🇰', suffixes: ['.HK'] },
-    JP: { name: '日股', currency: 'JPY', flag: '🇯🇵', suffixes: ['.T'] },
-    KR: { name: '韓股', currency: 'KRW', flag: '🇰🇷', suffixes: ['.KS', '.KQ'] },
-    CN: { name: '陸股', currency: 'CNY', flag: '🇨🇳', suffixes: ['.SS', '.SZ'] },
-    UK: { name: '英股', currency: 'GBp', flag: '🇬🇧', suffixes: ['.L'] },
-    DE: { name: '德股', currency: 'EUR', flag: '🇩🇪', suffixes: ['.DE', '.F'] },
-    CA: { name: '加股', currency: 'CAD', flag: '🇨🇦', suffixes: ['.TO', '.V'] },
-    AU: { name: '澳股', currency: 'AUD', flag: '🇦🇺', suffixes: ['.AX'] },
-    SG: { name: '星股', currency: 'SGD', flag: '🇸🇬', suffixes: ['.SI'] },
+    TW: { name: '台股', currency: 'TWD', flag: '' },
+    US: { name: '美股', currency: 'USD', flag: '' },
+    HK: { name: '港股', currency: 'HKD', flag: '', suffixes: ['.HK'] },
+    JP: { name: '日股', currency: 'JPY', flag: '', suffixes: ['.T'] },
+    KR: { name: '韓股', currency: 'KRW', flag: '', suffixes: ['.KS', '.KQ'] },
+    CN: { name: '陸股', currency: 'CNY', flag: '', suffixes: ['.SS', '.SZ'] },
+    UK: { name: '英股', currency: 'GBp', flag: '', suffixes: ['.L'] },
+    DE: { name: '德股', currency: 'EUR', flag: '', suffixes: ['.DE', '.F'] },
+    CA: { name: '加股', currency: 'CAD', flag: '', suffixes: ['.TO', '.V'] },
+    AU: { name: '澳股', currency: 'AUD', flag: '', suffixes: ['.AX'] },
+    SG: { name: '星股', currency: 'SGD', flag: '', suffixes: ['.SI'] },
   };
   const marketOf = (sym) => {
     const s = String(sym || '').toUpperCase();
@@ -189,7 +189,16 @@
     </div>
   );
 
+  // 後端資料來源代碼 → 白話名稱
+  const SOURCE_LABELS = {
+    LIVE_YAHOO_FINANCE: 'Yahoo Finance',
+    LIVE_FINMIND: 'FinMind',
+    FALLBACK_OFFLINE: '離線範例資料',
+  };
+  const sourceLabel = (code) => SOURCE_LABELS[code] || code || '--';
+
   window.TA = Object.assign(window.TA || {}, {
+    sourceLabel,
     DEFAULT_WATCH,
     LS_WATCH,
     LS_CART,

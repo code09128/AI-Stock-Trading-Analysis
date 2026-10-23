@@ -133,7 +133,7 @@
         saveAlerts(next);
         for (const f of fired) {
           const t = ALERT_TYPES[f.type];
-          const msg = `🔔 ${f.symbol} 觸發：${t.label} ${shownValue(f)}${t.unit}`;
+          const msg = `${f.symbol} 觸發：${t.label} ${shownValue(f)}${t.unit}`;
           say(msg);
           try {
             if (window.Notification && Notification.permission === 'granted') new Notification(msg);
@@ -253,7 +253,7 @@
               {ALERT_TYPES[a.type].unit}
             </span>
             <span className="ml-auto text-[11px] text-slate-400">
-              {a.active ? '🟢 監控中' : `🔔 ${a.firedAt}`}
+              {a.active ? '監控中' : `${a.firedAt}`}
             </span>
             {!a.active && (
               <button

@@ -136,7 +136,7 @@
     return (
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-xs text-emerald-100 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
-          <b className="text-emerald-300">📌 我的交易規則（來自交易檢討）</b>
+          <b className="text-emerald-300">我的交易規則（來自交易檢討）</b>
           <span className="text-[10px] text-slate-400">
             {rules.savedAt} ・ {rules.source}
           </span>

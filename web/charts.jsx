@@ -172,7 +172,7 @@
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-slate-300">
-              📊 互動式還權 K 線與成交量副圖
+              互動式還權 K 線與成交量副圖
             </span>
             <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
               {RANGE_PRESETS.map(([label, n]) => {
@@ -258,7 +258,7 @@
 
         {/* 十字準星 OHLCV 資訊條 */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-slate-900/90 border border-slate-800/90 rounded-lg px-3 py-2 text-xs font-mono">
-          <span className="text-sky-300 font-bold">📅 {activeBar.date}</span>
+          <span className="text-sky-300 font-bold">{activeBar.date}</span>
           {[
             ['開', activeBar.open],
             ['高', activeBar.high],
@@ -568,7 +568,7 @@
       <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-300">
-            📈 策略累積淨值曲線 (Equity Curve — 已扣除雙市場真實手續費與證交稅)
+            策略累積淨值曲線 (Equity Curve — 已扣除雙市場真實手續費與證交稅)
           </span>
           <span className="text-[11px] font-mono text-slate-400">
             初始本金: {initialCapital.toLocaleString()}

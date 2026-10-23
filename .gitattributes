@@ -1,0 +1,2 @@
+# Windows 批次檔必須是 CRLF，否則 cmd 會把中文切成亂碼指令
+*.bat text eol=crlf

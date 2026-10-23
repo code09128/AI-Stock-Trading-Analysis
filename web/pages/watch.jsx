@@ -54,9 +54,6 @@
     // 持股改用跨頁共用的資料（組合風控、交易檢討也讀同一份）
     const portfolio = window.TA.usePortfolio();
     const holdings = portfolio.holdings;
-    const setHoldings = window.TA.setHoldings;
-    const [holdForm, setHoldForm] = useState({ symbol: '', shares: '', cost: '' });
-    const [csvText, setCsvText] = useState('');
     const [fx, setFx] = useState({}); // 幣別 -> 兌台幣匯率
     const [fxWarn, setFxWarn] = useState(null);
     const searchRef = useRef(null);
@@ -325,79 +322,6 @@
       return keyFn ? [...base].sort((a, b) => keyFn(b) - keyFn(a)) : base;
     }, [watch, quotes, sortKey, catFilter, categories, mktFilter]); // eslint-disable-line
 
-    // 持股損益
-    const holdRows = useMemo(
-      () =>
-        holdings.map((h) => {
-          const hq = quotes[baseCode(h.symbol)];
-          const price = hq?.price;
-          const currency = hq?.currency || currencyOf(h.symbol);
-          // 每 1 單位計價幣別＝幾台幣；匯率還沒拿到時為 null（不計入台幣合計，避免算出 0 元）
-          const mult = currency === 'TWD' ? 1 : (fx?.[currency] ?? null);
-          const value = price != null ? price * h.shares : null;
-          const cost = h.cost * h.shares;
-          return {
-            ...h,
-            quote: hq,
-            price,
-            currency,
-            value,
-            pnl: value != null ? value - cost : null,
-            pnlPct: value != null && cost ? ((value - cost) / cost) * 100 : null,
-            valueTwd: value != null && mult != null ? value * mult : null,
-            costTwd: mult != null ? cost * mult : null,
-          };
-        }),
-      [holdings, quotes, fx],
-    );
-    const holdTotals = useMemo(() => {
-      const ok = holdRows.filter((r) => r.valueTwd != null);
-      const v = ok.reduce((a, r) => a + r.valueTwd, 0);
-      const c = ok.reduce((a, r) => a + r.costTwd, 0);
-      return {
-        value: v,
-        cost: c,
-        pnl: v - c,
-        pct: c ? ((v - c) / c) * 100 : 0,
-        missing: holdRows.length - ok.length,
-      };
-    }, [holdRows]);
-    const addHolding = () => {
-      const sym = normSym(holdForm.symbol);
-      const shares = Number(holdForm.shares);
-      const cost = Number(holdForm.cost);
-      if (!sym || !(shares > 0) || !(cost >= 0)) {
-        say('請填代號、股數（正數）與成本價');
-        return;
-      }
-      const old = holdings.find((h) => h.symbol === sym);
-      setHoldings([
-        ...holdings.filter((h) => h.symbol !== sym),
-        { symbol: sym, shares, cost, opened: old?.opened || new Date().toISOString().slice(0, 10) },
-      ]);
-      setHoldForm({ symbol: '', shares: '', cost: '' });
-    };
-    const importCsv = () => {
-      const rows = csvText
-        .split(/\r?\n/)
-        .map((l) => l.split(/[,\t]/).map((x) => x.trim()))
-        .map(([a, b, c]) => ({ symbol: normSym(a || ''), shares: Number(b), cost: Number(c) }))
-        .filter((r) => r.symbol && r.shares > 0 && r.cost >= 0);
-      if (!rows.length) {
-        say('沒有讀到有效列。格式：代號,股數,成本價（每行一檔）');
-        return;
-      }
-      const map = new Map(holdings.map((h) => [h.symbol, h]));
-      for (const r of rows)
-        map.set(r.symbol, {
-          ...r,
-          opened: map.get(r.symbol)?.opened || new Date().toISOString().slice(0, 10),
-        });
-      setHoldings([...map.values()]);
-      setCsvText('');
-      say(`已匯入 ${rows.length} 檔持股`);
-    };
-
     const q = quotes[baseCode(selected)];
     const tw = isTW(selected);
     const etfFlag = /^00/.test(baseCode(selected));
@@ -555,12 +479,10 @@
         {/* 頂部說明列 */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3">
           <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <window.TA.NavIcon name="candles" className="w-5 h-5 text-sky-400" />
-              看盤：選一檔股票 → 看行情 → 送去技術分析
-            </h2>
+            <h2 className="text-base font-semibold text-white">即時行情</h2>
             <p className="text-xs text-slate-400">
-              左邊挑標的，右邊看報價與模擬下單。紅色代表上漲、綠色代表下跌（台灣習慣）。
+              選一檔股票 → 看行情 →
+              送去技術分析。左邊挑標的，右邊看報價與模擬下單。紅色代表上漲、綠色代表下跌（台灣習慣）。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -574,7 +496,7 @@
                   : 'bg-slate-950 border-slate-700 text-slate-400'
               }`}
             >
-              {polling ? '🟢 每 5 秒自動更新' : '⏸ 已暫停'}
+              {polling ? '每 5 秒自動更新' : '已暫停'}
             </button>
             <button
               type="button"
@@ -588,7 +510,7 @@
               onClick={onShowTour}
               className="px-3 py-1.5 rounded-lg bg-sky-600/20 border border-sky-500/50 text-sky-200 hover:bg-sky-600/30 cursor-pointer"
             >
-              🎓 新手導覽
+              新手導覽
             </button>
           </div>
         </div>
@@ -607,12 +529,12 @@
           >
             <div className="grid grid-cols-3 gap-1.5">
               {[
-                ['watch', '⭐ 自選股'],
-                ['etf', '🏆 ETF 精選'],
-                ['hold', '💼 我的持股'],
-                ['overview', '📋 技術總覽'],
-                ['alerts', '🔔 提醒'],
-                ['div', '📅 配息月曆'],
+                ['watch', '自選股'],
+                ['etf', 'ETF 精選'],
+                ['hold', '我的持股'],
+                ['overview', '技術總覽'],
+                ['alerts', '提醒'],
+                ['div', '配息月曆'],
               ].map(([id, label]) => (
                 <button
                   type="button"
@@ -656,9 +578,9 @@
                 className="grid grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 border border-slate-800"
               >
                 {[
-                  ['ALL', '🌐 全部'],
-                  ['TW', '🇹🇼 台股'],
-                  ['INTL', '🌏 美股／海外'],
+                  ['ALL', '全部'],
+                  ['TW', '台股'],
+                  ['INTL', '美股／海外'],
                 ].map(([k, label]) => (
                   <button
                     type="button"
@@ -744,12 +666,12 @@
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
                   {etfSort === 'hot'
-                    ? '🟢 今日熱門＝即時成交金額（真實報價計算）'
+                    ? '今日熱門＝即時成交金額（真實報價計算）'
                     : etfSort === 'aum'
-                      ? '🟢 市值估算＝TWSE 發行單位數 × 即時市價（非淨值規模）'
+                      ? '市值估算＝TWSE 發行單位數 × 即時市價（非淨值規模）'
                       : etfSort === 'plan'
-                        ? '🟢 TWSE 定期定額交易戶數排行，只有前 20 名有值（不是總持股人數）'
-                        : '🟢 近 12 個月實際配息 ÷ 現價，由 Yahoo 配息紀錄自行計算'}
+                        ? 'TWSE 定期定額交易戶數排行，只有前 20 名有值（不是總持股人數）'
+                        : '近 12 個月實際配息 ÷ 現價，由 Yahoo 配息紀錄自行計算'}
                 </p>
               </div>
             )}
@@ -841,163 +763,33 @@
                 />
               )}
               {listTab === 'hold' && (
-                <div className="space-y-2">
-                  {holdRows.length > 0 && (
-                    <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs mono space-y-0.5">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">總市值（台幣）</span>
-                        <span className="text-white font-bold">{fmt(holdTotals.value, 0)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">未實現損益</span>
-                        <span className={`font-bold ${colorOf(holdTotals.pnl)}`}>
-                          {holdTotals.pnl > 0 ? '+' : ''}
-                          {fmt(holdTotals.pnl, 0)}（{fmt(holdTotals.pct)}%）
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        {holdCurrencies
-                          ? `海外持股以即時匯率換算台幣：${holdCurrencies
-                              .split(',')
-                              .map((c) => `${c} ${fx?.[c] ?? '--'}`)
-                              .join(
-                                '、',
-                              )}${holdCurrencies.includes('GBp') ? '（GBp＝英國便士，0.01 英鎊）' : ''}`
-                          : '全部為台股'}
-                        {fxWarn && <span className="text-amber-300">（⚠️ {fxWarn}）</span>}
-                        {holdTotals.missing ? `；${holdTotals.missing} 檔查無即時價未計入` : ''}
-                      </div>
-                    </div>
-                  )}
-                  {holdRows.map((r) => (
-                    <Row
-                      key={r.symbol}
-                      sym={r.symbol}
-                      quote={r.quote}
-                      spark={sparks[r.symbol]}
-                      active={baseCode(selected) === baseCode(r.symbol)}
-                      onClick={() => setSelected(r.symbol)}
-                      sub={`${fmt(r.shares, 0)} 股・成本 ${fmt(r.cost)}・${
-                        r.pnlPct == null ? '--' : `${r.pnlPct > 0 ? '+' : ''}${fmt(r.pnlPct)}%`
-                      }`}
-                      action={
-                        <span className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            title="到技術分析看這檔，並對照你的成本"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              window.TA.analyzeSymbol?.(r.symbol);
-                            }}
-                            className="text-[11px] px-1.5 py-0.5 rounded bg-sky-700/40 text-sky-200 hover:bg-sky-700/70 cursor-pointer"
-                          >
-                            分析
-                          </button>
-                          <button
-                            type="button"
-                            title="用模擬下單賣出（會寫入交易紀錄）"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const twLot = isTW(r.symbol) && r.shares % 1000 === 0;
-                              setSelected(r.symbol);
-                              setRightTab('quote');
-                              setOrder((o) => ({
-                                ...o,
-                                side: 'SELL',
-                                lotType: isTW(r.symbol) ? (twLot ? 'ROUND' : 'ODD') : o.lotType,
-                                qty: twLot ? r.shares / 1000 : r.shares,
-                                price: String(r.price ?? r.cost),
-                              }));
-                              say(
-                                '已帶入賣出委託：確認右側下單面板後「加入暫存匣」再按「成交」，就會寫入交易紀錄',
-                              );
-                            }}
-                            className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-700/40 text-emerald-200 hover:bg-emerald-700/70 cursor-pointer"
-                          >
-                            賣出
-                          </button>
-                          <button
-                            type="button"
-                            title="直接移除（不記錄交易）"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setHoldings(holdings.filter((h) => h.symbol !== r.symbol));
-                            }}
-                            className="text-slate-600 hover:text-rose-400 text-xs px-1 cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        </span>
-                      }
-                    />
-                  ))}
-                  <div className="rounded-xl border border-slate-800 p-2 space-y-1.5">
-                    <div className="text-[11px] text-slate-400">新增 / 更新一檔持股</div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[
-                        ['symbol', '代號'],
-                        ['shares', '股數'],
-                        ['cost', '成本價'],
-                      ].map(([k, label]) => (
-                        <input
-                          key={k}
-                          value={holdForm[k]}
-                          onChange={(e) => setHoldForm({ ...holdForm, [k]: e.target.value })}
-                          onKeyDown={(e) => e.key === 'Enter' && addHolding()}
-                          placeholder={label}
-                          aria-label={`持股${label}`}
-                          className="min-w-0 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs mono text-white"
-                        />
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={addHolding}
-                      className="w-full py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer"
-                    >
-                      ＋ 加入持股
-                    </button>
-                  </div>
-                  <details className="rounded-xl border border-slate-800 p-2 text-xs">
-                    <summary className="cursor-pointer text-slate-300">
-                      📥 貼上券商 CSV 批次匯入
-                    </summary>
-                    <textarea
-                      value={csvText}
-                      onChange={(e) => setCsvText(e.target.value)}
-                      rows={4}
-                      placeholder={'每行一檔：代號,股數,成本價\n2330,1000,980\nNVDA,10,120.5'}
-                      aria-label="持股 CSV"
-                      className="w-full mt-2 bg-slate-950 border border-slate-700 rounded p-2 mono text-xs text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={importCsv}
-                      className="mt-1 px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 cursor-pointer"
-                    >
-                      匯入
-                    </button>
-                  </details>
-                  {holdRows.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onSendHoldings(
-                          holdRows.map((r) => ({
-                            symbol: r.symbol,
-                            market: isTW(r.symbol) ? 'TW' : 'US',
-                            shares: r.shares,
-                            price: r.price ?? r.cost,
-                          })),
-                        )
-                      }
-                      className="w-full py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-bold hover:brightness-110 cursor-pointer"
-                    >
-                      🛡️ 把我的持股送去組合風控分析
-                    </button>
-                  )}
-                  <p className="text-[10px] text-slate-500">持股只存在這個瀏覽器，不會上傳。</p>
-                </div>
+                <window.TA.HoldingsPanel
+                  holdings={holdings}
+                  quotes={quotes}
+                  fx={fx}
+                  fxWarn={fxWarn}
+                  holdCurrencies={holdCurrencies}
+                  sparks={sparks}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onSell={(r) => {
+                    const twLot = isTW(r.symbol) && r.shares % 1000 === 0;
+                    setSelected(r.symbol);
+                    setRightTab('quote');
+                    setOrder((o) => ({
+                      ...o,
+                      side: 'SELL',
+                      lotType: isTW(r.symbol) ? (twLot ? 'ROUND' : 'ODD') : o.lotType,
+                      qty: twLot ? r.shares / 1000 : r.shares,
+                      price: String(r.price ?? r.cost),
+                    }));
+                    say(
+                      '已帶入賣出委託：確認右側下單面板後「加入暫存匣」再按「成交」，就會寫入交易紀錄',
+                    );
+                  }}
+                  say={say}
+                  onSendHoldings={onSendHoldings}
+                />
               )}
               {listTab === 'watch' && watch.length > 0 && watchRows.length === 0 && (
                 <div className="text-sm text-slate-500 text-center py-6">
@@ -1030,8 +822,8 @@
               data-tour="watch-subtabs"
             >
               {[
-                ['quote', '📊 行情與下單'],
-                ['info', '📋 基本資料與配息'],
+                ['quote', '行情與下單'],
+                ['info', '基本資料與配息'],
               ].map(([k, label]) => (
                 <button
                   type="button"
@@ -1066,7 +858,7 @@
 
             {rightTab === 'quote' && !q && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-8 text-center text-slate-400">
-                ⏳ 正在抓取 {selected} 的報價…
+                正在抓取 {selected} 的報價…
               </div>
             )}
 
@@ -1087,11 +879,11 @@
                       </div>
                       {q.error ? (
                         <div className="mt-1 text-xs text-rose-300">
-                          🔴 抓取失敗：{q.error}（為避免誤導，不顯示任何替代數字）
+                          抓取失敗：{q.error}（為避免誤導，不顯示任何替代數字）
                         </div>
                       ) : (
                         <div className="mt-1 text-xs text-emerald-300">
-                          🟢 真實資料・{q.source}・最後成交 {q.quote_time || '--'}
+                          真實資料・{q.source}・最後成交 {q.quote_time || '--'}
                         </div>
                       )}
                     </div>
@@ -1107,7 +899,11 @@
                     </div>
                   </div>
 
-                  <IntradayChart data={intraday} />
+                  <IntradayChart
+                    data={intraday}
+                    lastTrade={q?.quote_time}
+                    tz={tw ? 'Asia/Taipei' : 'America/New_York'}
+                  />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <RangeBar label="今日區間（低—高）" low={q.low} high={q.high} value={q.price} />
                     <RangeBar
@@ -1252,7 +1048,7 @@
                       onClick={() => onSendToMod1(q)}
                       className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-sm hover:brightness-110 cursor-pointer"
                     >
-                      ⚡ 將目前選中標的送入技術分析沙盒
+                      將目前選中標的送入技術分析沙盒
                     </button>
                     <button
                       type="button"
@@ -1266,21 +1062,21 @@
                       }}
                       className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
                     >
-                      💼 加入我的持股
+                      加入我的持股
                     </button>
                     <button
                       type="button"
                       onClick={() => setListTab('alerts')}
                       className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
                     >
-                      🔔 設提醒
+                      設提醒
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowSource(!showSource)}
                       className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
                     >
-                      🔍 {showSource ? '收起' : '看資料怎麼抓的'}
+                      {showSource ? '收起' : '看資料怎麼抓的'}
                     </button>
                   </div>
 

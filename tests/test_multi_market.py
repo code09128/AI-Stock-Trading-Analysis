@@ -3,12 +3,12 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from src import fx, markets
-from src.data_adapter import DualMarketDataAdapter, is_partial_session
-from src.market_calendar import trading_day
-from src.news_strategy import NewsStrategyAnalyzer
-from src.portfolio_risk import PortfolioRiskManager
-from src.tz import _FALLBACK
+from src.market import fx, markets
+from src.market.data_adapter import DualMarketDataAdapter, is_partial_session
+from src.market.market_calendar import trading_day
+from src.news.news_strategy import NewsStrategyAnalyzer
+from src.portfolio.portfolio_risk import PortfolioRiskManager
+from src.market.tz import _FALLBACK
 
 
 class SymbolTests(unittest.TestCase):

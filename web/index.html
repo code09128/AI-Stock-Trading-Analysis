@@ -7,25 +7,62 @@
   <title>股票交易分析系統</title>
   <link rel="icon" type="image/svg+xml"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230ea5e9'/%3E%3Cstop offset='1' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='url(%23g)'/%3E%3Cg stroke='white' stroke-width='2' stroke-linecap='round' fill='none'%3E%3Cpath d='M12 6v4M12 22v3M21 5v3M21 18v4'/%3E%3Crect x='9.5' y='10' width='5' height='12' rx='1' fill='white'/%3E%3Crect x='18.5' y='8' width='5' height='10' rx='1'/%3E%3C/g%3E%3C/svg%3E">
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+  <!-- 第三方套件放在 web/vendor（固定版本：Tailwind 3.4.17、React 18.3.1、Babel 7.26.4），離線也能開；字型離線時改用系統字型 -->
+  <script src="./vendor/tailwindcss-3.4.17.js"></script>
+  <script>
+    // 主題：中性深灰底、單一藍色強調色；漲跌維持台股紅漲綠跌（rose / emerald），amber 只用於警示
+    const ACCENT = { 50: '#e8f1fd', 100: '#cde2fb', 200: '#9ec5f4', 300: '#86b6ef', 400: '#5598e7', 500: '#3987e5',
+      600: '#2a78d6', 700: '#256abf', 800: '#1c5cab', 900: '#184f95', 950: '#0d366b' };
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: { 50: '#f5f7fa', 100: '#eef1f5', 200: '#dde2e9', 300: '#c3cad4', 400: '#9aa4b2', 500: '#6b7584',
+              600: '#4a5361', 700: '#2f3744', 800: '#222934', 900: '#161b22', 950: '#0d1117' },
+            sky: ACCENT, blue: ACCENT, indigo: ACCENT, cyan: ACCENT, violet: ACCENT, purple: ACCENT,
+          },
+          fontFamily: {
+            sans: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
+            mono: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <script src="./vendor/react.production.min.js"></script>
+  <script src="./vendor/react-dom.production.min.js"></script>
+  <script src="./vendor/babel.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap"
     rel="stylesheet">
   <style>
     body {
       font-family: 'Inter', 'Noto Sans TC', sans-serif;
-      background-color: #0b0f19;
-      color: #e2e8f0;
+      background-color: #0d1117;
+      color: #dde2e9;
+      -webkit-font-smoothing: antialiased;
     }
 
-    .mono {
-      font-family: 'JetBrains Mono', monospace;
+    /* 數字用等寬數字（tabular），不用程式字型：表格對齊又不像工程畫面 */
+    .mono,
+    .font-mono {
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
     }
+
+    /* 最小字級拉高一點；圓角收斂成專業看盤軟體常見的 8～12px；去掉彩色光暈 */
+    .text-\[10px\] { font-size: 11px !important; }
+    .text-\[11px\] { font-size: 12px !important; }
+    .rounded-2xl { border-radius: 12px !important; }
+    .rounded-xl { border-radius: 10px !important; }
+    [class*="shadow-sky-"], [class*="shadow-blue-"], [class*="shadow-emerald-"], [class*="shadow-rose-"] {
+      --tw-shadow-color: transparent !important;
+      box-shadow: none !important;
+    }
+    h1, h2 { letter-spacing: -0.01em; }
 
     ::-webkit-scrollbar {
       width: 6px;
@@ -52,10 +89,9 @@
     }
 
     .active-tab {
-      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      background: #2a78d6;
       color: #ffffff;
-      border-color: #3b82f6;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+      border-color: #3987e5;
     }
 
     .module-active {
@@ -69,16 +105,18 @@
 <body class="min-h-screen flex flex-col selection:bg-blue-600 selection:text-white">
   <div id="root"></div>
 
+  <script type="text/babel" src="./sync_store.jsx"></script>
   <script type="text/babel" src="./config.jsx"></script>
   <script type="text/babel" src="./charts.jsx"></script>
-  <script type="text/babel" src="./panels/mod1.jsx"></script>
-  <script type="text/babel" src="./panels/mod2.jsx"></script>
-  <script type="text/babel" src="./panels/mod3.jsx"></script>
-  <script type="text/babel" src="./panels/mod4.jsx"></script>
-  <script type="text/babel" src="./panels/mod5.jsx"></script>
-  <script type="text/babel" src="./panels/visual_tests.jsx"></script>
+  <script type="text/babel" src="./panels/technical.jsx"></script>
+  <script type="text/babel" src="./panels/news.jsx"></script>
+  <script type="text/babel" src="./panels/backtest.jsx"></script>
+  <script type="text/babel" src="./panels/portfolio.jsx"></script>
+  <script type="text/babel" src="./panels/journal.jsx"></script>
+  <script type="text/babel" src="./panels/selftest.jsx"></script>
   <script type="text/babel" src="./ui.jsx"></script>
   <script type="text/babel" src="./activity_log.jsx"></script>
+  <script type="text/babel" src="./markdown.jsx"></script>
   <script type="text/babel" src="./ai_store.jsx"></script>
   <script type="text/babel" src="./portfolio_store.jsx"></script>
   <script type="text/babel" src="./live_widgets.jsx"></script>
@@ -86,9 +124,12 @@
   <script type="text/babel" src="./pages/overview_alerts.jsx"></script>
   <script type="text/babel" src="./pages/stock_info_panel.jsx"></script>
   <script type="text/babel" src="./pages/order_panel.jsx"></script>
+  <script type="text/babel" src="./pages/holdings_panel.jsx"></script>
   <script type="text/babel" src="./pages/watch.jsx"></script>
   <script type="text/babel" src="./pages/candle_guide.jsx"></script>
   <script type="text/babel" src="./pages/strategy_guide.jsx"></script>
+  <script type="text/babel" src="./pages/settings_monitor.jsx"></script>
+  <script type="text/babel" src="./pages/settings_keys.jsx"></script>
   <script type="text/babel" src="./pages/settings.jsx"></script>
   <script type="text/babel" src="./pages/tour.jsx"></script>
   <script type="text/babel" src="./pages/guide.jsx"></script>

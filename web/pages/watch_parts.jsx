@@ -105,7 +105,7 @@
   function SourcePanel({ q, log }) {
     return (
       <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 space-y-2 text-xs">
-        <div className="font-bold text-slate-200">📡 這筆報價是怎麼來的？</div>
+        <div className="font-bold text-slate-200">這筆報價是怎麼來的？</div>
         <ol className="list-decimal pl-5 space-y-0.5 text-slate-300">
           <li>
             你的瀏覽器每 5 秒呼叫本機伺服器 <span className="mono">/api/quotes</span>。

@@ -10,11 +10,11 @@
 """
 
 import unittest
-from src.indicators import calculate_ma, calculate_rsi, calculate_macd, calculate_atr, find_swing_levels
-from src.market_rules import align_tw_tick, get_tw_tick_size, calculate_friction_cost, validate_tw_price_limit
-from src.anti_hallucination import AntiHallucinationGuard
-from src.backtest_engine import BacktestEngine, Bar
-
+from src.technical.indicators import calculate_ma, calculate_rsi, calculate_macd, calculate_atr, find_swing_levels
+from src.market.market_rules import align_tw_tick, get_tw_tick_size, calculate_friction_cost, validate_tw_price_limit
+from src.ai.anti_hallucination import AntiHallucinationGuard
+from src.market.bar import Bar
+from src.backtest.backtest_engine import BacktestEngine
 class TestTradingCore(unittest.TestCase):
 
     def test_sma_calculation(self):

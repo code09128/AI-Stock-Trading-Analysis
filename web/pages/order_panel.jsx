@@ -30,7 +30,7 @@
       >
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-white">
-            🧾 模擬下單暫存匣（{tw ? '台股' : window.TA.marketName(q?.symbol || '')}）
+            模擬下單暫存匣（{tw ? '台股' : window.TA.marketName(q?.symbol || '')}）
           </h3>
           <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
             僅模擬・不會連接券商・成交後同步到持股與交易紀錄
@@ -142,7 +142,7 @@
         {ruleList.length > 0 && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1">
             <div className="text-[11px] text-emerald-300 font-semibold">
-              📌 下單前確認我的交易規則（來自交易檢討，全部勾選才能加入暫存匣）
+              下單前確認我的交易規則（來自交易檢討，全部勾選才能加入暫存匣）
             </div>
             {ruleList.map((r) => (
               <label

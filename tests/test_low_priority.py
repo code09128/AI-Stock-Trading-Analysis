@@ -4,11 +4,11 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
-from src import data_adapter, fx, market_calendar
-from src.api_server import mark_bond_snapshot
-from src.data_adapter import DualMarketDataAdapter
-from src.news_strategy import NewsStrategyAnalyzer
-from src.tz import NewYorkRules, TAIPEI_FIXED
+from src.market import data_adapter, fx, market_calendar
+from src.server.api_server import mark_bond_snapshot
+from src.market.data_adapter import DualMarketDataAdapter
+from src.news.news_strategy import NewsStrategyAnalyzer
+from src.market.tz import NewYorkRules, TAIPEI_FIXED
 
 
 class FxFallbackTests(unittest.TestCase):
@@ -65,7 +65,7 @@ class CalendarTests(unittest.TestCase):
                 {"Name": "國曆新年開始交易日", "Date": "1150102"},
                 {"Name": "市場無交易，僅辦理結算交割作業", "Date": "1150212"}]
         market_calendar._TW_CACHE.update(t=0.0, days=None)
-        with patch("src.quote_provider._http_json", return_value=rows):
+        with patch("src.market.quote_provider._http_json", return_value=rows):
             days = market_calendar.tw_holidays()
         market_calendar._TW_CACHE.update(t=0.0, days=None)
         self.assertEqual(days, {date(2026, 1, 1), date(2026, 2, 12)})
@@ -105,14 +105,14 @@ class TimezoneFallbackTests(unittest.TestCase):
 class BondEtfTests(unittest.TestCase):
     def test_bond_marked_not_applicable(self):
         snap = {"trend_score": {"signal": "STRONG_BUY", "signal_label": "強烈買進"}}
-        with patch("src.stock_info.classify", return_value={"category": "BOND"}):
+        with patch("src.company.stock_info.classify", return_value={"category": "BOND"}):
             mark_bond_snapshot(snap, "00849B")
         self.assertEqual(snap["trend_score"]["signal"], "HOLD")
         self.assertIn("債券", snap["trend_score"]["not_applicable"])
 
     def test_stock_untouched(self):
         snap = {"trend_score": {"signal": "BUY", "signal_label": "買進"}}
-        with patch("src.stock_info.classify", return_value={"category": "STOCK"}):
+        with patch("src.company.stock_info.classify", return_value={"category": "STOCK"}):
             mark_bond_snapshot(snap, "2330")
         self.assertEqual(snap["trend_score"]["signal"], "BUY")
 

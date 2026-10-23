@@ -7,6 +7,7 @@
     gemini: { label: 'Google Gemini（雲端）', needKey: true, base: '' },
     openai: { label: 'OpenAI（雲端）', needKey: true, base: '' },
     anthropic: { label: 'Anthropic Claude（雲端）', needKey: true, base: '' },
+    openrouter: { label: 'OpenRouter（雲端，多家模型、含免費模型）', needKey: true, base: '' },
     openai_compatible: {
       label: '本地／自架（OpenAI 相容：Ollama、LM Studio、llama.cpp、vLLM…）',
       needKey: false,
@@ -59,10 +60,21 @@
 
   function ProfileEditor({ p, onChange, onSave, onCancel }) {
     const [models, setModels] = useState([]);
+    const [pricing, setPricing] = useState({});
+    const [freeOnly, setFreeOnly] = useState(false);
     const [status, setStatus] = useState(null);
     const [busy, setBusy] = useState('');
     const t = TYPES[p.type];
     const set = (k, v) => onChange({ ...p, [k]: v });
+    const isFree = (m) => pricing[m] && !pricing[m].in && !pricing[m].out;
+    const shown = freeOnly ? models.filter(isFree) : models;
+    // 選 OpenRouter 模型時，若「用量與費用」還沒填單價，就用官方清單的單價自動帶入
+    const pickModel = (m) => {
+      set('model', m);
+      const pr = pricing[m];
+      const { loadPrices, savePrices } = window.TA;
+      if (pr && !loadPrices()[m]) savePrices({ ...loadPrices(), [m]: { in: pr.in, out: pr.out } });
+    };
     const run = async (action) => {
       setBusy(action);
       setStatus(null);
@@ -72,7 +84,12 @@
           if (r.error) setStatus({ ok: false, msg: r.error });
           else {
             setModels(r.models || []);
-            setStatus({ ok: true, msg: `取得 ${r.models?.length || 0} 個模型` });
+            setPricing(r.pricing || {});
+            const free = Object.values(r.pricing || {}).filter((x) => !x.in && !x.out).length;
+            setStatus({
+              ok: true,
+              msg: `取得 ${r.models?.length || 0} 個模型${r.pricing ? `（其中 ${free} 個免費）` : ''}`,
+            });
             if (!p.model && r.models?.length) set('model', r.models[0]);
           }
         } else {
@@ -115,6 +132,16 @@
             顯示名稱
             <input value={p.name} onChange={(e) => set('name', e.target.value)} className={field} />
           </label>
+          {p.type === 'openrouter' && (
+            <div className="md:col-span-2 text-[11px] text-slate-400 leading-relaxed rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+              到 openrouter.ai 登入 → Keys 建立金鑰（以 sk-or-
+              開頭）貼到下方。模型名稱格式為「廠商/模型」，例如{' '}
+              <span className="mono text-sky-300">google/gemini-2.5-flash</span>；名稱結尾是{' '}
+              <span className="mono text-emerald-300">:free</span>{' '}
+              的是免費模型（有每日次數限制，且提供者可能會用輸入內容做訓練）。每次呼叫的實際花費由
+              OpenRouter 回報，會直接記到「AI 用量與費用」。
+            </div>
+          )}
           <label className="text-xs text-slate-400 space-y-1 md:col-span-2">
             {p.type === 'openai_compatible'
               ? '服務網址（必填）'
@@ -161,7 +188,7 @@
               className={`${field} mono`}
             />
             <datalist id={`models-${p.id}`}>
-              {models.map((m) => (
+              {shown.map((m) => (
                 <option key={m} value={m} />
               ))}
             </datalist>
@@ -201,16 +228,35 @@
         </div>
         {models.length > 0 && (
           <div className="space-y-1.5">
-            <div className="text-xs text-slate-400">
-              取得 {models.length} 個模型，點一下即可選用（目前：
-              <span className="mono text-sky-300">{p.model || '未選'}</span>）
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+              <span>
+                取得 {models.length} 個模型，點一下即可選用（目前：
+                <span className="mono text-sky-300">{p.model || '未選'}</span>）
+              </span>
+              {Object.keys(pricing).length > 0 && (
+                <label className="flex items-center gap-1 cursor-pointer text-emerald-300">
+                  <input
+                    type="checkbox"
+                    checked={freeOnly}
+                    onChange={(e) => setFreeOnly(e.target.checked)}
+                  />
+                  只顯示免費模型
+                </label>
+              )}
             </div>
             <div className="max-h-48 overflow-y-auto flex flex-wrap gap-1.5 rounded-lg border border-slate-800 bg-slate-950/50 p-2">
-              {models.map((m) => (
+              {shown.map((m) => (
                 <button
                   type="button"
                   key={m}
-                  onClick={() => set('model', m)}
+                  onClick={() => pickModel(m)}
+                  title={
+                    pricing[m]
+                      ? isFree(m)
+                        ? '免費'
+                        : `每百萬 tokens：輸入 US$${pricing[m].in}／輸出 US$${pricing[m].out}`
+                      : undefined
+                  }
                   className={`px-2 py-1 rounded-md text-[11px] mono border cursor-pointer ${
                     p.model === m
                       ? 'bg-sky-500/25 border-sky-400 text-white'
@@ -218,6 +264,7 @@
                   }`}
                 >
                   {m}
+                  {isFree(m) && <span className="ml-1 text-emerald-400">免費</span>}
                 </button>
               ))}
             </div>
@@ -274,7 +321,7 @@
         data-tour="settings-local"
       >
         <div className="flex items-center justify-between">
-          <div className="text-sm font-bold text-emerald-200">🖥️ 本機偵測到的模型（真實掃描）</div>
+          <div className="text-sm font-bold text-emerald-200">本機偵測到的模型（真實掃描）</div>
           <button
             type="button"
             onClick={detect}
@@ -337,327 +384,28 @@
     );
   }
 
-  // AI 用量與費用：每次呼叫的 tokens（來自供應商回報）× 你填的單價（美元／每百萬 tokens）
-  function UsagePanel({ cfg }) {
-    const { useAIUsage, usageCost, savePrices, clearUsage } = window.TA;
-    const { usage, prices } = useAIUsage();
-    const [usdTwd, setUsdTwd] = useState(null);
-    const [confirmClear, setConfirmClear] = useState(false);
+  // 資料檔位置與最後存檔狀態
+  function UserDataStatus() {
+    const st = window.TA.userDataStatus || {};
+    const [, tick] = useState(0);
     useEffect(() => {
-      fetch('/api/fx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currencies: ['USD'] }),
-      })
-        .then((r) => r.json())
-        .then((d) => setUsdTwd(d.rates?.USD?.rate || null))
-        .catch(() => {});
+      const on = () => tick((x) => x + 1);
+      window.addEventListener('userdata-status', on);
+      return () => window.removeEventListener('userdata-status', on);
     }, []);
-
-    const today = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD（本機時間）
-    const month = today.slice(0, 7);
-    const sum = (list) => {
-      let cost = 0;
-      let unpriced = 0;
-      for (const u of list) {
-        const c = usageCost(u, prices);
-        if (c == null) unpriced += 1;
-        else cost += c;
-      }
-      return {
-        calls: list.length,
-        input: list.reduce((a, u) => a + (u.input_tokens || 0), 0),
-        output: list.reduce((a, u) => a + (u.output_tokens || 0), 0),
-        cost,
-        unpriced,
-      };
-    };
-    const periods = [
-      ['今天', usage.filter((u) => String(u.time).startsWith(today))],
-      ['本月', usage.filter((u) => String(u.time).startsWith(month))],
-      ['全部紀錄', usage],
-    ].map(([label, list]) => [label, sum(list)]);
-    const models = [
-      ...new Map(
-        [
-          ...cfg.profiles
-            .filter((p) => p.model)
-            .map((p) => [p.model, p.type === 'openai_compatible']),
-          ...usage.map((u) => [u.model, !!u.local]),
-        ].reverse(),
-      ),
-    ].reverse();
-    const money = (usd) =>
-      `US$${usd.toFixed(usd < 1 ? 4 : 2)}${usdTwd ? `（約 NT$${(usd * usdTwd).toFixed(usd * usdTwd < 10 ? 2 : 0)}）` : ''}`;
-    const setPrice = (model, field, value) =>
-      savePrices({
-        ...prices,
-        [model]: { ...(prices[model] || {}), [field]: value === '' ? '' : Number(value) },
-      });
-
     return (
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-        <div>
-          <h3 className="font-bold text-white">💰 AI 用量與費用（估算）</h3>
-          <p className="text-xs text-slate-400 mt-1">
-            每次呼叫 AI 用掉的 tokens 由 AI 供應商回報，記在這個瀏覽器；費用＝輸入 tokens × 輸入單價
-            ＋ 輸出 tokens × 輸出單價。單價請依供應商官網填寫（美元／每百萬
-            tokens），本地模型預設免費。這是估算，實際以供應商帳單為準。
-          </p>
+      <div className="text-[11px] rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 space-y-0.5">
+        <div className="text-slate-400">
+          資料檔：<span className="mono text-slate-300">{st.path || '讀取中…'}</span>
+          <window.TA.Tip text="這個 userdata.json 就是你的資料正本；同一層的 backups 資料夾是每天的自動備份。搬家時把整個程式資料夾一起搬即可。" />
         </div>
-
-        <div className="grid sm:grid-cols-3 gap-2">
-          {periods.map(([label, t]) => (
-            <div key={label} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-              <div className="text-[11px] text-slate-400">{label}</div>
-              <div className="text-lg font-bold font-mono text-emerald-300">{money(t.cost)}</div>
-              <div className="text-[11px] text-slate-400 font-mono">
-                {t.calls} 次・入 {t.input.toLocaleString()}／出 {t.output.toLocaleString()} tokens
-              </div>
-              {t.unpriced > 0 && (
-                <div className="text-[11px] text-amber-300">{t.unpriced} 次因未設定單價未計入</div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div>
-          <div className="text-xs text-slate-300 font-semibold mb-1">
-            各模型單價（美元／每百萬 tokens）
+        {st.ok ? (
+          <div className="text-emerald-300">
+            ✅ 自動存檔中{st.savedAt ? `，最後存檔 ${st.savedAt.toLocaleTimeString('zh-TW', { hour12: false })}` : ''}
           </div>
-          {models.length === 0 ? (
-            <div className="text-xs text-slate-500">還沒有 AI 連線或呼叫紀錄。</div>
-          ) : (
-            <div className="space-y-1.5">
-              {models.map(([model, local]) => (
-                <div key={model} className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-mono text-slate-200 min-w-[12rem] truncate">{model}</span>
-                  {local && <span className="text-[10px] text-emerald-400">本地（預設免費）</span>}
-                  <label className="flex items-center gap-1 text-slate-400">
-                    輸入
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={prices[model]?.in ?? ''}
-                      placeholder={local ? '0' : '未設定'}
-                      onChange={(e) => setPrice(model, 'in', e.target.value)}
-                      className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
-                    />
-                  </label>
-                  <label className="flex items-center gap-1 text-slate-400">
-                    輸出
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={prices[model]?.out ?? ''}
-                      placeholder={local ? '0' : '未設定'}
-                      onChange={(e) => setPrice(model, 'out', e.target.value)}
-                      className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
-                    />
-                  </label>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {usage.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-slate-300 font-semibold">最近 20 次呼叫</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!confirmClear) return setConfirmClear(true);
-                  clearUsage();
-                  setConfirmClear(false);
-                }}
-                className="text-[11px] px-2 py-1 rounded bg-rose-950/50 border border-rose-800/60 text-rose-200 cursor-pointer"
-              >
-                {confirmClear ? '再點一次確認清除紀錄' : '清除用量紀錄'}
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] font-mono">
-                <thead className="text-slate-500">
-                  <tr>
-                    <th className="text-left font-normal py-1">時間</th>
-                    <th className="text-left font-normal">功能</th>
-                    <th className="text-left font-normal">模型</th>
-                    <th className="text-right font-normal">輸入</th>
-                    <th className="text-right font-normal">輸出</th>
-                    <th className="text-right font-normal">估算費用</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-300">
-                  {usage
-                    .slice(-20)
-                    .reverse()
-                    .map((u, i) => {
-                      const c = usageCost(u, prices);
-                      return (
-                        <tr key={`${u.time}-${i}`} className="border-t border-slate-800/60">
-                          <td className="py-1 whitespace-nowrap">{String(u.time).slice(5, 16)}</td>
-                          <td className="font-sans">{u.label}</td>
-                          <td className="truncate max-w-[10rem]">{u.model}</td>
-                          <td className="text-right">{u.input_tokens?.toLocaleString() ?? '—'}</td>
-                          <td className="text-right">{u.output_tokens?.toLocaleString() ?? '—'}</td>
-                          <td className="text-right">
-                            {!u.reported
-                              ? '未回報'
-                              : c == null
-                                ? '未設定單價'
-                                : `US$${c.toFixed(4)}`}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        ) : (
+          <div className="text-amber-300">⚠️ {st.error}（修改仍保留在瀏覽器，下次修改時會再嘗試寫入）</div>
         )}
-      </div>
-    );
-  }
-
-  // 操作紀錄：本機（瀏覽器）與伺服器檔案 logs/activity-YYYYMMDD.jsonl
-  function ActivityPanel() {
-    const local = window.TA.useActivityLog();
-    const [src, setSrc] = useState('local');
-    const [onlyErr, setOnlyErr] = useState(false);
-    const [server, setServer] = useState(null);
-    const [confirmClear, setConfirmClear] = useState(false);
-    useEffect(() => {
-      if (src !== 'server') return;
-      fetch('/api/log/recent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 300, errors_only: onlyErr }),
-      })
-        .then((r) => r.json())
-        .then((d) => setServer(d.events || []))
-        .catch(() => setServer([]));
-    }, [src, onlyErr]);
-    const rows = (src === 'local' ? [...local].reverse() : server || []).filter(
-      (e) => !onlyErr || e.level === 'error',
-    );
-    const describe = (e) =>
-      e.type === 'click'
-        ? `點擊「${e.label}」${e.symbol ? `（${e.symbol}）` : ''}${e.checked !== undefined ? `→ ${e.checked ? '勾選' : '取消'}` : ''}`
-        : e.type === 'select'
-          ? `選擇 ${e.label}：${e.value}`
-          : e.type === 'page'
-            ? `切換到 ${e.to}`
-            : e.type === 'api'
-              ? `${e.path}${e.symbol ? ` ${e.symbol}` : ''} → ${e.status ?? ''}${e.ms != null ? ` ${e.ms}ms` : ''}${
-                  e.error ? `：${e.error}` : ''
-                }${e.ai_tokens ? `（AI tokens ${JSON.stringify(e.ai_tokens)}）` : ''}`
-              : e.type === 'notice'
-                ? `提示：${e.message}`
-                : e.type === 'error'
-                  ? `錯誤：${e.message} ${e.source || ''}`
-                  : e.type === 'open'
-                    ? `開啟系統（${e.screen}）`
-                    : JSON.stringify(e);
-    const download = () => {
-      const blob = new Blob([local.map((e) => JSON.stringify(e)).join('\n')], {
-        type: 'application/json',
-      });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `操作紀錄_${new Date().toISOString().slice(0, 10)}.jsonl`;
-      a.click();
-    };
-    return (
-      <div
-        className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3"
-        data-no-log
-      >
-        <div>
-          <h3 className="font-bold text-white">📝 操作紀錄</h3>
-          <p className="text-xs text-slate-400 mt-1">
-            記錄點擊、換頁、API
-            呼叫結果（自動更新的只記失敗）、錯誤與畫面提示，不記錄任何輸入內容或金鑰。
-            瀏覽器保留最近 3000 筆；同時寫到本機伺服器的{' '}
-            <span className="font-mono">logs/activity-日期.jsonl</span>
-            （保留 30 天，伺服器自己的 API 錯誤也在裡面），遇到問題時可以把檔案提供給開發者追查。
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {[
-            ['local', `這個瀏覽器（${local.length} 筆）`],
-            ['server', '伺服器檔案'],
-          ].map(([k, label]) => (
-            <button
-              type="button"
-              key={k}
-              onClick={() => setSrc(k)}
-              className={`px-3 py-1.5 rounded-lg border cursor-pointer ${
-                src === k
-                  ? 'bg-sky-500/20 border-sky-400 text-white'
-                  : 'border-slate-700 text-slate-300'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          <label className="flex items-center gap-1 text-slate-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={onlyErr}
-              onChange={(e) => setOnlyErr(e.target.checked)}
-            />
-            只看錯誤
-          </label>
-          <button
-            type="button"
-            onClick={download}
-            className="ml-auto px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 cursor-pointer"
-          >
-            下載本機紀錄
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!confirmClear) return setConfirmClear(true);
-              window.TA.clearActivity();
-              setConfirmClear(false);
-            }}
-            className="px-3 py-1.5 rounded-lg bg-rose-950/50 border border-rose-800/60 text-rose-200 cursor-pointer"
-          >
-            {confirmClear ? '再點一次確認清除' : '清除本機紀錄'}
-          </button>
-        </div>
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/60">
-          {rows.length === 0 ? (
-            <div className="text-xs text-slate-500 p-3">
-              {src === 'server' && server === null ? '載入中…' : '沒有紀錄'}
-            </div>
-          ) : (
-            <table className="w-full text-[11px]">
-              <tbody>
-                {rows.slice(0, 300).map((e, i) => (
-                  <tr key={`${e.t}-${i}`} className="border-t border-slate-800/60 align-top">
-                    <td className="px-2 py-1 font-mono text-slate-500 whitespace-nowrap">
-                      {String(e.t).slice(5, 19).replace('T', ' ')}
-                    </td>
-                    <td className="px-1 py-1 text-slate-500 whitespace-nowrap">
-                      {e.src === 'server' ? '伺服器' : e.page}
-                    </td>
-                    <td
-                      className={`px-2 py-1 ${e.level === 'error' ? 'text-rose-300' : 'text-slate-300'}`}
-                    >
-                      {describe(e)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
       </div>
     );
   }
@@ -680,7 +428,7 @@
       <div className="space-y-5 max-w-4xl">
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div>
-            <h2 className="text-lg font-bold text-white">🤖 AI 連線</h2>
+            <h2 className="text-lg font-bold text-white">AI 連線</h2>
             <p className="text-xs text-slate-400 leading-relaxed mt-1">
               這裡的設定<b className="text-white">全系統共用</b>
               ：技術分析的買賣決策、各分頁底部的「AI 解讀」都會用同一組連線，
@@ -764,6 +512,7 @@
                 ['gemini', '＋ Gemini'],
                 ['openai', '＋ OpenAI'],
                 ['anthropic', '＋ Claude'],
+                ['openrouter', '＋ OpenRouter'],
                 ['openai_compatible', '＋ 本地／自架模型'],
               ].map(([t, label]) => (
                 <button
@@ -780,7 +529,7 @@
 
           <details className="rounded-xl border border-slate-800 p-3 text-xs text-slate-300 leading-relaxed">
             <summary className="cursor-pointer text-slate-200">
-              🖥️ 怎麼建立本地模型（以 Ollama 為例）
+              怎麼建立本地模型（以 Ollama 為例）
             </summary>
             <ol className="list-decimal pl-5 mt-2 space-y-1">
               <li>
@@ -807,14 +556,14 @@
             </p>
           </details>
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            🔒 API Key 只存在這個瀏覽器的 localStorage（未加密，請勿在共用電腦使用），只在你按 AI
-            功能時經本機伺服器轉送給你選的服務，伺服器不會保存。 也可以改用環境變數
-            GEMINI_API_KEY／OPENAI_API_KEY／ANTHROPIC_API_KEY，此時 Key 欄位留空即可。
+            API Key 只存在這個瀏覽器的 localStorage（未加密，請勿在共用電腦使用），只在你按 AI
+            功能時經本機伺服器轉送給你選的服務，伺服器不會保存。 不想存在瀏覽器的話，可以把金鑰填在下方「金鑰與資料額度」，
+            這裡的 Key 欄位留空即可。
           </p>
         </div>
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
-          <h3 className="font-bold text-white">🎯 AI 作用範圍</h3>
+          <h3 className="font-bold text-white">AI 作用範圍</h3>
           <p className="text-xs text-slate-400">
             取消勾選的功能不會顯示 AI 區塊（或不使用 AI 決策），改回純規則引擎／純數字。
           </p>
@@ -833,15 +582,20 @@
           ))}
         </div>
 
-        <UsagePanel cfg={cfg} />
+        <window.TA.KeysPanel />
 
-        <ActivityPanel />
+        <window.TA.UsagePanel cfg={cfg} />
+
+        <window.TA.ActivityPanel />
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
-          <h3 className="font-bold text-white">🧹 資料管理</h3>
+          <h3 className="font-bold text-white">資料管理</h3>
           <p className="text-xs text-slate-400">
-            以下資料只存在這個瀏覽器（換電腦或換瀏覽器不會跟著走，可以先下載備份再到新電腦還原）。清除要點兩次確認。
+            持股、交易紀錄、交易規則、自選股、提醒、AI 設定都自動存成程式資料夾裡的檔案，
+            整個程式資料夾搬到別的位置或別台電腦，資料會跟著走；換瀏覽器、清除瀏覽紀錄也不會遺失。
+            每天自動備份一份（保留 14 天）。清除要點兩次確認。
           </p>
+          <UserDataStatus />
           <div className="flex flex-wrap gap-2 text-xs">
             <button
               type="button"
@@ -870,10 +624,10 @@
               }}
               className="px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white cursor-pointer"
             >
-              ⬇️ 下載備份（含 AI 金鑰，請妥善保存）
+              下載備份（含 AI 金鑰，請妥善保存）
             </button>
             <label className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 cursor-pointer">
-              ⬆️ 從備份還原
+              從備份還原
               <input
                 type="file"
                 accept="application/json,.json"

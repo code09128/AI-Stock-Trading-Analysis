@@ -243,7 +243,7 @@
           <div
             className={`text-xs leading-relaxed rounded-lg bg-slate-950/70 border border-slate-800 p-3 ${colorOf(0)}`}
           >
-            📖 最新一根怎麼讀：{reading}
+            最新一根怎麼讀：{reading}
           </div>
         )}
         <div className="text-[10px] text-slate-500">
@@ -258,7 +258,7 @@
   const ChartHelp = () => (
     <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
       <p>
-        技術分析「📊 互動式還權 K 線與成交量副圖」上半部是 K
+        技術分析「互動式還權 K 線與成交量副圖」上半部是 K
         線主圖，下半部是成交量副圖，兩者共用同一條時間軸。
       </p>
       <ol className="list-decimal pl-5 space-y-1.5">
@@ -303,7 +303,7 @@
 
   const CandleGuide = () => (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-5">
-      <h3 className="font-bold text-white">🕯️ K 線怎麼看（含大盤實例）</h3>
+      <h3 className="font-bold text-white">K 線怎麼看（含大盤實例）</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
         <Anatomy />
         <div className="text-xs text-slate-300 leading-relaxed space-y-1.5">
@@ -327,12 +327,12 @@
         </p>
       </div>
       <div>
-        <div className="text-xs font-semibold text-slate-300 mb-2">📈 大盤實例：最近幾根日 K</div>
+        <div className="text-xs font-semibold text-slate-300 mb-2">大盤實例：最近幾根日 K</div>
         <LiveCandles />
       </div>
       <div>
         <div className="text-xs font-semibold text-slate-300 mb-2">
-          📊 互動式還權 K 線與成交量副圖 讀圖說明
+          互動式還權 K 線與成交量副圖 讀圖說明
         </div>
         <ChartHelp />
       </div>

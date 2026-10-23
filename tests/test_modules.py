@@ -7,9 +7,9 @@
 """
 
 import unittest
-from src.news_strategy import NewsStrategyAnalyzer
-from src.portfolio_risk import PortfolioRiskManager
-from src.journal_coach import JournalCoach, JournalEntry
+from src.news.news_strategy import NewsStrategyAnalyzer
+from src.portfolio.portfolio_risk import PortfolioRiskManager
+from src.journal.journal_coach import JournalCoach, JournalEntry
 
 class TestAdvancedModules(unittest.TestCase):
 

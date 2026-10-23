@@ -4,7 +4,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from src import ai_client
+from src.ai import ai_client
 
 
 class UsageParsingTests(unittest.TestCase):
@@ -65,7 +65,7 @@ class ActivityLogTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from src import activity_log
+        from src.server import activity_log
 
         with tempfile.TemporaryDirectory() as d, patch.object(activity_log, "LOG_DIR", Path(d)):
             n = activity_log.write([{"type": "click", "label": "儲存", "api_key": "sk-secret"},
@@ -94,6 +94,45 @@ class ExplainContextTests(unittest.TestCase):
         self.assertIn("補充資料", cap["user"])
         self.assertIn("外資連續 11 日賣超", cap["user"])
         self.assertNotIn("level_candidates", cap["user"])
-        self.assertIn("多方理由 vs 空方理由", cap["user"])
+        self.assertIn("【多空劇本】", cap["user"])
+        # 資料在前、格式骨架在最後；關鍵數字卡在任務前面
+        self.assertLess(cap["user"].index("【本頁資料】"), cap["user"].index("【任務】"))
+        self.assertTrue(cap["user"].rstrip().endswith("【接下來盯什麼】"))
+        self.assertIn("現價 2385", cap["user"])
+        self.assertNotIn("None", cap["user"].split("【任務】")[0].split("【關鍵數字")[1])
         self.assertEqual(r["context_sections"], ["籌碼面"])
         self.assertFalse(r["truncated"])
+
+
+class RetryTests(unittest.TestCase):
+    def test_retries_busy_then_succeeds(self):
+        calls = []
+
+        def fake(*a, **k):
+            calls.append(1)
+            if len(calls) < 3:
+                raise ai_client.AIError("HTTP 503：model overloaded")
+            return {"ok": True}
+
+        with patch.object(ai_client, "_request_once", side_effect=fake), patch.object(ai_client.time, "sleep"):
+            self.assertEqual(ai_client._request("u", {}, {}, 5, ""), {"ok": True})
+        self.assertEqual(len(calls), 3)
+
+    def test_no_retry_on_auth_error(self):
+        with patch.object(ai_client, "_request_once", side_effect=ai_client.AIError("HTTP 401：bad key")) as m, \
+                patch.object(ai_client.time, "sleep"):
+            with self.assertRaises(ai_client.AIError):
+                ai_client._request("u", {}, {}, 5, "")
+        self.assertEqual(m.call_count, 1)
+
+
+class EmptyAnswerTests(unittest.TestCase):
+    def test_retry_then_error_on_blank(self):
+        prof = {"type": "openrouter", "model": "x", "api_key": "k"}
+        with patch.object(ai_client, "complete", side_effect=["", "【觀點】偏多"]) as m:
+            r = ai_client.explain(prof, "mod5", {"a": 1})
+        self.assertEqual(m.call_count, 2)
+        self.assertIn("偏多", r["answer"])
+        with patch.object(ai_client, "complete", return_value="  "):
+            with self.assertRaises(ai_client.AIError):
+                ai_client.explain(prof, "mod5", {"a": 1})

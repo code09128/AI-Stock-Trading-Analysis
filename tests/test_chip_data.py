@@ -3,8 +3,8 @@
 import unittest
 from unittest.mock import patch
 
-from src import chip_data
-from src.chip_data import _streak, summarize
+from src.market import chip_data
+from src.market.chip_data import _streak, summarize
 
 
 def _inst(days):

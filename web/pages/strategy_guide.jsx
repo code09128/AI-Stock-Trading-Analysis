@@ -2,7 +2,7 @@
 (() => {
   const STRATEGIES = [
     {
-      icon: '📈',
+      icon: '',
       name: '趨勢跟隨（順勢）',
       level: '入門',
       idea: '「趨勢是你的朋友」：在上升趨勢中找機會買進，趨勢轉弱就離開，不去猜頭猜底。',
@@ -13,7 +13,7 @@
       tool: '技術分析、看盤頁「技術總覽」的趨勢欄、策略回測 回測雙均線。',
     },
     {
-      icon: '🚀',
+      icon: '',
       name: '突破買進',
       level: '入門',
       idea: '股價長時間在區間內整理，向上突破壓力代表賣壓被消化，常伴隨新一波行情。',
@@ -35,7 +35,7 @@
       tool: '看盤頁分時圖與區間條、技術總覽的「距 MA20」與 RSI。',
     },
     {
-      icon: '↔️',
+      icon: '',
       name: '區間操作（高出低進）',
       level: '中階',
       idea: '股價在明確的支撐與壓力之間來回，接近下緣買、接近上緣賣。',
@@ -46,7 +46,7 @@
       tool: '技術分析 的支撐／壓力位、今日與 52 週區間條。',
     },
     {
-      icon: '🛡️',
+      icon: '',
       name: '停損、停利與部位大小（最重要）',
       level: '必學',
       idea: '長期能不能活下來，取決於「每次最多虧多少」，而不是預測多準。',
@@ -57,7 +57,7 @@
       tool: '看盤頁模擬下單暫存匣（試算金額）、交易檢討找出你的壞習慣。',
     },
     {
-      icon: '🧺',
+      icon: '',
       name: '分批進出與定期定額',
       level: '入門',
       idea: '不預測最低點或最高點，把資金拆成多份，降低單次判斷錯誤的衝擊。',
@@ -68,7 +68,7 @@
       tool: '看盤頁「ETF 精選」看殖利率與規模、組合風控 再平衡與集中度檢查。',
     },
     {
-      icon: '⚖️',
+      icon: '',
       name: '資產配置與再平衡',
       level: '中階',
       idea: '不把雞蛋放同一個籃子：分散到不同產業、市場與現金，並定期把比重調回目標。',
@@ -93,7 +93,7 @@
     return (
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
         <div>
-          <h3 className="font-bold text-white">🧭 基本交易策略（攻略）</h3>
+          <h3 className="font-bold text-white">基本交易策略（攻略）</h3>
           <p className="text-[11px] text-slate-500 mt-1">
             以下是常見、公開的教學框架，用來理解系統各功能怎麼搭配；沒有任何策略保證獲利，也不是投資建議。點開每一張卡片看細節。
           </p>
@@ -138,7 +138,7 @@
           </ol>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-300 leading-relaxed">
-          <div className="text-sm font-bold text-white mb-1">🧮 停損與股數怎麼算（範例）</div>
+          <div className="text-sm font-bold text-white mb-1">停損與股數怎麼算（範例）</div>
           本金 100 萬、單筆最多承受 1%＝1 萬元虧損。想在 100 元買進、停損 95 元，每股風險 5 元，
           最多買 10,000 ÷ 5 ＝ 2,000 股（2 張）。目標價 110 元則預期獲利 10 元，風險報酬比 ＝ 10 ÷ 5
           ＝ 2：1。 （範例數字僅示範算法。）

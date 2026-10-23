@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 node_modules/
 dist/
+build/
+*.spec
 .DS_Store
 
 # 本機金鑰（FINMIND_TOKEN 等），不要提交
@@ -11,3 +13,6 @@ dist/
 
 # 操作紀錄（每日 JSONL，保留 30 天）
 logs/
+
+# 使用者資料（持股、交易紀錄、AI 設定…）與每日備份，不要提交
+data/

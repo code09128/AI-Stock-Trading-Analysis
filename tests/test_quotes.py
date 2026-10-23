@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from src import quote_provider as qp
-from src.data_adapter import DualMarketDataAdapter
+from src.market import quote_provider as qp
+from src.market.data_adapter import DualMarketDataAdapter
 
 MIS_ROW = {
     "c": "2330", "z": "2405.0000", "y": "2420.0000", "o": "2400.0000", "h": "2415.0000",
@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
 class EtfDataTests(unittest.TestCase):
     def setUp(self):
-        from src import etf_data
+        from src.market import etf_data
         etf_data._CACHE.clear()
         self.ed = etf_data
 
@@ -59,7 +59,7 @@ class EtfDataTests(unittest.TestCase):
         self.assertIsNone(rows[1]["aum_billion"])  # 查無資料不填假數字
 
     def test_lookthrough_uses_live_holdings(self):
-        from src.portfolio_risk import PortfolioRiskManager
+        from src.portfolio.portfolio_risk import PortfolioRiskManager
         mgr = PortfolioRiskManager(etf_holdings={"0050": {"2330": 0.5}})
         res = {"holdings": [{"symbol": "0050", "weight_pct": 40.0}]}
         self.assertEqual(mgr.calculate_lookthrough_exposure(res)["2330"], 20.0)
@@ -67,7 +67,7 @@ class EtfDataTests(unittest.TestCase):
 
 class ChartDataTests(unittest.TestCase):
     def test_intraday_parsing_and_failure(self):
-        from src import chart_data
+        from src.market import chart_data
         chart_data._CACHE.clear()
         fake = {
             "meta": {"chartPreviousClose": 100.0, "gmtoffset": 28800, "fiftyTwoWeekHigh": 120,
@@ -89,8 +89,8 @@ class ChartDataTests(unittest.TestCase):
 
 class WeeklyNewsStressTests(unittest.TestCase):
     def test_weekly_aggregation(self):
-        from src.api_server import to_weekly_bars
-        from src.backtest_engine import Bar
+        from src.server.api_server import to_weekly_bars
+        from src.market.bar import Bar
         days = [Bar("2026-10-19", 10, 12, 9, 11, 100), Bar("2026-10-20", 11, 15, 10, 14, 200),
                 Bar("2026-10-26", 14, 16, 13, 15, 50)]
         w = to_weekly_bars(days)
@@ -99,7 +99,7 @@ class WeeklyNewsStressTests(unittest.TestCase):
         self.assertEqual(w[0].timestamp, "2026-10-20")  # 該週最後一個交易日
 
     def test_news_source_failure_is_reported_not_faked(self):
-        from src import news_feed
+        from src.news import news_feed
         news_feed._CACHE.clear()
         with patch.object(news_feed, "_google_news", side_effect=OSError("rss down")), patch.object(
             news_feed, "_twse_material", return_value=[]
@@ -109,8 +109,8 @@ class WeeklyNewsStressTests(unittest.TestCase):
         self.assertTrue(any("rss down" in e for e in r["errors"]))
 
     def test_event_price_context_uses_only_known_prices(self):
-        from src.api_server import DISPATCHER
-        from src.backtest_engine import Bar
+        from src.server.api_server import DISPATCHER
+        from src.market.bar import Bar
         from datetime import date, timedelta
         bars = [Bar((date(2026, 8, 1) + timedelta(i)).isoformat(), 100, 100, 100, 100 + i, 1) for i in range(60)]
         pre = DISPATCHER._price_context(bars, "2026-09-20T08:00:00", "PRE")
@@ -119,7 +119,7 @@ class WeeklyNewsStressTests(unittest.TestCase):
         self.assertEqual(post["as_of_bar"], "2026-09-20")        # 盤後發布：已知當天收盤
 
     def test_historical_stress_math(self):
-        from src import stress
+        from src.portfolio import stress
         up_then_down = {f"2026-01-{d:02d}": float(v) for d, v in zip(range(1, 29), [100] * 14 + [50] * 14)}
         feb = {f"2026-02-{d:02d}": 50.0 for d in range(1, 29)}
         series = {**up_then_down, **feb}

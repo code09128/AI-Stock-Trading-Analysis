@@ -7,9 +7,9 @@
 """
 
 import unittest
-from src.data_adapter import DualMarketDataAdapter
-from src.llm_runner import LLMRunner
-from src.api_server import TradingEngineDispatcher
+from src.market.data_adapter import DualMarketDataAdapter
+from src.ai.llm_runner import LLMRunner
+from src.server.api_server import TradingEngineDispatcher
 
 
 class TestFullStackIntegration(unittest.TestCase):

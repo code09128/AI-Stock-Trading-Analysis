@@ -6,9 +6,9 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from src.data_adapter import DualMarketDataAdapter, clear_bar_cache, is_partial_session
-from src.llm_runner import LLMRunner
-from src.trend_score import score_trend
+from src.market.data_adapter import DualMarketDataAdapter, clear_bar_cache, is_partial_session
+from src.ai.llm_runner import LLMRunner
+from src.technical.trend_score import score_trend
 
 
 class TrendScoreTests(unittest.TestCase):
