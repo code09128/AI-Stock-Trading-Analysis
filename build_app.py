@@ -1,8 +1,10 @@
 """
 自動打包腳本 (build_app.py)
 一鍵將專案打包成桌面視窗程式（desktop.py：Edge WebView2 獨立視窗＋載入動畫，沒有黑色主控台）：
-1. 綠色免安裝單一執行檔: dist/股票交易分析系統.exe（啟動時先解壓縮，期間顯示啟動圖）
-2. 整合安裝程式: dist/股票交易分析系統_Setup.exe（安裝資料夾版，不必解壓縮，開啟最快）
+1. 資料夾版: dist/股票交易分析系統/（exe＋_internal，直接執行最快；自己測試用這個）
+2. 整合安裝程式: dist/股票交易分析系統_Setup.exe（內容就是資料夾版，加上安裝、捷徑與解除安裝；給別人用這個）
+3. 加 --portable 才另外產生免安裝單一執行檔: dist/股票交易分析系統.exe（每次啟動先解壓縮，較慢；放隨身碟用）
+用法：python build_app.py [--portable]
 需要：pip install -r requirements-desktop.txt（pywebview、pyinstaller）；有 Pillow 時會產生啟動圖。
 """
 
@@ -23,6 +25,14 @@ DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
 WEB_DIR = ROOT / "web"
 ICON_PATH = ROOT / "app.ico"
+
+
+_progress = {"n": 0, "total": 3}
+
+
+def step(title: str) -> None:
+    _progress["n"] += 1
+    print(f"\n[{_progress['n']}/{_progress['total']}] {title}")
 
 
 def get_pyinstaller_cmd() -> list:
@@ -126,7 +136,7 @@ def check_desktop_deps() -> None:
 
 def build_portable_exe(web_dir: Path) -> Path:
     """第一步：單一便攜式 exe（啟動時解壓縮到暫存區，期間顯示啟動圖）"""
-    print(f"\n[1/4] 正在打包單一可執行檔 ({APP_NAME}.exe)...")
+    step(f"正在打包單一可執行檔 ({APP_NAME}.exe)...")
     cmd = pyinstaller_base(web_dir, APP_NAME, "--onefile")
     splash = make_splash_image()
     if splash:
@@ -148,7 +158,7 @@ def build_portable_exe(web_dir: Path) -> Path:
 
 def build_app_folder(web_dir: Path) -> Path:
     """第二步：資料夾版（exe＋_internal），不必解壓縮，給安裝程式用"""
-    print(f"\n[2/4] 正在打包資料夾版 ({APP_DIR})...")
+    step(f"正在打包資料夾版 ({APP_DIR})...")
     cmd = pyinstaller_base(web_dir, APP_NAME, "--onedir") + [str(ROOT / "desktop.py")]
     # --noconfirm 會整個刪掉舊的輸出資料夾：直接在 dist 裡執行過的話，裡面的使用者資料與金鑰要先搬開再放回來
     keep_dir = BUILD_DIR / "keep_user_files"
@@ -403,7 +413,7 @@ if __name__ == "__main__":
 
 def build_installer_exe(app_dir: Path) -> Path:
     """第三步：將資料夾版與安裝腳本打包成單一 Setup 安裝程式"""
-    print("\n[3/4] 正在製作安裝包 (股票交易分析系統_Setup.exe)...")
+    step("正在製作安裝包 (股票交易分析系統_Setup.exe)...")
     installer_script = create_installer_script()
 
     cmd = get_pyinstaller_cmd() + [
@@ -434,21 +444,27 @@ def build_installer_exe(app_dir: Path) -> Path:
 
 
 def main():
+    portable = "--portable" in sys.argv[1:]
+    _progress["total"] = 4 if portable else 3
     print("=" * 60)
-    print("開始構建 股票交易分析系統 Windows 執行檔與安裝包")
+    print(f"開始構建 {APP_NAME} Windows 程式（資料夾版＋安裝包{'＋單一執行檔' if portable else ''}）")
     print("=" * 60)
-    
+
     check_desktop_deps()
     web_dir = build_web_dir()
-    portable_exe = build_portable_exe(web_dir)
+    portable_exe = build_portable_exe(web_dir) if portable else None
     app_dir = build_app_folder(web_dir)
     installer_exe = build_installer_exe(app_dir)
 
-    print("\n[4/4] 全部打包構建完成！")
+    step("全部打包構建完成！")
     print("=" * 60)
-    print(f"1. 免安裝綠色單一執行檔: {portable_exe}")
-    print(f"2. 資料夾版（可直接執行）: {app_dir / (APP_NAME + '.exe')}")
-    print(f"3. 一鍵安裝程式 Setup:     {installer_exe}")
+    print(f"1. 資料夾版（自己測試，直接執行）: {app_dir / (APP_NAME + '.exe')}")
+    print(f"2. 一鍵安裝程式（給別人用）:       {installer_exe}")
+    old_portable = DIST_DIR / f"{APP_NAME}.exe"
+    if portable_exe:
+        print(f"3. 免安裝單一執行檔:               {portable_exe}")
+    elif old_portable.exists():
+        print(f"※ {old_portable.name} 是之前打包的舊版，這次沒有更新（要更新請加 --portable）")
     print("=" * 60)
 
 
