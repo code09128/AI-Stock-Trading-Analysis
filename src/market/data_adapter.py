@@ -371,11 +371,8 @@ class DualMarketDataAdapter:
         if px <= 0:
             return bars, {"applied": False, "reason": "即時價格不大於 0"}
 
+        # 只認交易所當地日期：quote_time 是本機時間，美股收盤在台灣已是隔天，拿它比會多接一根假 K 棒
         q_date = str(quote.get("quote_date_local") or "").replace("-", "").replace("/", "").strip()
-        if not q_date:
-            qt_digits = "".join(c for c in (str(quote.get("quote_time", "")).split() or [""])[0] if c.isdigit())
-            if len(qt_digits) == 8:
-                q_date = qt_digits
 
         last_b = bars[-1]
         b_date = last_b.timestamp.replace("-", "").replace("/", "").strip()
@@ -385,6 +382,8 @@ class DualMarketDataAdapter:
         q_high = float(quote.get("high") or px) if quote.get("high") is not None else px
         q_low = float(quote.get("low") or px) if quote.get("low") is not None else px
         q_vol = float(quote.get("volume") or 0)
+        if quote.get("volume_unit") == "張":  # 台股即時量以張計，日 K 是股
+            q_vol *= 1000
 
         if q_date and b_date and q_date == b_date:
             new_bars[-1] = Bar(

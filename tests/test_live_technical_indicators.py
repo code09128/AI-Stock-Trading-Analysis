@@ -43,6 +43,21 @@ class TestLiveTechnicalIndicators(unittest.TestCase):
         # 確保原 bars 未被修改
         self.assertEqual(self.bars[-1].close, original_last_close)
 
+    def test_no_exchange_date_does_not_guess_from_local_time(self):
+        """沒有交易所當地日期就不併：quote_time 是本機（台灣）時間，美股收盤後已是台灣隔天，會多接一根假 K 棒"""
+        quote = {"is_live": True, "price": 105.0, "quote_date_local": "",
+                 "quote_time": "2026-10-24 04:00:00", "source": "Yahoo"}
+        merged, info = self.adapter.merge_realtime_bar(self.bars, quote)
+        self.assertFalse(info["applied"])
+        self.assertEqual(len(merged), len(self.bars))
+
+    def test_tw_volume_in_lots_converted_to_shares(self):
+        """台股即時量是「張」，日 K 是「股」：追加的盤中 K 棒要換算，量能判斷才不會變成極度縮量"""
+        quote = {"is_live": True, "price": 105.0, "volume": 3.0, "volume_unit": "張",
+                 "quote_date_local": "20261024", "source": "TWSE MIS"}
+        merged, _ = self.adapter.merge_realtime_bar(self.bars, quote)
+        self.assertEqual(merged[-1].volume, 3000.0)
+
     def test_merge_realtime_bar_next_day_append(self):
         """盤中日 K 尚未生成今日 bar 時，自動追加一根今日盤中 K 棒"""
         quote = {

@@ -124,7 +124,7 @@ class BacktestEngine:
         # 計算績效指標
         res = self._calculate_metrics(trades)
         res["position_sizing"] = (
-            "每筆用當下全部資金買進（含前面交易的損益）；台股買得起整張就買整張，不足一張改買零股；其他市場以 1 股為單位"
+            "每筆用當下全部資金買進（含前面交易的損益）；台股買得起整張就買整張，不足一張改買零股；港、日、陸、星股以每手股數為單位，其他市場以 1 股為單位"
         )
         res["initial_capital"] = self.initial_capital
         res["final_equity"] = round(equity, 2)

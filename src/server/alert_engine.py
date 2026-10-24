@@ -78,6 +78,7 @@ class AlertEngine:
         self._last_rsi_check = 0.0
         self._rsi_cache: Dict[str, float] = {}
         self._lock = threading.Lock()
+        self._check_lock = threading.Lock()
 
     def load_alerts(self) -> List[Dict[str, Any]]:
         raw = user_data.load().get("values", {}).get("tw_us_alerts_v1", "[]")
@@ -91,9 +92,13 @@ class AlertEngine:
         user_data.save({"tw_us_alerts_v1": json.dumps(alerts, ensure_ascii=False)})
 
     def check_once(self) -> List[Dict[str, Any]]:
-        """執行一輪檢查，回傳觸發的提醒清單。"""
+        """執行一輪檢查，回傳觸發的提醒清單。背景迴圈與「立即檢查」不能同時跑，否則同一則會通知兩次。"""
         if self.paused:
             return []
+        with self._check_lock:
+            return self._check()
+
+    def _check(self) -> List[Dict[str, Any]]:
 
         alerts = self.load_alerts()
         active = [a for a in alerts if a.get("active")]

@@ -80,7 +80,9 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
         (p.get("events") if isinstance(p.get("events"), list) else [])[:200], "browser")},
     "/api/log/recent": lambda p: {"events": activity_log.read_recent(
         int(arg_num(p, "limit", 200, "筆數", integer=True, lo=1, hi=2000)), bool(p.get("errors_only")))},
-    "/api/autostart": lambda p: {"enabled": autostart.set_autostart(bool(p.get("enabled")))},
+    # 回傳設定後「實際」的狀態（set_autostart 只回報成功與否，取消成功時是 True）
+    "/api/autostart": lambda p: {"ok": autostart.set_autostart(bool(p.get("enabled"))),
+                                 "enabled": autostart.is_autostart_enabled()},
     "/api/alerts/check_now": lambda p: {"fired": alert_engine.ALERT_ENGINE.check_once()},
     "/api/tests/run": lambda p: D.handle_run_tests(),
 }

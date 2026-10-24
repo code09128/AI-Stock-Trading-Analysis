@@ -192,6 +192,7 @@ def _yahoo_news(symbol: str, market: str) -> List[Dict[str, Any]]:
 
 def _twse_material(code: str) -> List[Dict[str, Any]]:
     rows = []
+    fetch_error = None
     url = "https://openapi.twse.com.tw/v1/opendata/t187ap04_L"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
     started = time.time()
@@ -206,9 +207,12 @@ def _twse_material(code: str) -> List[Dict[str, Any]]:
         with qp._LOCK:
             qp.FETCH_LOG.appendleft({"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": "ERR",
                                      "ms": int((time.time() - started) * 1000), "bytes": 0, "error": str(e)})
+        fetch_error = e
 
     # 合併今日最新與本地累積的歷史重大訊息（保留 90 天，去重）
     history_rows = announcement_store.load_history_twse_material(code, days=90)
+    if fetch_error is not None and not history_rows:
+        raise fetch_error  # 抓不到又沒有存檔：照實回報這個來源失敗，不要顯示成「0 則」
     all_rows = {f"{r.get('發言日期')}_{r.get('發言時間')}_{r.get('主旨')}": r
                 for r in (history_rows + rows) if str(r.get("公司代號", "")).strip() == code}
 

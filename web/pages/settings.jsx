@@ -42,7 +42,8 @@
     ['tw_us_activity_v1', '操作紀錄（瀏覽器端）', 'activity-changed'],
     ['tw_us_sidebar_v1', '介面偏好：側邊欄收合', null],
     ['tw_us_mkt_filter_v1', '介面偏好：看盤市場篩選', null],
-    ['tw_us_bg_alerts_v1', '關閉視窗後常駐背景提醒', null],
+    ['tw_us_bg_alerts_v1', '介面偏好：按 X 時預設縮到系統匣', null],
+    ['tw_us_zoom_v1', '介面偏好：畫面縮放', null],
     ['tw_us_tour_done_v1', '新手導覽狀態（清除後會再次顯示導覽）', null],
   ];
   const describe = (k) => {
@@ -408,7 +409,7 @@
       localStorage.setItem(LS_BG, String(checked));
       window.dispatchEvent(new Event('storage'));
       window.TA.notifySaved(
-        `已${checked ? '開啟' : '關閉'}「關閉視窗後常駐背景檢查提醒」`,
+        `按 X 時的預設選項改為「${checked ? '縮到系統匣' : '結束程式'}」`,
       );
     };
 
@@ -422,13 +423,16 @@
         .then((r) => r.json())
         .then((d) => {
           setAutostart(!!d.enabled);
-          window.TA.notifySaved(
-            `已${d.enabled ? '設定' : '取消'}「開機自動於背景啟動」`,
+          // 這個設定寫在 Windows 啟動清單（登錄檔），不是資料檔，所以不用 notifySaved
+          window.TA.toast?.(
+            d.ok && !!d.enabled === checked
+              ? `✅ 已${checked ? '設定' : '取消'}「開機自動在背景啟動」`
+              : `⚠️ 開機啟動設定沒有成功（Windows 啟動清單寫入失敗），目前為${d.enabled ? '開啟' : '關閉'}`,
           );
         })
         .catch((e) => {
           setAutostart(!checked);
-          window.TA.notifySaved(`開機啟動設定失敗：${e.message}`);
+          window.TA.toast?.(`⚠️ 開機啟動設定失敗：${e.message}`);
         });
     };
 
