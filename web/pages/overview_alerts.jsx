@@ -54,6 +54,29 @@
     window.dispatchEvent(new Event('alerts-changed'));
   };
 
+  // 桌面版縮到系統匣時由 Python 背景引擎檢查並寫回資料檔；回到前景時用資料檔的版本取代本機的，
+  // 否則下次在頁面上改提醒會把背景已觸發的提醒蓋回「監控中」
+  const reloadAlertsFromServer = async () => {
+    try {
+      const d = await fetch('/api/userdata').then((r) => r.json());
+      const raw = d?.values?.[LS_ALERTS];
+      if (typeof raw !== 'string') return;
+      const server = JSON.parse(raw);
+      if (!Array.isArray(server)) return;
+      const before = new Map(loadAlerts().map((a) => [a.id, a]));
+      const fired = server.filter((a) => !a.active && a.firedAt && before.get(a.id)?.active);
+      if (fired.length) alertLog = [...fired, ...alertLog].slice(0, 30);
+      if (JSON.stringify(server) !== JSON.stringify(loadAlerts()) || fired.length) {
+        saveAlerts(server);
+      }
+      if (fired.length) {
+        window.TA.toast?.(`🔔 背景期間觸發了 ${fired.length} 則提醒，紀錄在看盤頁的「提醒」`);
+      }
+    } catch (_e) {
+      /* 讀不到就維持本機版本 */
+    }
+  };
+
   // 看盤頁「提醒」面板用：只負責顯示與編輯，檢查交給 AlertWatcher
   function useAlerts() {
     const [alerts, setState] = useState(loadAlerts);
@@ -91,6 +114,7 @@
           body: JSON.stringify({ symbols }),
         }).then((r) => r.json());
       const check = async () => {
+        if (window.TA.desktopHidden) return; // 縮在系統匣：交給背景引擎，避免同一則提醒觸發兩次
         const list = loadAlerts().filter((a) => a.active);
         if (!list.length) return;
         const syms = [...new Set(list.map((a) => a.symbol))];
@@ -111,7 +135,7 @@
         } catch (_e) {
           return; // 這一輪抓不到就等下一輪，不誤觸發
         }
-        if (stop) return;
+        if (stop || window.TA.desktopHidden) return;
         const fired = [];
         const next = loadAlerts().map((a) => {
           if (!a.active) return a;
@@ -183,6 +207,7 @@
       setErr('');
       setAlerts([...alerts, { id: Date.now(), symbol: sym, type: form.type, value, active: true }]);
       setForm({ ...form, value: '' });
+      window.TA.notifySaved(`已新增提醒：${sym} ${t.label} ${value}${t.unit}`);
     };
     return (
       <div className="space-y-2">
@@ -269,9 +294,10 @@
             {!a.active && (
               <button
                 type="button"
-                onClick={() =>
-                  setAlerts(alerts.map((x) => (x.id === a.id ? { ...x, active: true } : x)))
-                }
+                onClick={() => {
+                  setAlerts(alerts.map((x) => (x.id === a.id ? { ...x, active: true } : x)));
+                  window.TA.notifySaved(`已重新啟用 ${a.symbol} 的提醒`);
+                }}
                 className="text-sky-300 hover:text-white cursor-pointer"
               >
                 重啟
@@ -279,7 +305,10 @@
             )}
             <button
               type="button"
-              onClick={() => setAlerts(alerts.filter((x) => x.id !== a.id))}
+              onClick={() => {
+                setAlerts(alerts.filter((x) => x.id !== a.id));
+                window.TA.notifySaved(`已刪除 ${a.symbol} 的提醒`);
+              }}
               className="text-slate-600 hover:text-rose-400 cursor-pointer"
               aria-label="刪除提醒"
             >
@@ -378,7 +407,7 @@
           </table>
         </div>
         <p className="text-[10px] text-slate-500 leading-snug">
-          技術指標來自日 K 還權資料（Yahoo），每 5
+          技術指標來自日 K 還權資料（Yahoo），盤中會把即時價併入當天的 K 棒，每 5
           分鐘更新；漲跌來自即時報價。趨勢：收盤＞MA20＞MA60 為多頭，反之為空頭。
         </p>
       </div>
@@ -391,5 +420,6 @@
     AlertsPanel,
     OverviewPanel,
     ALERT_TYPES,
+    reloadAlertsFromServer,
   });
 })();

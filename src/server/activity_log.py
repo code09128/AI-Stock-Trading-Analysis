@@ -9,17 +9,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 import json
-import sys
 import threading
 
 def _get_app_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    cur = Path(__file__).resolve().parent
-    for p in [cur, cur.parent, cur.parent.parent, cur.parent.parent.parent]:
-        if (p / "run.py").is_file() or (p / "web").is_dir():
-            return p
-    return cur.parent.parent
+    from src.server.config import get_app_dir  # 與 data\、.env 同一個位置（專案 dist\ 裡的 exe 也寫回專案）
+    return get_app_dir()
 
 
 LOG_DIR = _get_app_dir() / "logs"

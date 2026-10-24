@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 158 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 159 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -36,19 +36,28 @@
    - 網路卡住：前端所有 `/api/` 請求加等待上限（一般 90 秒、會呼叫 AI 的 240 秒，串流 AI 解讀除外），逾時顯示原因而不是永遠轉圈；報價（5 秒）、技術分析（5 秒）、提醒、熱力圖、分時圖、大盤指數的定時更新加「上一輪還沒回來就跳過」，實測每個請求卡 12 秒時同時最多 2 個（原本會一直累積）。後端所有對外連線本來就有 8～180 秒逾時，AI 串流連線用 `with` 確保關閉。
    - 存檔：存檔前讀不到 `userdata.json`（防毒、OneDrive 短暫鎖住）原本會拿舊備份當底寫回、蓋掉當天修改 → 改為重試 5 次仍讀不到就這次不存並回報；寫入置換也會重試；損毀檔先另存 `userdata.corrupt-*.json`；每日備份失敗不再擋住存檔；前端存檔失敗自動重送（3 秒起逐次加倍、最長 1 分鐘）；`.env` 置換同樣重試；操作紀錄寫不進去不影響功能。新增測試 2 個（共 158 個）。
    - 檢查方式：Claude 主審＋agy（Gemini）副手分前後端各掃一次，每個回報都打開程式碼確認後才修。
+9. ✅ **回測依本金計算股數、稅費取整數、操作通知（2026-10-24）**：
+   - 回測：每筆用當下資金買進（損益滾入下一筆），台股買得起就整張、不足一張改零股（零股手續費低消 1 元），其他市場以 1 股為單位；回傳 `position_sizing`、`initial_capital`、`final_equity`、`skipped_no_cash`，回測頁顯示「本金 → 期末」。
+   - 台股手續費與證交稅改為元以下無條件捨去（前端模擬下單與後端回測一致）。
+   - 導覽快速切換步驟時取消上一步還沒送出的分頁切換。
+   - **增刪改查一律通知**：`window.TA.notifySaved(msg)` 等修改真的寫進 `data/userdata.json` 才顯示 ✅，失敗顯示 ⚠️＋原因並說明會自動重試，補存成功再通知一次；逐字修改的表格用 `notifySavedLater` 停手 1 秒才提示。涵蓋：自選股、暫存匣、模擬成交、我的持股（新增／更新／CSV 匯入／移除）、提醒、交易紀錄（修改／刪除／CSV 匯入／切換來源）、交易診斷寫回規則、AI 連線（新增／編輯／刪除／切換／作用範圍）、金鑰設定、清除資料、備份下載與還原、風控試算表；使用者主動的查詢（技術分析、新聞抓取與判斷、回測、風控、診斷）顯示完成或失敗，自動輪詢不提示。刪除持股、交易紀錄、AI 連線前先確認。
+   - 修正：「從備份還原」原本 0.8 秒就重新載入，資料還沒存進檔案就被檔案裡的舊資料蓋回，現在等存檔完成才重新載入。
 
 ---
 
 ## 三、已知限制與待優化細節
-1. 技術分析指標（MA/RSI 等）盤中仍用未覆蓋的日 K 計算；週線只有 MA/RSI/MACD 摘要，沒有週線版的買賣決策。
+1. 週線只有 MA/RSI/MACD 摘要，沒有週線版的買賣決策。
 2. 無「內外盤」真實資料來源（用五檔委買/委賣量比例代替）；ETF「規模」是市值估算、戶數只有前 20 名、成分股只有前十大；00849B 查無規模。
-3. 提醒只在網頁開著時運作（沒有背景服務推播）；歷史回落重演假設持股數量與匯率不變。
+3. 歷史回落重演假設持股數量與匯率不變。
 4. 熱力圖：上櫃公司與部分上櫃 ETF 沒有公開股數，美股 ETF 沒有市值欄位，市值模式以最小方塊顯示；懸停資訊沒有 5 日／20 日漲跌（每檔要多抓日 K，先不做）。
-5. 新聞：鉅亨網搜尋是非公開文件介面（格式可能變動，失敗會單獨顯示錯誤）；美股在鉅亨網只能用代號搜，則數少；MoneyDJ／專欄站經由 Google News 限定站台搜尋，沒有摘要；證交所重大訊息仍只有「當日」；情緒方向預設由使用者判斷（或勾選 AI 判斷）。SEC 8-K 需要網路可連 sec.gov。
-6. 台美股以外沒有內建假日表（今天以後只排除週末，過去日期看有沒有日 K）；其他市場的手續費／印花稅沿用美股規則；港、日、陸、星股每手股數未檢核。
-7. 策略回測每筆固定 1 張（台股）／100 股（其他），不依本金決定股數；高價股一張超過本金時，最大回撤（MDD）會失真。改成依本金計算股數會改變所有回測數字與測試，待決定。
-8. 熱力圖英股（`.L`，報價幣別 GBp）的市值：Yahoo `marketCap` 若是英鎊單位，現在會被當成便士而少算 100 倍（待用真實資料確認單位）。
-9. 台股模擬下單的手續費／交易稅沒有取整數（券商實際是無條件捨去到元），成本會有幾元誤差。
+5. 新聞：鉅亨網搜尋是非公開文件介面（格式可能變動，失敗會單獨顯示錯誤）；美股在鉅亨網只能用代號搜，則數少；MoneyDJ／專欄站經由 Google News 限定站台搜尋，沒有摘要；情緒方向預設由使用者判斷（或勾選 AI 判斷）。SEC 8-K 需要網路可連 sec.gov。
+6. 台美股以外沒有內建假日表（今天以後只排除週末，過去日期看有沒有日 K）。
+7. ✅ 熱力圖英股（`.L`）市值：已用 SHEL.L 真實資料確認 Yahoo `marketCap` 是英鎊、報價是便士，2026-10-24 修正為英鎊匯率換算（測試 `test_uk_market_cap_is_pounds_while_price_is_pence`）。
+8. ✅ 台美股以外市場手續費與每手股數（2026-10-24）：法定稅費表（港股印花稅 0.1% 雙邊+徵費、英股 0.5% SDRT、陸股 0.05% 印花稅+費、韓股 0.2% 證交稅、星股清算費），佣金預設 0 並註明「未含券商佣金」；每手股數（日/陸/星股固定 100 股，港股由港交所官方證券清單 ListOfSecurities.xlsx 每日快取取得）；模擬下單與回測同步約束每手整數倍（測試 `tests/test_trade_rules.py`）。
+9. ✅ 盤中技術指標納入即時價（2026-10-24）：`DualMarketDataAdapter.merge_realtime_bar` 與 `build_technical_snapshot` 在盤中自動將即時報價更新最後一根 K 棒（若日 K 尚未開出今日 bar 則追加盤中 K 棒），MA5/20/60/200、RSI14、MACD、ATR14、100 分趨勢評分及看盤頁技術總覽全部即時連動（測試 `tests/test_live_technical_indicators.py`）。
+10. ✅ 常駐背景提醒與系統匣服務（2026-10-24）：Python 端重寫 `AlertEngine`（每 15 秒檢查價格與漲跌幅、每 5 分鐘檢查 RSI，達標發送 Windows 原生 Toast 通知）；純 Win32 ctypes 實作 `TrayIcon` 系統匣常駐、右鍵選單（開啟主畫面、暫停/繼續提醒、結束程式）；`desktop.py` 按 X 時詢問縮到系統匣或結束程式；設定頁提供開關與開機自動啟動 `autostart.py`（測試 `tests/test_alert_engine.py`）。
+11. ✅ 證交所重大訊息每日存檔與歷史公告（2026-10-24）：每日自動將全市場重大訊息（TWSE OpenAPI）留存至 `data/announcements/twse_material_YYYYMMDD.json`（保留 90 天），查詢個股重大訊息時自動合併當日最新與本地歷史累積去重；並新增 Google News 搜尋近 30 天包含【公告】或重大訊息之新聞來源補強歷史（測試 `tests/test_announcements.py`）。
+
 
 ---
 
@@ -85,3 +94,30 @@
 - **金鑰與使用者資料持久化**：設定頁直接填寫 `.env` 金鑰（`src/server/env_settings.py`）；持股、交易紀錄、規則與 AI 設定自動同步至 `data/userdata.json` 並每日備份（`src/server/user_data.py`、`web/sync_store.jsx`）。
 - **一鍵打包與安裝精靈（`build_web.py`、`build_app.py`）**：esbuild 預編譯 JSX 為 `app.bundle.js`，PyInstaller 產出免安裝 `dist/股票交易分析系統.exe` 與 `dist/股票交易分析系統_Setup.exe`（支援 OneDrive 桌面捷徑、PowerShell UTF-16 建立捷徑、保留舊版 `data/` 與 `.env`）。
 - **AI 解讀全面升級**：資深研究主管／交易員報告格式、持股部位自動帶入、「可以這樣問」動態建議問題、Ollama 原生 `/api/chat` 自動擴充 `num_ctx`、NDJSON 即時串流顯示（Streaming 含推理字數進度）、中文單位換算數字核對與 LaTeX 數學符號自動轉可讀符號。
+
+### 5. 2026-10-24 多市場交易規則、盤中指標即時融合、常駐系統匣背景提醒與重大訊息存檔
+- **多市場法定稅費與每手股數（`src/market/trade_rules.py`）**：
+  - 建立法定稅費表（港股印花稅 0.1% 雙邊+交易徵費、英股 0.5% SDRT、陸股 0.05% 印花稅+費、韓股 0.2% 證交稅、星股清算費），佣金預設 0 並註明未含券商佣金。
+  - 每手股數規範：日/陸/星股預設固定 100 股；港股由港交所官方證券名單 `ListOfSecurities.xlsx` 解析每檔標的實際每手股數（本地快取 24 小時），並正確判定免徵印花稅標的。
+  - 模擬下單面板（`order_panel.jsx`）與策略回測部位計算（`backtest_engine.py`）嚴格執行每手整數倍買進約束與非整手碎股提示。
+- **盤中技術指標即時重算（`src/market/data_adapter.py`）**：
+  - 新增 `merge_realtime_bar(bars, quote)` 與 `build_technical_snapshot`：自動比對即時報價日期，若盤中日 K 尚未開出則追加盤中 bar，若已開出則以最新價覆蓋當天 high/low/close/volume。
+  - 即時連動 MA5/20/60/200、RSI14、MACD、ATR14 及 100 分趨勢評分，解決盤中指標落後一天的問題。
+- **Windows 系統匣常駐背景服務與提醒引擎（`src/server/`、`desktop.py`）**：
+  - `alert_engine.py`：後端定時輪詢價格與漲跌幅（每 15 秒）及 RSI（每 5 分鐘），達標發出通知並回寫 `userdata.json`。
+  - `notifier.py`：透過 PowerShell 呼叫 Windows 10/11 原生 Toast 通知中心。
+  - `tray_icon.py`：純 Win32 ctypes 實作系統匣圖示與右鍵選單（開啟主畫面、暫停/繼續提醒、結束程式）。
+  - `autostart.py`：管理 Windows HKCU Run 註冊表開機啟動。
+  - `desktop.py`：按 X 時頁面跳出「縮到系統匣／結束程式／取消」（`web/desktop_bridge.jsx`，選擇經 `window.pywebview.api.close_choice` 傳回；頁面沒回應時改用系統對話框）。closing 事件內不得直接 `evaluate_js` 或跳對話框（會卡死視窗執行緒），一律丟到別的執行緒。
+  - 結束流程：先隱藏視窗，提醒引擎、系統匣與頁面存檔平行收尾，存檔送出後才關伺服器；4 秒保險計時一定結束。實測視窗 0.1 秒消失、0.4 秒行程結束，最後一筆修改有存到。
+  - 避免提醒重複觸發：視窗開著時由頁面檢查，縮到系統匣時才由 `AlertEngine` 檢查；回到前景時頁面從資料檔重新載入提醒。
+  - 開機自動啟動帶 `--background`，直接縮在系統匣啟動。Toast 通知借用 PowerShell 的 AppUserModelID（未註冊的自訂 ID 會被 Windows 靜默丟掉）。
+  - 畫面縮放（桌面版）：標題列「－ 100% ＋」、設定頁常用比例、Ctrl＋加減號／滾輪、Ctrl＋0。用 WebView2 的 `ZoomFactor`（`DesktopApi.set_zoom`），等同瀏覽器縮放，CSS 寬度跟著改變，響應式版面重新排列不擠壓；比例存在 `tw_us_zoom_v1`。實測 110／125／150% 寬度 1295／1139／949，無橫向捲軸，重開沿用。瀏覽器版用瀏覽器本身的縮放。
+  - 啟動預載（`web/boot_loader.jsx`）：載入動畫上逐項顯示並預先抓好伺服器連線、使用者資料、大盤、即時報價、走勢小圖、分時、技術指標總覽（後端快取，進入後不用再等）。每項最多 8 秒、整體最多 15 秒，3 秒後可按「直接進入」；慢的項目在背景繼續抓。
+  - 從專案 `dist\`（單一檔案版）或 `dist\股票交易分析系統\`（資料夾版）執行 exe 時，`get_app_dir()` 回傳專案根目錄，與原始碼版共用 `data\`、`.env`、`logs\`；安裝到其他位置的照舊用 exe 所在資料夾（`tests/test_packaging.py`）。
+  - 打包資料夾版時會保留 `dist\股票交易分析系統\` 裡的 `data`、`logs`、`.env`（PyInstaller `--noconfirm` 會整個刪掉輸出資料夾）。
+  - 設定頁新增「常駐背景提醒與系統匣」管理面板與開關。
+- **證交所重大訊息每日存檔與歷史查詢（`src/news/announcement_store.py`）**：
+  - 每日將 TWSE OpenAPI 全市場重大訊息自動存檔至 `data/announcements/twse_material_YYYYMMDD.json`，保留 90 天。
+  - 查詢個股時自動融合當日最新與本地 90 天累積歷史紀錄並自動去重。
+  - 同步支援 Google News 搜尋過去 30 天包含【公告】或重大訊息之新聞來源，解決 OpenAPI 僅有當日的限制。

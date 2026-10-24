@@ -13,6 +13,7 @@
 """
 
 import json
+import os
 import sys
 import time
 import traceback
@@ -21,8 +22,8 @@ from typing import Any, Callable, Dict
 
 from src.ai import ai_client
 from src.company import fundamentals
-from src.market import quote_provider
-from src.server import activity_log, env_settings, user_data
+from src.market import quote_provider, trade_rules
+from src.server import activity_log, alert_engine, autostart, env_settings, user_data
 from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
 from src.server.dispatcher import DISPATCHER, TradingEngineDispatcher  # noqa: F401
 from src.server.handlers.technical import mark_bond_snapshot  # noqa: F401
@@ -38,6 +39,7 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/fetchlog": lambda: {"log": quote_provider.get_fetch_log()},
     "/api/env": env_settings.status,
     "/api/userdata": user_data.load,
+    "/api/autostart": lambda: {"enabled": autostart.is_autostart_enabled()},
     "/api/tests/run": D.handle_run_tests,
 }
 
@@ -55,6 +57,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/candles": D.handle_candles,
     "/api/sparks": D.handle_sparks,
     "/api/heatmap": D.handle_heatmap,
+    "/api/trade_rules": lambda p: trade_rules.rules_for(arg_ticker(p, "symbol")),
     # 五個分析功能
     "/api/mod1/analyze": D.handle_mod1_analyze,
     "/api/news": D.handle_news,
@@ -77,6 +80,8 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
         (p.get("events") if isinstance(p.get("events"), list) else [])[:200], "browser")},
     "/api/log/recent": lambda p: {"events": activity_log.read_recent(
         int(arg_num(p, "limit", 200, "筆數", integer=True, lo=1, hi=2000)), bool(p.get("errors_only")))},
+    "/api/autostart": lambda p: {"enabled": autostart.set_autostart(bool(p.get("enabled")))},
+    "/api/alerts/check_now": lambda p: {"fired": alert_engine.ALERT_ENGINE.check_once()},
     "/api/tests/run": lambda p: D.handle_run_tests(),
 }
 
@@ -121,7 +126,25 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
                 traceback.print_exc()
                 self._send_json({"error": str(err)}, status=500)
             return
+        self._exact_revalidation()
         super().do_GET()
+
+    def _exact_revalidation(self) -> None:
+        """只有快取的修改時間「完全等於」檔案時間才回 304。
+        內建判斷是「檔案沒有比快取新」就 304：原始碼版和打包版共用同一個網址與 WebView2 快取時，
+        打包版較新的 index.html（引用 app.bundle.js）會被當成原始碼版的，畫面就卡在載入動畫。"""
+        ims = self.headers.get("If-Modified-Since")
+        if not ims:
+            return
+        path = self.translate_path(self.path)
+        if os.path.isdir(path):  # 「/」實際送的是 index.html
+            path = os.path.join(path, "index.html")
+        try:
+            mtime = os.stat(path).st_mtime
+        except OSError:
+            return
+        if ims != self.date_time_string(int(mtime)):
+            del self.headers["If-Modified-Since"]
 
     # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤
     QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",

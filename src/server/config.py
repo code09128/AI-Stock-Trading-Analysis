@@ -21,10 +21,20 @@ def get_resource_dir() -> Path:
     return _find_project_root()
 
 
+def _source_project_of(exe_dir: Path):
+    """exe 放在原始碼專案的 dist\\（單一檔案版）或 dist\\<程式名稱>\\（資料夾版）裡時，回傳專案根目錄。"""
+    for d in (exe_dir, exe_dir.parent):
+        if d.name.lower() == "dist" and (d.parent / "run.py").is_file() and (d.parent / "src" / "server").is_dir():
+            return d.parent
+    return None
+
+
 def get_app_dir() -> Path:
-    """取得應用程式工作目錄（exe 所在目錄或本機專案目錄），用於存取 .env 與 logs 等檔案。"""
+    """取得應用程式工作目錄，用於存取 data\\、.env 與 logs。
+    打包版是 exe 所在目錄；但從專案的 dist\\ 直接執行時用專案根目錄，跟 start.bat／run.py 共用同一份資料。"""
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+        exe_dir = Path(sys.executable).resolve().parent
+        return _source_project_of(exe_dir) or exe_dir
     return _find_project_root()
 
 

@@ -30,8 +30,11 @@
         setSt(d);
         setDraft({});
         setMsg({ err: false, text: '已儲存，立即生效（不用重開程式）' });
+        const n = Object.keys(values).length;
+        window.TA.toast?.(`✅ 已儲存 ${n} 項金鑰／額度設定到 .env，立即生效`);
       } catch (e) {
         setMsg({ err: true, text: e.message });
+        window.TA.toast?.(`⚠️ 金鑰設定沒有存成功：${e.message}`);
       } finally {
         setBusy(false);
       }

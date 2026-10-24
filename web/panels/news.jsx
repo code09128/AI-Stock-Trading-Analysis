@@ -205,8 +205,16 @@
         const d = await res.json();
         if (d.error) throw new Error(d.error);
         setNews(d);
+        const n = (d.items || []).length;
+        const bad = (d.errors || []).length;
+        window.TA.toast?.(
+          n
+            ? `✅ 已抓到 ${m2Form.target} 的 ${n} 則新聞${bad ? `（${bad} 個來源失敗，見列表上方）` : ''}`
+            : `⚠️ ${m2Form.target} 沒有抓到新聞${bad ? `（${bad} 個來源失敗）` : ''}`,
+        );
       } catch (e) {
         setNews({ items: [], sources: [], errors: [e.message] });
+        window.TA.toast?.(`⚠️ 抓取新聞失敗：${e.message}`);
       } finally {
         setNewsLoading(false);
       }

@@ -180,11 +180,14 @@
       }
       if (step.watch) {
         window.TA._pendingWatch = step.watch;
-        setTimeout(
+        // 快速按「下一步」時要取消上一步還沒送出的切換，否則舊步驟會在 150ms 後把分頁切回去
+        const t = setTimeout(
           () => window.dispatchEvent(new CustomEvent('watch-action', { detail: step.watch })),
           150,
         );
+        return () => clearTimeout(t);
       }
+      return undefined;
     }, [open, i]); // eslint-disable-line
     const found = useTargetRect(step?.target, open);
     const rect = found && !found.offscreen ? found : null;

@@ -33,14 +33,25 @@
   let pending = {};
   let timer = null;
   let retryMs = 3000;
+  let inflight = 0;
+  let waiters = []; // 等「這次修改存進檔案」結果的通知（afterSave）
   const status = { ok: true, path: null, error: null, savedAt: null };
+  const settle = (result) => {
+    const w = waiters;
+    waiters = [];
+    for (const res of w) res(result);
+  };
 
   const flush = (keepalive = false) => {
     clearTimeout(timer);
     timer = null;
     const values = pending;
     pending = {};
-    if (!Object.keys(values).length) return Promise.resolve();
+    if (!Object.keys(values).length) {
+      if (!inflight) settle({ ok: true });
+      return Promise.resolve();
+    }
+    inflight += 1;
     return fetch('/api/userdata/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,16 +62,41 @@
       .then((d) => {
         if (d.error) throw new Error(d.error);
         retryMs = 3000;
+        const recovered = status.ok === false;
         Object.assign(status, { ok: true, error: null, savedAt: new Date() });
+        if (recovered) window.TA?.toast?.('✅ 先前沒存進去的修改已經補存進資料檔');
+        if (inflight === 1 && !Object.keys(pending).length) settle({ ok: true });
       })
       .catch((e) => {
         pending = { ...values, ...pending }; // 失敗就留著自動再送（不必等下一次修改），間隔 3 秒起逐次加倍、最長 1 分鐘
         Object.assign(status, { ok: false, error: e.message });
         if (!timer) timer = setTimeout(() => flush(), retryMs);
         retryMs = Math.min(retryMs * 2, 60000);
+        settle({ ok: false, error: e.message });
       })
-      .finally(() => window.dispatchEvent(new Event('userdata-status')));
+      .finally(() => {
+        inflight -= 1;
+        window.dispatchEvent(new Event('userdata-status'));
+      });
   };
+
+  // 等剛才的修改真的寫進 data/userdata.json 再回報：{ ok, error }。
+  // 稍等一下才檢查：React 的 setState → useEffect 寫 localStorage 會在呼叫之後才發生
+  const afterSave = () =>
+    new Promise((res) =>
+      setTimeout(() => {
+        if (!ready || (!timer && !inflight && !Object.keys(pending).length)) res({ ok: true });
+        else waiters.push(res);
+      }, 80),
+    );
+  // 增刪改的統一通知：存檔成功 ✅；失敗 ⚠️ 並說明會自動重試（資料仍在畫面上，沒有遺失）
+  const notifySaved = (msg) =>
+    afterSave().then((r) => {
+      window.TA?.toast?.(
+        r.ok ? `✅ ${msg}` : `⚠️ ${msg}，但還沒存進資料檔（${r.error}），稍後會自動重試`,
+      );
+      return r;
+    });
   const queue = (k, v) => {
     pending[k] = v;
     if (!timer) timer = setTimeout(() => flush(), 500);
@@ -105,5 +141,19 @@
       Object.assign(status, { ok: false, error: `讀取資料檔失敗：${e.message}` });
     });
 
-  window.TA = Object.assign(window.TA || {}, { userDataReady, userDataStatus: status, flushUserData: flush });
+  // 連續輸入（表格逐字修改）用：停手約 1 秒後只通知一次，不會每打一個字就跳提示
+  const debounced = {};
+  const notifySavedLater = (key, msg, ms = 1000) => {
+    clearTimeout(debounced[key]);
+    debounced[key] = setTimeout(() => notifySaved(msg), ms);
+  };
+
+  window.TA = Object.assign(window.TA || {}, {
+    userDataReady,
+    userDataStatus: status,
+    flushUserData: flush,
+    afterSave,
+    notifySaved,
+    notifySavedLater,
+  });
 })();

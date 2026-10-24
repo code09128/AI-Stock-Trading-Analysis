@@ -269,6 +269,26 @@
       };
     }, [selected]);
 
+    // 台美股以外：每手股數與法定稅費（港股每檔不同，後端查港交所清單）
+    const [tradeRules, setTradeRules] = useState(null);
+    useEffect(() => {
+      let stop = false;
+      setTradeRules(null);
+      const m = window.TA.marketOf(selected);
+      if (m === 'TW' || m === 'US') return;
+      fetch('/api/trade_rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: selected }),
+      })
+        .then((r) => r.json())
+        .then((d) => !stop && setTradeRules(d))
+        .catch((e) => !stop && setTradeRules({ lot: null, fees: [], error: `交易規則查詢失敗：${e.message}` }));
+      return () => {
+        stop = true;
+      };
+    }, [selected]);
+
     // 技術總覽 / RSI 提醒用的指標（後端快取 5 分鐘）
     const needOverview = listTab === 'overview';
     const ovKey = watch.join(',');
@@ -355,10 +375,10 @@
       const s = normSym(input);
       if (!s) return;
       if (watch.includes(s)) {
-        say(`${s} 已在自選清單`);
+        say(`ℹ️ ${s} 已在自選清單，沒有重複加入`);
       } else {
         setWatch([...watch, s]);
-        say(`已加入 ${s}`);
+        window.TA.notifySaved(`已把 ${s} 加入自選股`);
       }
       setSelected(s);
       setListTab('watch');
@@ -367,6 +387,7 @@
     const removeSymbol = (s) => {
       setWatch(watch.filter((x) => x !== s));
       if (selected === s) setSelected(watch.find((x) => x !== s) || '2330');
+      window.TA.notifySaved(`已從自選股移除 ${s}`);
     };
 
     const etfRows = useMemo(() => {
@@ -438,8 +459,20 @@
     const shares = tw ? (order.lotType === 'ROUND' ? qtyNum * 1000 : qtyNum) : qtyNum;
     const amount = priceNum * shares;
     const feeRate = 0.001425;
-    const fee = tw ? Math.max(order.lotType === 'ROUND' ? 20 : 1, amount * feeRate) : 0;
-    const tax = tw && order.side === 'SELL' ? amount * (etfFlag ? 0.001 : 0.003) : 0;
+    // 台股手續費與證交稅都是「元以下無條件捨去」（與券商對帳單一致）；手續費整張最低 20 元、零股最低 1 元
+    const fee = tw ? Math.max(order.lotType === 'ROUND' ? 20 : 1, Math.floor(amount * feeRate + 1e-9)) : 0;
+    const sideKey = order.side === 'SELL' ? 'SELL' : 'BUY';
+    const statutoryTax = (tradeRules?.fees || [])
+      .filter((f) => f.side === sideKey || f.side === 'BOTH')
+      .reduce((s, f) => {
+        const v = amount * f.rate;
+        return s + (f.ceil ? Math.ceil(v - 1e-9) : Math.round(v * 100) / 100);
+      }, 0);
+    const tax = tw
+      ? order.side === 'SELL'
+        ? Math.floor(amount * (etfFlag ? 0.001 : 0.003) + 1e-9)
+        : 0
+      : Math.round(statutoryTax * 100) / 100;
     const orderIssues = [];
     if (!(priceNum > 0)) orderIssues.push('請輸入價格');
     // 數量：台股整張與零股買進要整數；台股零股賣出允許小數（把銀行碎股記錄平倉用）；美股可交易碎股
@@ -458,6 +491,14 @@
       orderIssues.push(`低於跌停價 ${q.limit_down}`);
     if (tw && order.lotType === 'ODD' && order.tif === 'ROD')
       orderIssues.push('提醒：盤中零股為逐筆撮合，ROD 以當日有效為準');
+    const lot = tradeRules?.lot;
+    if (!tw && tradeRules?.error) orderIssues.push(`提醒：${tradeRules.error}，無法檢查每手股數`);
+    if (!tw && lot > 1 && qtyNum > 0 && qtyNum % lot !== 0)
+      orderIssues.push(
+        order.side === 'BUY'
+          ? `每手 ${lot} 股，買進股數需為 ${lot} 的倍數`
+          : `提醒：每手 ${lot} 股，不足一手的部分實際要在碎股市場賣出`,
+      );
 
     const hardIssues = orderIssues.filter((x) => !x.startsWith('提醒'));
     // 模擬「成交」：買進加入持股、賣出寫入交易紀錄（跨頁共用）
@@ -470,13 +511,17 @@
         shares: sh,
         fees: (c.fee || 0) + (c.tax || 0),
       });
-      say(r.msg);
-      if (r.ok) setCart(cart.filter((x) => x.id !== c.id));
+      if (r.ok) {
+        setCart(cart.filter((x) => x.id !== c.id));
+        window.TA.notifySaved(r.msg); // 持股／交易紀錄真的存進檔案才顯示成功
+      } else {
+        say(`⚠️ ${r.msg}`);
+      }
     };
 
     const addToCart = () => {
       if (hardIssues.length) {
-        say(`無法加入：${hardIssues[0]}`);
+        say(`⚠️ 無法加入：${hardIssues[0]}`);
         return false;
       }
       const item = {
@@ -494,7 +539,7 @@
         tax,
       };
       setCart([item, ...cart]);
-      say('已加入暫存匣（模擬，不會真的下單）');
+      window.TA.notifySaved(`已把 ${selected} ${order.side === 'BUY' ? '買進' : '賣出'}委託加入暫存匣（模擬，不會真的下單）`);
       return true;
     };
 
@@ -750,7 +795,7 @@
                           onClick={(e) => {
                             e.stopPropagation();
                             setWatch([...watch, r.symbol]);
-                            say(`已將 ${r.symbol} 加入自選`);
+                            window.TA.notifySaved(`已把 ${r.symbol} 加入自選股`);
                           }}
                           className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 hover:bg-slate-700 cursor-pointer"
                         >
@@ -841,7 +886,10 @@
             {listTab === 'watch' && (
               <button
                 type="button"
-                onClick={() => setWatch(DEFAULT_WATCH)}
+                onClick={() => {
+                  setWatch(DEFAULT_WATCH);
+                  window.TA.notifySaved('自選股已還原為預設 8 檔');
+                }}
                 className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer"
               >
                 ↺ 還原預設 8 檔
@@ -1144,6 +1192,7 @@
                     setCart,
                     setOrder,
                     tax,
+                    tradeRules,
                     tw,
                   }}
                 />

@@ -9,7 +9,7 @@
 4. 確定性離線回退機制 (Deterministic Fallback)：當無外部網路或 API 限流時，明確標示 data_source="FALLBACK_SAMPLE" 並回傳標準還權歷史序列，確保系統不中斷且不隱藏狀態 (Rule 12: Fail loud)。
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 import urllib.request
 import urllib.parse
@@ -352,6 +352,75 @@ class DualMarketDataAdapter:
         return bars
 
     @staticmethod
+    def merge_realtime_bar(bars: List[Bar], quote: Optional[Dict[str, Any]]) -> Tuple[List[Bar], Dict[str, Any]]:
+        """
+        將最新即時報價（台股 TWSE MIS 或美股/其他市場 Yahoo）融入日 K 棒序列：
+        - 若 quote 為無效/未開盤/離線，不修改 bars，回傳 applied=False。
+        - 若 quote 當日日期等於 bars[-1] 日期：以即時價/高/低/量覆蓋最後一根 K 棒。
+        - 若 quote 當日日期晚於 bars[-1] 日期（例如日 K 尚未抓到今日開盤 bar）：
+          追加一根以即時價組成的盤中臨時 K 棒到尾端。
+        回傳全新的 List[Bar]，避免修改到底層快取中的歷史資料。
+        """
+        if not bars or not quote or not quote.get("is_live"):
+            return bars, {"applied": False, "reason": "無即時報價資料"}
+
+        try:
+            px = float(quote.get("price") or 0)
+        except (TypeError, ValueError):
+            return bars, {"applied": False, "reason": "即時價格無效"}
+        if px <= 0:
+            return bars, {"applied": False, "reason": "即時價格不大於 0"}
+
+        q_date = str(quote.get("quote_date_local") or "").replace("-", "").replace("/", "").strip()
+        if not q_date:
+            qt_digits = "".join(c for c in (str(quote.get("quote_time", "")).split() or [""])[0] if c.isdigit())
+            if len(qt_digits) == 8:
+                q_date = qt_digits
+
+        last_b = bars[-1]
+        b_date = last_b.timestamp.replace("-", "").replace("/", "").strip()
+
+        new_bars = list(bars)
+        q_open = float(quote.get("open") or px) if quote.get("open") is not None else px
+        q_high = float(quote.get("high") or px) if quote.get("high") is not None else px
+        q_low = float(quote.get("low") or px) if quote.get("low") is not None else px
+        q_vol = float(quote.get("volume") or 0)
+
+        if q_date and b_date and q_date == b_date:
+            new_bars[-1] = Bar(
+                timestamp=last_b.timestamp,
+                open=last_b.open if last_b.open else q_open,
+                high=max(float(last_b.high or px), q_high, px),
+                low=min(float(last_b.low or px), q_low, px),
+                close=px,
+                volume=max(float(last_b.volume or 0), q_vol),
+            )
+            return new_bars, {
+                "applied": True, "mode": "update", "price": px,
+                "date": last_b.timestamp, "source": quote.get("source"),
+                "quote_time": quote.get("quote_time"),
+            }
+        elif q_date and b_date and q_date > b_date and len(q_date) == 8:
+            iso_date = f"{q_date[:4]}-{q_date[4:6]}-{q_date[6:]}"
+            new_bars.append(
+                Bar(
+                    timestamp=iso_date,
+                    open=q_open,
+                    high=max(q_high, px),
+                    low=min(q_low, px),
+                    close=px,
+                    volume=q_vol,
+                )
+            )
+            return new_bars, {
+                "applied": True, "mode": "append", "price": px,
+                "date": iso_date, "source": quote.get("source"),
+                "quote_time": quote.get("quote_time"),
+            }
+
+        return bars, {"applied": False, "reason": f"報價日期（{q_date}）未晚於或等於 K 棒日期（{b_date}）"}
+
+    @staticmethod
     def reclassify_levels(snapshot: Dict[str, Any], price: float) -> None:
         """最新價被即時報價覆蓋後，依新的現價重新分類支撐／壓力（就地更新 snapshot）。"""
         levels = classify_levels(snapshot.get("level_candidates") or [], price,
@@ -360,14 +429,31 @@ class DualMarketDataAdapter:
         snapshot["resistance_levels"] = levels["resistances"]
         snapshot["level_notes"] = levels["notes"]
 
-    def build_technical_snapshot(self, raw_ticker: str) -> Dict[str, Any]:
+    def build_technical_snapshot(self, raw_ticker: str, quote: Optional[Dict[str, Any]] = None,
+                                 include_live: bool = True) -> Dict[str, Any]:
         """
-        整合資料抓取 + 指標計算 + 台股 Tick 對齊，產出模組 1 所需的完整量化快照。
+        整合資料抓取 + 即時報價融合 + 指標計算 + 台股 Tick 對齊，產出模組 1 所需的完整量化快照。
+        盤中自動納入當前即時價更新均線/RSI/MACD 等所有指標。
         嚴格在 Python 端算好所有指標，禁止讓 AI 心算。
         """
         feed = self.fetch_bars(raw_ticker, days=220)
         bars: List[Bar] = feed["bars"]
         market = feed["market"]
+
+        live_overlay = {"applied": False}
+        if include_live:
+            if quote is None:
+                try:
+                    from src.market import quote_provider
+                    from src.server.config import WATCHLIST_NAMES
+                    quotes = quote_provider.get_quotes([raw_ticker], WATCHLIST_NAMES)
+                    if quotes:
+                        quote = quotes[0]
+                except Exception as e:
+                    live_overlay = {"applied": False, "error": str(e)}
+            if quote:
+                bars, live_overlay = self.merge_realtime_bar(bars, quote)
+
 
         closes = [b.close for b in bars]
         highs = [b.high for b in bars]
@@ -445,4 +531,5 @@ class DualMarketDataAdapter:
             "level_notes": levels["notes"],
             "partial_session": partial,
             "trend_score": trend_score,
+            "live_overlay": live_overlay,
         }

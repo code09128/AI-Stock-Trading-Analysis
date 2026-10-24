@@ -3,7 +3,6 @@
 from typing import Dict, Any, List
 import time
 
-from src.market.data_adapter import DualMarketDataAdapter
 from src.ai.llm_runner import LLMRunner
 from src.market.bar import Bar
 from src.technical import scenarios
@@ -42,35 +41,20 @@ class TechnicalHandlers:
         bar_count = int(max(10, min(500, arg_num(payload, "bar_count", 30, "K 棒數量", integer=True))))
         timeframe = "W" if str(payload.get("timeframe", "D")).upper() == "W" else "D"
 
-        snapshot = self.adapter.build_technical_snapshot(ticker)
+        try:
+            lq = quote_provider.get_quotes([ticker], WATCHLIST_NAMES)[0]
+        except Exception:
+            lq = None
+
+        snapshot = self.adapter.build_technical_snapshot(ticker, quote=lq)
         mark_bond_snapshot(snapshot, ticker)
         # 週線：抓約 2 年日線（還權）再聚合成週 K，才有足夠的週均線樣本
         feed = self.adapter.fetch_bars(ticker, days=520 if timeframe == "W" else max(90, bar_count + 60))
-        bars: List[Bar] = to_weekly_bars(feed["bars"]) if timeframe == "W" else feed["bars"]
-
-        # 以真實即時報價覆蓋當日最後一根 K 棒（僅限報價日期與該 K 棒同一天），不再使用模擬跳動
-        live_overlay: Dict[str, Any] = {"applied": False}
-        try:
-            lq = quote_provider.get_quotes([ticker], WATCHLIST_NAMES)[0]
-            q_date = lq.get("quote_date_local") or "".join(
-                ch for ch in (str(lq.get("quote_time", "")).split() or [""])[0] if ch.isdigit())
-            if bars and lq.get("is_live") and q_date == bars[-1].timestamp.replace("-", ""):
-                last_b = bars[-1]
-                px = float(lq["price"])
-                bars[-1] = Bar(
-                    timestamp=last_b.timestamp,
-                    open=last_b.open,
-                    high=max(last_b.high, px),
-                    low=min(last_b.low, px),
-                    close=px,
-                    volume=last_b.volume,
-                )
-                snapshot["latest_close"] = px
-                DualMarketDataAdapter.reclassify_levels(snapshot, px)
-                live_overlay = {"applied": True, "price": px, "source": lq.get("source"),
-                                "quote_time": lq.get("quote_time")}
-        except Exception as e:
-            live_overlay = {"applied": False, "error": str(e)}
+        daily_bars = feed["bars"]
+        if lq:
+            daily_bars, _ = self.adapter.merge_realtime_bar(daily_bars, lq)
+        bars: List[Bar] = to_weekly_bars(daily_bars) if timeframe == "W" else daily_bars
+        live_overlay = snapshot.get("live_overlay") or {"applied": False}
 
         closes = [b.close for b in bars]
         ma5_series = calculate_ma(closes, 5)

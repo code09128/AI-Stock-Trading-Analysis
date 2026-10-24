@@ -110,6 +110,7 @@ def pyinstaller_base(web_dir: Path, name: str, mode: str) -> list:
         f"--icon={ICON_PATH}",
         f"--add-data={web_dir};web",
         f"--add-data={ROOT / '.env.example'};.",
+        f"--add-data={ICON_PATH};.",  # 系統匣圖示
         "--collect-submodules=src",
         f"--workpath={BUILD_DIR / mode.strip('-')}",
         f"--specpath={BUILD_DIR}",
@@ -149,7 +150,26 @@ def build_app_folder(web_dir: Path) -> Path:
     """第二步：資料夾版（exe＋_internal），不必解壓縮，給安裝程式用"""
     print(f"\n[2/4] 正在打包資料夾版 ({APP_DIR})...")
     cmd = pyinstaller_base(web_dir, APP_NAME, "--onedir") + [str(ROOT / "desktop.py")]
-    res = subprocess.run(cmd, cwd=str(ROOT))
+    # --noconfirm 會整個刪掉舊的輸出資料夾：直接在 dist 裡執行過的話，裡面的使用者資料與金鑰要先搬開再放回來
+    keep_dir = BUILD_DIR / "keep_user_files"
+    kept = []
+    if keep_dir.exists():
+        shutil.rmtree(keep_dir)
+    for item in ("data", "logs", ".env"):
+        if (APP_DIR / item).exists():
+            keep_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(APP_DIR / item), str(keep_dir / item))
+            kept.append(item)
+    try:
+        res = subprocess.run(cmd, cwd=str(ROOT))
+    finally:
+        APP_DIR.mkdir(parents=True, exist_ok=True)
+        for item in kept:
+            if (APP_DIR / item).exists():  # 不該發生：保險起見不覆蓋
+                continue
+            shutil.move(str(keep_dir / item), str(APP_DIR / item))
+        if kept:
+            print(f"  [OK] 已保留資料夾版裡的 {'、'.join(kept)}")
     if res.returncode != 0:
         raise RuntimeError("PyInstaller 打包資料夾版失敗！")
     if not (APP_DIR / f"{APP_NAME}.exe").exists():

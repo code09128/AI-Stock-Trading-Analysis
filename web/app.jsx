@@ -83,7 +83,8 @@ function App() {
 
   // 技術分析 分析與盤中動態跳動
   const runMod1 = useCallback(
-    async ({ overrideTicker, overrideTimeframe, useAI = true } = {}) => {
+    // quiet：自動輪詢與初始載入不跳「完成」通知（失敗仍會通知）；使用者自己按的查詢才提示
+    async ({ overrideTicker, overrideTimeframe, useAI = true, quiet = false } = {}) => {
       const targetTicker = overrideTicker || m1Ticker;
       const targetTf = overrideTimeframe || m1Timeframe;
       const reqId = ++m1ReqRef.current; // 快速換股／換日週線時，慢回來的舊請求不能蓋掉新的
@@ -121,8 +122,9 @@ function App() {
         }
         if (newClose !== undefined) prevPriceRef.current = newClose;
         setM1Data(data);
+        if (!quiet) showToast(`✅ 技術分析完成：${targetTicker}（${targetTf === 'W' ? '週線' : '日線'}）`);
       } catch (err) {
-        if (reqId === m1ReqRef.current) showToast(`技術分析 分析失敗: ${err.message}`);
+        if (reqId === m1ReqRef.current) showToast(`⚠️ 技術分析 分析失敗: ${err.message}`);
       } finally {
         if (reqId === m1ReqRef.current) {
           setM1Loading(false);
@@ -142,7 +144,7 @@ function App() {
       .then((r) => r.json())
       .then((d) => setHealth(d))
       .catch(() => {});
-    runMod1({ overrideTicker: '2330.TW', simulateTick: false, useAI: false });
+    runMod1({ overrideTicker: '2330.TW', simulateTick: false, useAI: false, quiet: true });
   }, [runMod1]);
 
   // 盤中動態每秒倒數與每 5 秒自動跳動更新
@@ -152,7 +154,7 @@ function App() {
     const timer = setInterval(() => {
       setCountdownSec((prev) => {
         if (prev <= 1) {
-          if (!m1Busy.current) runMod1({ simulateTick: false }); // 上一次還沒回來就跳過這一輪
+          if (!m1Busy.current) runMod1({ simulateTick: false, quiet: true }); // 上一次還沒回來就跳過這一輪
           return 5;
         }
         return prev - 1;
@@ -179,8 +181,9 @@ function App() {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         setM2Data(data);
+        showToast(`✅ 新聞判斷完成：${base.target || ''}`);
       } catch (err) {
-        showToast(`新聞判斷 評估失敗: ${err.message}`);
+        showToast(`⚠️ 新聞判斷 評估失敗: ${err.message}`);
       } finally {
         setM2Loading(false);
       }
@@ -199,8 +202,9 @@ function App() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setM3Data(data);
+      showToast(`✅ 回測完成：${m3Form.target_asset}，共 ${data.backtest_result?.total_trades ?? 0} 筆交易`);
     } catch (err) {
-      showToast(`策略回測 回測失敗: ${err.message}`);
+      showToast(`⚠️ 策略回測 回測失敗: ${err.message}`);
     } finally {
       setM3Loading(false);
     }
@@ -236,8 +240,9 @@ function App() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setM4Data(data);
+      showToast(`✅ 組合風控計算完成（${m4Holdings.length} 檔持股）`);
     } catch (err) {
-      showToast(`組合風控 風控運算失敗: ${err.message}`);
+      showToast(`⚠️ 組合風控 風控運算失敗: ${err.message}`);
     } finally {
       setM4Loading(false);
     }
@@ -266,9 +271,12 @@ function App() {
       if (m5Source === 'mine') {
         window.TA.setJournal(data.entries_used || m5Entries);
         window.TA.saveRules(data.personalized_3_rules, data.rules_source);
+        window.TA.notifySaved('交易診斷完成，已更新交易紀錄與 3 條個人規則（下單面板會顯示）');
+      } else {
+        showToast('✅ 交易診斷完成（範例資料，不會更新你的交易紀錄與規則）');
       }
     } catch (err) {
-      showToast(`交易檢討 診斷失敗: ${err.message}`);
+      showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`);
     } finally {
       setM5Loading(false);
     }
@@ -443,7 +451,7 @@ function App() {
     setM5Entries(DEFAULT_JOURNAL);
     setM5Data(null);
     setIsResetModalOpen(false);
-    runMod1({ overrideTicker: '2330.TW', overrideBarCount: 30, simulateTick: false });
+    runMod1({ overrideTicker: '2330.TW', overrideBarCount: 30, simulateTick: false, quiet: true });
     showToast('已將各分頁參數重置為出廠預設值');
   };
 
@@ -791,6 +799,7 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <window.TA.ZoomControl />
               <button
                 type="button"
                 onClick={() => setIsExportModalOpen(true)}
@@ -984,8 +993,11 @@ function App() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-// 先把 data/userdata.json 的資料讀回瀏覽器再顯示畫面（最多等 4 秒，伺服器沒回應也照常開啟）
-Promise.race([window.TA.userDataReady, new Promise((r) => setTimeout(r, 4000))]).finally(() => {
+// 載入動畫上逐項預載資料（boot_loader.jsx，最多 15 秒，可按「直接進入」）；預載失敗也照常顯示畫面
+const bootReady = window.TA.bootPreload
+  ? window.TA.bootPreload()
+  : Promise.race([window.TA.userDataReady, new Promise((r) => setTimeout(r, 4000))]);
+bootReady.finally(() => {
   window.TA.appRendered = true; // sync_store 靠這個判斷資料是不是在畫面顯示之後才到
   root.render(<App />);
 });

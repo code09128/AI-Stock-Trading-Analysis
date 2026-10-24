@@ -42,6 +42,7 @@
     ['tw_us_activity_v1', '操作紀錄（瀏覽器端）', 'activity-changed'],
     ['tw_us_sidebar_v1', '介面偏好：側邊欄收合', null],
     ['tw_us_mkt_filter_v1', '介面偏好：看盤市場篩選', null],
+    ['tw_us_bg_alerts_v1', '關閉視窗後常駐背景提醒', null],
     ['tw_us_tour_done_v1', '新手導覽狀態（清除後會再次顯示導覽）', null],
   ];
   const describe = (k) => {
@@ -302,7 +303,7 @@
         (p) => p.type === 'openai_compatible' && p.base_url === r.base_url && p.model === m.id,
       );
       if (exists) {
-        save({ ...cfg, activeId: exists.id });
+        save({ ...cfg, activeId: exists.id }, `已改用本機模型「${exists.name}」`);
         return;
       }
       const prof = {
@@ -313,7 +314,7 @@
         model: m.id,
         api_key: '',
       };
-      save({ ...cfg, profiles: [...cfg.profiles, prof], activeId: prof.id });
+      save({ ...cfg, profiles: [...cfg.profiles, prof], activeId: prof.id }, `已新增並改用本機模型「${prof.name}」`);
     };
     return (
       <div
@@ -385,6 +386,129 @@
   }
 
   // 資料檔位置與最後存檔狀態
+  function BackgroundServicePanel() {
+    const LS_BG = 'tw_us_bg_alerts_v1';
+    const [bgAlerts, setBgAlerts] = useState(() => {
+      const v = localStorage.getItem(LS_BG);
+      return v === null ? true : v === 'true';
+    });
+    const [autostart, setAutostart] = useState(false);
+    const [checking, setChecking] = useState(false);
+    const [checkResult, setCheckResult] = useState('');
+
+    useEffect(() => {
+      fetch('/api/autostart')
+        .then((r) => r.json())
+        .then((d) => setAutostart(!!d.enabled))
+        .catch(() => {});
+    }, []);
+
+    const toggleBg = (checked) => {
+      setBgAlerts(checked);
+      localStorage.setItem(LS_BG, String(checked));
+      window.dispatchEvent(new Event('storage'));
+      window.TA.notifySaved(
+        `已${checked ? '開啟' : '關閉'}「關閉視窗後常駐背景檢查提醒」`,
+      );
+    };
+
+    const toggleAutostart = (checked) => {
+      setAutostart(checked);
+      fetch('/api/autostart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: checked }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          setAutostart(!!d.enabled);
+          window.TA.notifySaved(
+            `已${d.enabled ? '設定' : '取消'}「開機自動於背景啟動」`,
+          );
+        })
+        .catch((e) => {
+          setAutostart(!checked);
+          window.TA.notifySaved(`開機啟動設定失敗：${e.message}`);
+        });
+    };
+
+    const runCheckNow = () => {
+      setChecking(true);
+      setCheckResult('');
+      fetch('/api/alerts/check_now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          const count = (d.fired || []).length;
+          setCheckResult(
+            count > 0
+              ? `檢查完成：觸發了 ${count} 則提醒！`
+              : '檢查完成：目前無提醒達標',
+          );
+        })
+        .catch((e) => setCheckResult(`檢查失敗：${e.message}`))
+        .finally(() => {
+          setChecking(false);
+          window.TA.reloadAlertsFromServer?.(); // 後端觸發的提醒已寫回資料檔，頁面要跟著更新
+        });
+    };
+
+    return (
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-white">常駐背景提醒與系統匣（System Tray）</h3>
+          <span className="text-[11px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+            Windows 桌面視窗版
+          </span>
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          桌面視窗版按右上角 X 時會詢問要「縮到系統匣」或「結束程式」。縮到系統匣後由後端服務持續檢查價格、漲跌幅（每 15
+          秒）與 RSI（每 5 分鐘），達標時發送 Windows 桌面原生通知。
+        </p>
+
+        <div className="space-y-2 text-xs">
+          <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bgAlerts}
+              onChange={(e) => toggleBg(e.target.checked)}
+            />
+            按 X 時預設選「縮到系統匣」（繼續在背景檢查提醒）
+          </label>
+          <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autostart}
+              onChange={(e) => toggleAutostart(e.target.checked)}
+            />
+            開機自動在背景啟動（登入 Windows 後常駐系統匣檢查提醒）
+          </label>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1 text-xs">
+          <button
+            type="button"
+            onClick={runCheckNow}
+            disabled={checking}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sky-300 hover:bg-slate-700 cursor-pointer disabled:opacity-50"
+          >
+            {checking ? '檢查中…' : '立即手動執行一輪提醒檢查'}
+          </button>
+          {checkResult && <span className="text-slate-300">{checkResult}</span>}
+        </div>
+
+        <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-[11px] text-slate-400 space-y-1">
+          <div className="font-semibold text-slate-300">如何關閉背景服務：</div>
+          <div>1. 右下角系統匣圖示按右鍵：點選「暫停提醒」或「結束程式」。</div>
+          <div>2. 按視窗右上角 X，在詢問視窗選「結束程式」。</div>
+          <div>3. 若設定了開機自動啟動，取消勾選即可自 Windows 啟動清單中移除。</div>
+        </div>
+      </div>
+    );
+  }
+
   function UserDataStatus() {
     const st = window.TA.userDataStatus || {};
     const [, tick] = useState(0);
@@ -415,13 +539,20 @@
     const [editing, setEditing] = useState(null);
     const [cleared, setCleared] = useState({});
     const [restoreMsg, setRestoreMsg] = useState('');
-    const save = (next) => saveAI(next);
+    // msg：存進資料檔後要顯示的通知（✅／⚠️ 由 notifySaved 決定）
+    const save = (next, msg) => {
+      saveAI(next);
+      if (msg) window.TA.notifySaved(msg);
+    };
     const saveProfile = () => {
       const exists = cfg.profiles.some((x) => x.id === editing.id);
       const profiles = exists
         ? cfg.profiles.map((x) => (x.id === editing.id ? editing : x))
         : [...cfg.profiles, editing];
-      save({ ...cfg, profiles, activeId: cfg.activeId || editing.id });
+      save(
+        { ...cfg, profiles, activeId: cfg.activeId || editing.id },
+        `${exists ? '已更新' : '已新增'} AI 連線「${editing.name || editing.model || '未命名'}」`,
+      );
       setEditing(null);
     };
     return (
@@ -446,7 +577,7 @@
                 type="radio"
                 name="ai-active"
                 checked={!cfg.activeId}
-                onChange={() => save({ ...cfg, activeId: null })}
+                onChange={() => save({ ...cfg, activeId: null }, '已改用內建規則引擎（不使用 AI）')}
               />
               <span className="text-white font-semibold">內建規則引擎（不使用 AI）</span>
               <span className="text-[11px] text-slate-500">
@@ -462,7 +593,7 @@
                   type="radio"
                   name="ai-active"
                   checked={cfg.activeId === p.id}
-                  onChange={() => save({ ...cfg, activeId: p.id })}
+                  onChange={() => save({ ...cfg, activeId: p.id }, `已改用 AI 連線「${p.name}」`)}
                   aria-label={`預設使用 ${p.name}`}
                 />
                 <span className="text-white font-semibold">{p.name}</span>
@@ -483,13 +614,20 @@
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      save({
-                        ...cfg,
-                        profiles: cfg.profiles.filter((x) => x.id !== p.id),
-                        activeId: cfg.activeId === p.id ? null : cfg.activeId,
-                      })
-                    }
+                    onClick={() => {
+                      if (!window.confirm(`確定刪除 AI 連線「${p.name}」？（含這組連線裡的金鑰）`)) {
+                        window.TA.toast?.('ℹ️ 已取消，AI 連線沒有變動');
+                        return;
+                      }
+                      save(
+                        {
+                          ...cfg,
+                          profiles: cfg.profiles.filter((x) => x.id !== p.id),
+                          activeId: cfg.activeId === p.id ? null : cfg.activeId,
+                        },
+                        `已刪除 AI 連線「${p.name}」`,
+                      );
+                    }}
                     className="text-slate-500 hover:text-rose-400 cursor-pointer"
                   >
                     刪除
@@ -575,7 +713,12 @@
               <input
                 type="checkbox"
                 checked={cfg.scope[k] !== false}
-                onChange={(e) => save({ ...cfg, scope: { ...cfg.scope, [k]: e.target.checked } })}
+                onChange={(e) =>
+                  save(
+                    { ...cfg, scope: { ...cfg.scope, [k]: e.target.checked } },
+                    `「${label}」已${e.target.checked ? '開啟' : '關閉'} AI`,
+                  )
+                }
               />
               {label}
             </label>
@@ -587,6 +730,10 @@
         <window.TA.UsagePanel cfg={cfg} />
 
         <window.TA.ActivityPanel />
+
+        <window.TA.ZoomSettings />
+
+        <BackgroundServicePanel />
 
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
           <h3 className="font-bold text-white">資料管理</h3>
@@ -621,6 +768,8 @@
                 a.href = URL.createObjectURL(blob);
                 a.download = `我的資料備份_${new Date().toISOString().slice(0, 10)}.json`;
                 a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                window.TA.toast?.(`✅ 已下載備份檔 ${a.download}（含 AI 金鑰，請妥善保存）`);
               }}
               className="px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white cursor-pointer"
             >
@@ -643,10 +792,17 @@
                     if (!entries.length) throw new Error('檔案裡沒有可還原的資料');
                     for (const [k, v] of entries)
                       localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+                    setRestoreMsg(`正在把 ${entries.length} 項資料存進資料檔…`);
+                    // 一定要等存進 data/userdata.json 再重新載入：否則載入時會讀回檔案裡的舊資料，還原就白做了
+                    await window.TA.flushUserData();
+                    const r = await window.TA.afterSave();
+                    if (!r.ok) throw new Error(`資料檔寫入失敗（${r.error}），沒有重新載入，請稍後再試`);
                     setRestoreMsg(`已還原 ${entries.length} 項資料，重新載入中…`);
+                    window.TA.toast?.(`✅ 已從備份還原 ${entries.length} 項資料並存檔，正在重新載入`);
                     setTimeout(() => window.location.reload(), 800);
                   } catch (err) {
                     setRestoreMsg(`還原失敗：${err.message}`);
+                    window.TA.toast?.(`⚠️ 還原失敗：${err.message}`);
                   }
                 }}
               />
@@ -681,6 +837,7 @@
                     }
                     if (evt) window.dispatchEvent(new Event(evt)); // 相關畫面立即更新
                     setCleared({ ...cleared, [k]: 'done' });
+                    window.TA.notifySaved(`已清除「${label}」`);
                   }}
                   className="shrink-0 px-2.5 py-1 rounded bg-rose-950/50 border border-rose-800/60 text-rose-200 hover:bg-rose-900/60 cursor-pointer disabled:opacity-40 disabled:cursor-default"
                 >

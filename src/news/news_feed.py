@@ -29,6 +29,7 @@ import xml.etree.ElementTree as ET
 
 from src.market import quote_provider as qp
 from src.market.data_adapter import DualMarketDataAdapter
+from src.news import announcement_store
 
 TW_TZ = zone("Asia/Taipei")
 SEC_UA_DEFAULT = "local-trading-research-tool/1.0"
@@ -190,18 +191,29 @@ def _yahoo_news(symbol: str, market: str) -> List[Dict[str, Any]]:
 
 
 def _twse_material(code: str) -> List[Dict[str, Any]]:
+    rows = []
     url = "https://openapi.twse.com.tw/v1/opendata/t187ap04_L"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
     started = time.time()
-    with urllib.request.urlopen(req, timeout=15) as r:
-        rows = json.loads(r.read().decode("utf-8"))
-    with qp._LOCK:
-        qp.FETCH_LOG.appendleft({"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": 200,
-                                 "ms": int((time.time() - started) * 1000), "bytes": 0, "error": None})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            rows = json.loads(r.read().decode("utf-8"))
+        announcement_store.save_today_twse_material(rows)
+        with qp._LOCK:
+            qp.FETCH_LOG.appendleft({"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": 200,
+                                     "ms": int((time.time() - started) * 1000), "bytes": 0, "error": None})
+    except Exception as e:
+        with qp._LOCK:
+            qp.FETCH_LOG.appendleft({"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": "ERR",
+                                     "ms": int((time.time() - started) * 1000), "bytes": 0, "error": str(e)})
+
+    # 合併今日最新與本地累積的歷史重大訊息（保留 90 天，去重）
+    history_rows = announcement_store.load_history_twse_material(code, days=90)
+    all_rows = {f"{r.get('發言日期')}_{r.get('發言時間')}_{r.get('主旨')}": r
+                for r in (history_rows + rows) if str(r.get("公司代號", "")).strip() == code}
+
     out = []
-    for r in rows:
-        if str(r.get("公司代號", "")).strip() != code:
-            continue
+    for r in all_rows.values():
         d, t = str(r.get("發言日期", "")), str(r.get("發言時間", "")).zfill(6)
         try:
             local = datetime(int(d[:-4]) + 1911, int(d[-4:-2]), int(d[-2:]), int(t[:2]), int(t[2:4]),
@@ -212,6 +224,13 @@ def _twse_material(code: str) -> List[Dict[str, Any]]:
                          local.astimezone(timezone.utc), "重大訊息", "TW",
                          f"符合條款：{r.get('符合條款', '')}"))
     return out
+
+
+def _historical_announcements(query: str, code: str) -> List[Dict[str, Any]]:
+    """外部歷史公告搜尋：從新聞媒體檢索包含【公告】或重大訊息的公司發布（近 30 天）。"""
+    q = f'("{code}" OR "{query}") (【公告】 OR "重大訊息" OR "重大決議")'
+    return _google_news(q, "TW", limit=15, kind="公司公告")
+
 
 
 _SEC_TICKERS: Dict[str, Any] = {}
@@ -283,7 +302,8 @@ def fetch_news(symbol: str, name: str = "") -> Dict[str, Any]:
                 ("MoneyDJ", lambda: _google_site(["moneydj.com"], kw, "TW", "新聞")),
                 ("分析專欄（玩股網、財報狗）",
                  lambda: _google_site(["wantgoo.com", "statementdog.com"], kw, "TW", "分析專欄", [name, code])),
-                ("證交所重大訊息", lambda: _twse_material(code))]
+                ("證交所重大訊息（含歷史存檔）", lambda: _twse_material(code)),
+                ("歷史公告搜尋", lambda: _historical_announcements(kw, code))]
     else:
         # 傳實際市場（港、日、英…）：發布時間才會換成該市場的當地時間，盤前盤後判斷才對
         jobs = [("Google News", lambda: _google_news(code, market)),

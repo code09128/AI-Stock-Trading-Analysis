@@ -155,7 +155,7 @@ def build(pool: str, symbols: Optional[List[str]] = None,
         else:
             m = meta.get(n["symbol"].upper(), {})
             if m.get("marketCap") and rate:
-                cap = m["marketCap"] * rate
+                cap = m["marketCap"] * rate * (100 if cur == "GBp" else 1)  # 英股報價是便士，marketCap 是英鎊
             else:
                 cap_note = "ETF 沒有市值欄位" if m.get("quoteType") == "ETF" else "Yahoo 沒有回傳市值"
             if not group:

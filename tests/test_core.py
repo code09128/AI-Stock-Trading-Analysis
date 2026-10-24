@@ -58,7 +58,7 @@ class TestTradingCore(unittest.TestCase):
 
         # 賣出 1 張 1,100 元台積電: 總額 1,100,000
         sell_res = calculate_friction_cost("TW", "SELL", 1100.0, 1000)
-        self.assertEqual(sell_res["fee"], 1568.0)
+        self.assertEqual(sell_res["fee"], 1567.0)  # 1,567.5 元以下無條件捨去
         self.assertEqual(sell_res["tax"], 3300.0) # 0.3% 證交稅
 
     def test_backtest_zero_lookahead_and_metrics(self):
@@ -81,6 +81,22 @@ class TestTradingCore(unittest.TestCase):
         self.assertEqual(trade["entry_price"], 110.0) # 強制 Next Bar Open
         self.assertEqual(trade["exit_price"], 120.0)  # 強制 Next Bar Open
         self.assertGreater(trade["net_pnl"], 0)       # 獲利扣除稅費
+
+    def test_backtest_position_sizing_follows_capital(self):
+        """股數依當下資金決定：台股買得起就整張，不夠一張改零股；損益滾入下一筆。"""
+        eng = BacktestEngine(market="TW", initial_capital=1_000_000.0)
+        self.assertEqual(eng._position_size(110.0, 1_000_000), 9000)   # 9 張＝990,000＋手續費 1,410
+        self.assertEqual(eng._position_size(1500.0, 1_000_000), 665)   # 一張 150 萬買不起 → 零股，扣手續費後 665 股
+        self.assertEqual(eng._position_size(2_000_000.0, 1_000_000), 0)  # 連 1 股都買不起
+        self.assertEqual(BacktestEngine(market="US")._position_size(201.0, 10_000), 49)
+
+        bars = [Bar(f"2026-01-0{d}", open=o, high=o, low=o, close=o, volume=1) for d, o in
+                enumerate([100.0, 100.0, 200.0, 200.0, 200.0, 200.0, 300.0], start=1)]
+        r = eng.run(bars, [1, 0, -1, 1, 0, -1, 0])  # 100 買 200 賣，200 買 300 賣
+        t1, t2 = r["trades_detail"]
+        self.assertAlmostEqual(r["final_equity"], 1_000_000 + t1["net_pnl"] + t2["net_pnl"], places=0)
+        # 第二筆資金 189 萬、200 元一張 20 萬 → 9 張（與第一筆同為整張，零頭不買）
+        self.assertGreater(r["final_equity"], 2_700_000)
 
     def test_anti_hallucination_guard(self):
         guard = AntiHallucinationGuard(

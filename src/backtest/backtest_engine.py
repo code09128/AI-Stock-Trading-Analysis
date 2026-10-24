@@ -8,10 +8,11 @@
 5. 提取前 5 大虧損交易背景
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from src.market.bar import Bar
 from src.market.market_rules import calculate_friction_cost
+from src.market.trade_rules import FIXED_LOT
 
 @dataclass
 class Trade:
@@ -30,10 +31,14 @@ class Trade:
     exit_cost: float
 
 class BacktestEngine:
-    def __init__(self, market: str = "TW", initial_capital: float = 1_000_000.0, commission_discount: float = 1.0):
+    def __init__(self, market: str = "TW", initial_capital: float = 1_000_000.0, commission_discount: float = 1.0,
+                 lot_size: Optional[int] = None, fees: Optional[List[Dict[str, Any]]] = None):
         self.market = market
         self.initial_capital = initial_capital
         self.commission_discount = commission_discount
+        # 每手股數：港股由呼叫端依個股傳入；日、陸、星股全市場 100 股
+        self.lot_size = lot_size or FIXED_LOT.get(market.upper(), 1)
+        self.fees = fees
 
     def run(self, bars: List[Bar], signals: List[int]) -> Dict[str, Any]:
         """
@@ -53,15 +58,22 @@ class BacktestEngine:
         entry_idx = -1
         signal_idx = -1
         current_trade_id = 1
-        
+        equity = self.initial_capital
+        shares = 0
+        skipped_no_cash = 0
+
         # 逐日回測迴圈
         for i in range(len(bars)):
             # 1. 檢查是否需要執行前一日產生的信號 (Next Bar Open 撮合)
             if i > 0 and signals[i - 1] != 0:
                 prev_sig = signals[i - 1]
                 
-                # 買進執行
+                # 買進執行：依「當下資金」決定股數（之前的損益滾入下一筆）
                 if prev_sig == 1 and not in_position:
+                    shares = self._position_size(bars[i].open, equity)
+                    if shares <= 0:
+                        skipped_no_cash += 1  # 資金連 1 股都買不起：這筆訊號不成交
+                        continue
                     in_position = True
                     entry_idx = i
                     signal_idx = i - 1
@@ -78,14 +90,12 @@ class BacktestEngine:
                     entry_price = entry_bar.open
                     exit_price = exit_bar.open
                     
-                    # 假設每次操作 1 張 (台股 1,000 股) 或自訂單位
-                    shares = 1000 if self.market.upper() == "TW" else 100
-                    
+                    min_fee = self._min_fee(shares)
                     entry_costs = calculate_friction_cost(
-                        self.market, "BUY", entry_price, shares, self.commission_discount
+                        self.market, "BUY", entry_price, shares, self.commission_discount, min_fee, self.fees
                     )
                     exit_costs = calculate_friction_cost(
-                        self.market, "SELL", exit_price, shares, self.commission_discount
+                        self.market, "SELL", exit_price, shares, self.commission_discount, min_fee, self.fees
                     )
                     
                     gross_pnl = (exit_price - entry_price) * shares
@@ -109,9 +119,42 @@ class BacktestEngine:
                     )
                     trades.append(trade)
                     current_trade_id += 1
+                    equity += net_pnl
 
         # 計算績效指標
-        return self._calculate_metrics(trades)
+        res = self._calculate_metrics(trades)
+        res["position_sizing"] = (
+            "每筆用當下全部資金買進（含前面交易的損益）；台股買得起整張就買整張，不足一張改買零股；其他市場以 1 股為單位"
+        )
+        res["initial_capital"] = self.initial_capital
+        res["final_equity"] = round(equity, 2)
+        res["skipped_no_cash"] = skipped_no_cash
+        return res
+
+    @staticmethod
+    def _min_fee(shares: int) -> float:
+        """台股手續費最低：整張 20 元、零股 1 元（多數券商的零股低消）。"""
+        return 20.0 if shares >= 1000 else 1.0
+
+    def _position_size(self, price: float, cash: float) -> int:
+        """資金 cash 在價格 price 最多買幾股（含買進手續費不超過資金）。台股優先整張，不足一張改零股。"""
+        if price <= 0 or cash <= 0:
+            return 0
+        tw = self.market.upper() == "TW"
+
+        def affordable(n: int) -> bool:
+            cost = calculate_friction_cost(self.market, "BUY", price, n, self.commission_discount,
+                                           self._min_fee(n), self.fees)["total_cost"]
+            return price * n + cost <= cash
+
+        n = int(cash // price)
+        while n > 0 and not affordable(n):  # 扣掉手續費後再往下調（通常只差幾股）
+            n -= 1
+        if tw and n >= 1000:
+            n = n // 1000 * 1000  # 買得起整張：只買整張
+        elif not tw:
+            n = n // self.lot_size * self.lot_size  # 其他市場只能整手買
+        return n
 
     def _calculate_metrics(self, trades: List[Trade]) -> Dict[str, Any]:
         total_trades = len(trades)

@@ -89,6 +89,7 @@ def _base(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any]:
         "market": norm["market"],
         "currency": norm["currency"],
         "is_live": False,
+        "quote_date_local": "",
         "error": None,
     }
 
@@ -149,6 +150,7 @@ def fetch_tw_quotes(
             if bid_vol + ask_vol
             else None,
             quote_time=f"{r.get('d', '')} {r.get('t', '')}".strip(),
+            quote_date_local=str(r.get("d", "")).replace("-", "").replace("/", "").strip(),
             source="TWSE MIS 即時行情（約延遲 5 秒）",
             endpoint=url,
         )

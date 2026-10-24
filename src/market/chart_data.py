@@ -142,13 +142,14 @@ def sparks(symbols: List[str]) -> Dict[str, List[float]]:
 OVERVIEW_TTL = 300
 
 
-def _overview_one(symbol: str) -> Dict[str, Any]:
+def _overview_one(symbol: str, quote: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     key = f"overview:{symbol}"
     cached = _get(key, OVERVIEW_TTL)
     if cached:
         return cached
     try:
-        snap = DualMarketDataAdapter().build_technical_snapshot(symbol)
+        # quote 由 overview() 一次批次抓好傳進來；沒有就不併即時價（不要每檔各自再連一次報價）
+        snap = DualMarketDataAdapter().build_technical_snapshot(symbol, quote=quote, include_live=quote is not None)
         ind, close = snap["indicators"], snap["latest_close"]
         ma20, ma60 = ind.get("MA20"), ind.get("MA60")
         dist = lambda m: round((close / m - 1) * 100, 2) if m else None  # noqa: E731
@@ -169,8 +170,18 @@ def _overview_one(symbol: str) -> Dict[str, Any]:
 
 
 def overview(symbols: List[str]) -> List[Dict[str, Any]]:
+    quotes: Dict[str, Dict[str, Any]] = {}
+    if any(_get(f"overview:{sym}", OVERVIEW_TTL) is None for sym in symbols):
+        try:
+            from src.server.config import WATCHLIST_NAMES
+            for q in qp.get_quotes(symbols, WATCHLIST_NAMES):
+                if q and q.get("symbol"):
+                    quotes[q["symbol"]] = q
+        except Exception:  # 抓不到即時報價就只用日 K
+            pass
+    norm = lambda sym: DualMarketDataAdapter.normalize_symbol(sym)["symbol"]  # noqa: E731
     with ThreadPoolExecutor(max_workers=4) as ex:
-        return list(ex.map(_overview_one, symbols))
+        return list(ex.map(lambda sym: _overview_one(sym, quotes.get(norm(sym))), symbols))
 
 
 # ---------- 近 N 根日 K（說明頁的實例、大盤範例用）----------

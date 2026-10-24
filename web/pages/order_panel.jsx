@@ -21,6 +21,7 @@
       setCart,
       setOrder,
       tax,
+      tradeRules,
       tw,
     } = ctx;
     return (
@@ -126,7 +127,18 @@
           <span>預估金額 {fmt(Math.max(amount, 0), 0)}</span>
           {tw && <span>手續費約 {fmt(fee, 0)}</span>}
           {tw && order.side === 'SELL' && <span>證交稅約 {fmt(tax, 0)}</span>}
-          <span className="text-slate-500">（手續費以 0.1425% 無折扣估算）</span>
+          {tw && <span className="text-slate-500">（手續費以 0.1425% 無折扣估算）</span>}
+          {tradeRules && (
+            <span>
+              法定稅費約 {fmt(tax, 2)}
+              {tradeRules.lot > 1 && `・每手 ${tradeRules.lot} 股（${tradeRules.lot_source}）`}
+            </span>
+          )}
+          {tradeRules && (
+            <span className="text-slate-500">
+              （未含券商佣金{tradeRules.note ? `；${tradeRules.note}` : ''}）
+            </span>
+          )}
         </div>
 
         {orderIssues.length > 0 && (
@@ -181,7 +193,11 @@
               <span>暫存匣 {cart.length} 筆</span>
               <button
                 type="button"
-                onClick={() => setCart([])}
+                onClick={() => {
+                  const n = cart.length;
+                  setCart([]);
+                  window.TA.notifySaved(`已清空暫存匣（${n} 筆）`);
+                }}
                 className="hover:text-rose-300 cursor-pointer"
               >
                 清空
@@ -213,7 +229,11 @@
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCart(cart.filter((x) => x.id !== c.id))}
+                    onClick={() => {
+                      setCart(cart.filter((x) => x.id !== c.id));
+                      window.TA.notifySaved(`已從暫存匣移除 ${c.symbol} ${c.side === 'BUY' ? '買進' : '賣出'}委託`);
+                    }}
+                    aria-label={`移除 ${c.symbol} 委託`}
                     className="text-slate-500 hover:text-rose-300 cursor-pointer"
                   >
                     ✕

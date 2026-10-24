@@ -25,6 +25,22 @@ class PackagingPathTests(unittest.TestCase):
              patch.object(sys, "executable", "C:\\Program Files\\Trading\\trading.exe"):
             self.assertEqual(get_app_dir(), Path("C:\\Program Files\\Trading"))
 
+    def test_frozen_exe_in_project_dist_shares_project_data(self):
+        """從專案 dist\\ 直接執行打包版（單一檔案版與資料夾版）要讀專案的 data\\，不能各自一份。"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "src" / "server").mkdir(parents=True)
+            (root / "run.py").write_text("", encoding="utf-8")
+            for exe in (root / "dist" / "app.exe", root / "dist" / "股票交易分析系統" / "app.exe"):
+                with patch.object(sys, "frozen", True, create=True), \
+                     patch.object(sys, "executable", str(exe)):
+                    self.assertEqual(get_app_dir(), root)
+            # 安裝到別處（不是專案的 dist）照舊用 exe 所在資料夾
+            other = root / "dist_copy" / "app.exe"
+            with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", str(other)):
+                self.assertEqual(get_app_dir(), other.parent)
+
     def test_frozen_activity_log_dir(self):
         with patch.object(sys, "frozen", True, create=True), \
              patch.object(sys, "executable", "D:\\Apps\\Trading\\trading.exe"):

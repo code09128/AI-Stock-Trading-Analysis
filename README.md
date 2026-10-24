@@ -9,14 +9,14 @@
 
 | 頁面 | 做什麼 |
 |---|---|
-| **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
-| **技術分析** | 還權日 K、均線、RSI、MACD、ATR、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
-| **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
-| **策略回測** | 均線策略，訊號隔日開盤成交、含手續費與稅；1／3／5／10 年、多空盤整環境拆解、前後段驗證 |
+| **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
+| **技術分析** | 還權日 K、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
+| **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
+| **策略回測** | 均線策略，訊號隔日開盤成交、含各市場手續費與法定稅；每手整數倍部位管理；1／3／5／10 年、多空盤整環境拆解、前後段驗證 |
 | **組合風控** | 集中度、ETF 穿透曝險、Beta、相關係數、大盤下跌情境、歷史回落重演（2020 疫情、2022 升息） |
 | **交易檢討** | 分析交易紀錄的勝率、賺賠比、處置效應、報復性交易，產生 3 條個人規則，並成為下單前的勾選清單 |
 | **AI 解讀** | 每頁底部，研究主管／交易員口吻的報告格式（表格與段落），依你的持股給建議，回答中的數字自動與資料核對 |
-| **設定** | 雲端 AI（Gemini／OpenAI／Claude／OpenRouter）或本地模型（Ollama／LM Studio 自動偵測）；金鑰與資料額度直接在畫面填寫 |
+| **設定** | 雲端 AI（Gemini／OpenAI／Claude／OpenRouter）或本地模型（Ollama／LM Studio 自動偵測）；常駐背景提醒與 Windows 開機自動啟動；畫面縮放；金鑰與資料額度直接在畫面填寫 |
 
 各頁之間會互相連動（看盤 → 技術分析 → 回測；熱力圖 → 查新聞；模擬成交 → 交易檢討 → 規則回到下單），程式內「說明」頁有完整流程圖與新手導覽。
 
@@ -39,7 +39,15 @@
 - **安裝版（建議，開啟最快）**：執行 `股票交易分析系統_Setup.exe` → 桌面出現捷徑 → 雙擊開啟。重新安裝會沿用原本的資料與金鑰。
 - **免安裝版**：雙擊 `股票交易分析系統.exe`，可以放隨身碟帶著走。每次開啟要先解壓縮，會先顯示啟動圖（約 2 秒）。
 
-兩種都是獨立視窗、沒有黑色主控台，啟動時有載入動畫；**關閉視窗就是結束程式**（關閉前會先把最後的修改存檔）。電腦需要 Microsoft Edge WebView2 Runtime（Windows 11 與更新過的 Windows 10 內建）。資料存在程式所在資料夾的 `data/`。
+兩種都是獨立視窗、沒有黑色主控台。電腦需要 Microsoft Edge WebView2 Runtime（Windows 11 與更新過的 Windows 10 內建）。桌面視窗版（打包版與 `python desktop.py`）的操作：
+
+- **啟動**：載入動畫上逐項顯示正在準備的資料（伺服器、你的資料、大盤、即時報價、走勢小圖、分時、技術指標），先抓好進到畫面就不用等。每項最多 8 秒、整體最多 15 秒；3 秒後可按「直接進入」，慢的項目在背景繼續抓。
+- **畫面縮放**：標題列右上角「－ 100% ＋」、設定頁的常用比例，或 Ctrl＋加減號、Ctrl＋滾輪（Ctrl＋0 回到 100%）。字與介面一起縮放，版面依放大後的寬度自動重新排列，不會擠在一起；下次開啟沿用。
+- **關閉**：按右上角 X 會詢問「縮到系統匣／結束程式／取消」。
+  - 縮到系統匣：價格、漲跌幅（每 15 秒）與 RSI（每 5 分鐘）提醒繼續在背景檢查，達標時跳出 Windows 通知；點系統匣圖示叫回視窗。
+  - 結束程式：先存好最新修改，視窗立刻消失，背景工作平行收尾，最多 4 秒一定結束。系統匣圖示按右鍵也可以「結束程式」。
+- **開機自動啟動**（設定頁）：登入 Windows 後直接縮在系統匣執行。
+- **資料位置**：存在程式所在資料夾的 `data/`。**直接執行專案 `dist\` 裡的 exe 時，改用專案根目錄的 `data/`、`.env`、`logs/`**，跟 `start.bat`／`python desktop.py` 共用同一份自選股與持股；裝到其他位置的才各自一份。
 
 ### B. 從原始碼執行
 
@@ -63,7 +71,9 @@ cd AI-Stock-Trading-Analysis
   python desktop.py
   ```
 
-  8088 已經有本程式在跑（例如 `start.bat` 開著）時，桌面版會直接連過去，不會開第二個伺服器。
+  8088 已經有本程式在跑（例如 `start.bat` 開著）時，桌面版會直接連過去，不會開第二個伺服器。改了程式不用重新打包，關掉再執行 `python desktop.py` 就是新版。
+
+  > 不要同時開著瀏覽器版和桌面版修改資料：兩邊會互相蓋掉對方剛存的內容。
 
 ### C. 開發模式
 
@@ -75,7 +85,7 @@ cd AI-Stock-Trading-Analysis
 - **測試與檢查**：
 
   ```bash
-  python -m unittest discover tests     # 後端測試（全部離線，不連網）
+  python -m unittest discover tests     # 後端測試（test_integration 會實際連 Yahoo，網路慢時約 1 分鐘，其餘離線）
   npx @biomejs/biome lint web           # 前端語法／無障礙檢查（需要 Node.js）
   ```
 
@@ -103,6 +113,7 @@ cd AI-Stock-Trading-Analysis
 | 持股、交易紀錄、交易規則、自選股、提醒、AI 設定 | `data/userdata.json`（修改後 0.5 秒自動存檔；每天備份到 `data/backups/`，保留 14 天） |
 | 金鑰 | `.env` |
 | 操作紀錄 | `logs/`（每日一檔，保留 30 天）；桌面版的程式輸出與錯誤在 `logs/desktop.log` |
+| 證交所重大訊息存檔 | `data/announcements/`（每日一檔，保留 90 天） |
 | 桌面版視窗的瀏覽器資料（偏好設定、快取） | `data/webview/` |
 | 報價、日 K、新聞 | 只暫存在記憶體，不存檔 |
 
@@ -144,6 +155,8 @@ python build_app.py
 > 每台電腦第一次開啟會多 2～3 秒（WebView2 建立設定檔）。打包版沒有黑色主控台，程式輸出與錯誤寫在程式資料夾的 `logs/desktop.log`，出問題時看這個檔案。
 >
 > 打包前請先關掉正在執行的打包版程式，否則檔案被佔用會打包失敗。
+>
+> 重新打包會保留資料夾版 `dist\股票交易分析系統\` 裡的 `data/`、`logs/`、`.env`。
 
 ## 程式碼架構
 
@@ -152,7 +165,7 @@ python build_app.py
 | 檔案 | 用途 |
 |---|---|
 | `run.py`／`start.bat` | 瀏覽器版：開伺服器並用預設瀏覽器打開 |
-| `desktop.py` | 桌面視窗版：WebView2 獨立視窗＋載入動畫，伺服器在背景執行（打包版的入口） |
+| `desktop.py` | 桌面視窗版：WebView2 獨立視窗、關閉確認、系統匣、畫面縮放，伺服器在背景執行（打包版的入口）；`--background` 直接縮在系統匣啟動 |
 | `build_app.py`／`package.bat` | 打包成單一 exe、資料夾版與安裝精靈 |
 | `build_web.py` | 前端預先編譯（esbuild），打包時自動呼叫 |
 | `requirements-desktop.txt` | 桌面版與打包需要的套件（pywebview、PyInstaller） |
@@ -162,23 +175,25 @@ python build_app.py
 ```
 src/
 ├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar、
-│                finmind、chip_data（籌碼）、etf_data、etf_reference、chart_data、heatmap（股市熱力圖）、
-│                fx、markets、market_calendar、market_rules、tz
+│                trade_rules（海外手續費/每手股數）、finmind、chip_data（籌碼）、etf_data、etf_reference、
+│                chart_data、heatmap（股市熱力圖）、fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
-├── news/        新聞：news_feed（多來源抓取與去重）、news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
+├── news/        新聞：news_feed（多來源抓取與去重）、announcement_store（重大訊息每日存檔與歷史）、
+│                news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
 ├── backtest/    策略回測：backtest_engine（Next Bar Open）、backtest_analysis（環境拆分、前後段驗證）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）
 ├── journal/     交易檢討：journal_coach
 ├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）
 ├── ai/          AI：ai_client、ai_context、llm_runner、anti_hallucination（防幻覺稽核）
 └── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、config、params、
-                 env_settings（設定頁寫入 .env）、user_data（資料存檔與備份）、activity_log
+                 alert_engine（背景提醒檢查）、tray_icon（Win32 系統匣常駐）、notifier（Toast 通知）、
+                 autostart（開機啟動）、env_settings、user_data（資料存檔與備份）、activity_log
 ```
 
 前端 `web/`（React 18 + Tailwind，套件放在 `web/vendor/`，可離線使用）：
 
 - 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效；打包時 `build_web.py` 用 esbuild 預先編譯成 `app.bundle.js`。
-- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
+- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認與畫面縮放；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
 - `panels/`：technical、news、backtest、portfolio、journal、selftest（各分析頁）
 - `pages/`：watch（看盤）、heatmap（股市熱力圖）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide

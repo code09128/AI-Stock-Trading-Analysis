@@ -73,6 +73,17 @@ class HeatmapBuildTests(unittest.TestCase):
         self.assertEqual(d["items"][0]["turnover_twd"], 10 * 5 * 30)
         self.assertEqual(d["items"][0]["market_cap_note"], "Yahoo 沒有回傳市值")
 
+    def test_uk_market_cap_is_pounds_while_price_is_pence(self):
+        # Yahoo 英股：報價 GBp（便士），marketCap 卻是英鎊（SHEL.L：股數 5.684e9 × 40.33 英鎊 ≈ marketCap 2.29e11）
+        # 若照報價幣別用便士匯率換算，市值模式的方塊會少 100 倍
+        v7 = {"SHEL.L": {"regularMarketPrice": 4000.0, "regularMarketChangePercent": 0.1, "regularMarketVolume": 10,
+                         "currency": "GBp", "shortName": "Shell", "marketCap": 1000, "quoteType": "EQUITY"}}
+        d = self._build("mine", ["SHEL.L"], {"SHEL.L": 2}, v7=v7, rates={"GBp": {"rate": 0.4}, "GBP": {"rate": 40.0}})
+        item = d["items"][0]
+        self.assertEqual(item["market_cap_twd"], 1000 * 40)       # 英鎊 × 英鎊匯率
+        self.assertEqual(item["holding_twd"], 2 * 4000 * 0.4)     # 持股市值仍依便士報價換算
+        self.assertEqual(item["turnover_twd"], 4000 * 10 * 0.4)
+
     def test_unknown_pool_rejected(self):
         with self.assertRaises(ValueError):
             heatmap.build("bogus")

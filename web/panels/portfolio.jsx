@@ -31,7 +31,10 @@
         {holdings.length > 0 && (
           <button
             type="button"
-            onClick={() => loadMyHoldings(holdings)}
+            onClick={() => {
+              loadMyHoldings(holdings);
+              window.TA.toast?.(`✅ 已重新帶入我的持股（${holdings.length} 檔），按「執行風控」重新計算`);
+            }}
             className="ml-auto px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
           >
             重新帶入我的持股
@@ -295,7 +298,7 @@
             </div>
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
                 setM4Holdings([
                   ...m4Holdings,
                   {
@@ -305,8 +308,9 @@
                     price: 1300,
                     target_pct: 10,
                   },
-                ])
-              }
+                ]);
+                window.TA.toast?.('ℹ️ 已在試算表新增一列（這裡是風控試算，不會改到看盤頁的我的持股）');
+              }}
               className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 cursor-pointer"
             >
               新增持股部位
@@ -404,7 +408,10 @@
                     <td className="py-2 px-2">
                       <button
                         type="button"
-                        onClick={() => setM4Holdings(m4Holdings.filter((_, i) => i !== idx))}
+                        onClick={() => {
+                          setM4Holdings(m4Holdings.filter((_, i) => i !== idx));
+                          window.TA.toast?.(`ℹ️ 已從試算表刪除 ${h.symbol || '這一列'}（不會改到看盤頁的我的持股）`);
+                        }}
                         className="text-rose-400 hover:text-rose-300 cursor-pointer"
                       >
                         刪除

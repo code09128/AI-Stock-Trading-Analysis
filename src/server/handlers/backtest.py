@@ -6,7 +6,7 @@ from src.market.bar import Bar
 
 from src.backtest.backtest_engine import BacktestEngine
 from src.backtest import backtest_analysis
-from src.market import markets
+from src.market import markets, trade_rules
 from src.server.params import arg_num, arg_ticker
 
 
@@ -36,10 +36,15 @@ class BacktestHandlers:
                 f"此均線參數 (快線 {fast_ma}/慢線 {slow_ma}) 在這段期間只產生 {buy_signals} 次買進訊號，結果沒有統計意義；請調整參數，系統不會自動換成別的策略。"
             )
 
+        rules = trade_rules.rules_for(ticker) if market not in ("TW", "US") else {}
+        if rules.get("error"):
+            strategy_warnings.append(f"{rules['error']}，這次回測以每手 1 股計算。")
         engine = BacktestEngine(
             market=market,
             initial_capital=initial_capital,
             commission_discount=commission_discount,
+            lot_size=rules.get("lot"),
+            fees=rules.get("fees"),
         )
         bt_result = engine.run(bars, signals)
         trades_list = bt_result.get("trades_detail", bt_result.get("trades", []))

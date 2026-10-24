@@ -24,7 +24,9 @@
           source: 'CSV 匯入',
         }));
       if (!rows.length) {
-        setMsg('沒有讀到有效列。格式：代號,買進日期,買進價,賣出日期,賣出價,股數');
+        const m = '沒有匯入：沒有讀到有效列。格式：代號,買進日期,買進價,賣出日期,賣出價,股數';
+        setMsg(m);
+        window.TA.toast?.(`⚠️ ${m}`);
         return;
       }
       const next = [...journal, ...rows];
@@ -33,6 +35,7 @@
       setM5Entries(next);
       setCsv('');
       setMsg(`已匯入 ${rows.length} 筆`);
+      window.TA.notifySaved(`已匯入 ${rows.length} 筆交易紀錄`);
     };
     return (
       <div
@@ -51,6 +54,11 @@
               onClick={() => {
                 setM5Source(k);
                 setM5Entries(k === 'mine' ? journal : window.TA.DEFAULT_JOURNAL);
+                window.TA.toast?.(
+                  k === 'mine'
+                    ? `ℹ️ 已改用我的交易紀錄（${journal.length} 筆）`
+                    : 'ℹ️ 已改用內建範例（不會動到你的交易紀錄）',
+                );
               }}
               className={`px-3 py-1 rounded-lg border cursor-pointer ${
                 m5Source === k
@@ -107,9 +115,15 @@
   function Mod5Panel({ ctx }) {
     const { m5Data, m5Entries, m5Loading, m5Source, runMod5, setM5Entries, setM5Source } = ctx;
     // 「我的交易紀錄」模式：表格就是交易紀錄本身，改動立刻存回（否則回看盤頁成交後再診斷，會用舊表格蓋掉新紀錄）
-    const edit = (next) => {
+    // msg：要通知的內容；逐字修改用延遲通知（停手 1 秒才提示一次），刪除等一次性動作立即通知
+    const edit = (next, msg, immediate = false) => {
       setM5Entries(next);
-      if (m5Source === 'mine') window.TA.setJournal(next);
+      if (m5Source === 'mine') {
+        window.TA.setJournal(next);
+        if (msg) (immediate ? window.TA.notifySaved : (m) => window.TA.notifySavedLater('m5-edit', m))(msg);
+      } else if (msg) {
+        window.TA.toast?.(`ℹ️ ${msg}（目前是內建範例，只在這次畫面有效，不會存檔）`);
+      }
     };
     return (
       <div className="space-y-5">
@@ -129,7 +143,8 @@
                 <button
                   type="button"
                   title="加一筆範例交易（只在內建範例模式；你的交易請用模擬成交或 CSV 匯入）"
-                  onClick={() =>
+                  onClick={() => {
+                    window.TA.toast?.('ℹ️ 已新增一筆範例交易（範例模式只在這次畫面有效，不會存檔）');
                     setM5Entries([
                       ...m5Entries,
                       {
@@ -145,8 +160,8 @@
                         emotion_score: 9,
                         high_5d_after_exit: 1055.0,
                       },
-                    ])
-                  }
+                    ]);
+                  }}
                   className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 cursor-pointer"
                 >
                   新增一筆範例交易
@@ -196,7 +211,7 @@
                         onChange={(e) => {
                           const next = [...m5Entries];
                           next[idx] = { ...next[idx], symbol: e.target.value };
-                          edit(next);
+                          edit(next, `已儲存交易紀錄 ${en.trade_id} 的修改`);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-24 text-white"
                       />
@@ -211,7 +226,7 @@
                             ...next[idx],
                             entry_time: e.target.value,
                           };
-                          edit(next);
+                          edit(next, `已儲存交易紀錄 ${en.trade_id} 的修改`);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-16 text-white"
                       />
@@ -235,7 +250,7 @@
                             ...next[idx],
                             return_pct: Number(e.target.value),
                           };
-                          edit(next);
+                          edit(next, `已儲存交易紀錄 ${en.trade_id} 的修改`);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-16 text-white"
                       />
@@ -252,7 +267,7 @@
                             ...next[idx],
                             emotion_score: Number(e.target.value),
                           };
-                          edit(next);
+                          edit(next, `已儲存交易紀錄 ${en.trade_id} 的修改`);
                         }}
                         className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-14 text-amber-300"
                       />
@@ -261,7 +276,20 @@
                     <td className="py-1.5 px-1.5">
                       <button
                         type="button"
-                        onClick={() => edit(m5Entries.filter((_, i) => i !== idx))}
+                        onClick={() => {
+                          if (
+                            m5Source === 'mine' &&
+                            !window.confirm(`確定刪除交易紀錄 ${en.trade_id}（${en.symbol}）？刪除後沒辦法復原。`)
+                          ) {
+                            window.TA.toast?.('ℹ️ 已取消，交易紀錄沒有變動');
+                            return;
+                          }
+                          edit(
+                            m5Entries.filter((_, i) => i !== idx),
+                            `已刪除交易紀錄 ${en.trade_id}（${en.symbol}）`,
+                            true,
+                          );
+                        }}
                         className="text-rose-400 hover:text-rose-300 cursor-pointer"
                       >
                         刪除

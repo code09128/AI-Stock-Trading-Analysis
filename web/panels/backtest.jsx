@@ -340,6 +340,15 @@
               {m3Data.backtest_result.sample_size_note}
               <window.TA.Tip text="交易筆數太少時，好看的結果可能只是運氣或參數剛好配合這段行情（過度擬合）。一般建議至少 30 筆以上再相信統計數字。" />
             </div>
+            {m3Data.backtest_result.position_sizing && (
+              <div className="text-xs text-slate-400 px-1">
+                股數規則：{m3Data.backtest_result.position_sizing}。本金{' '}
+                {window.TA.fmt(m3Data.backtest_result.initial_capital, 0)} → 期末{' '}
+                <span className="text-slate-200">{window.TA.fmt(m3Data.backtest_result.final_equity, 0)}</span>
+                {m3Data.backtest_result.skipped_no_cash > 0 &&
+                  `；有 ${m3Data.backtest_result.skipped_no_cash} 次買訊因資金不足 1 股而未成交`}
+              </div>
+            )}
 
             <RegimeTable data={m3Data.regime_breakdown} />
             <WalkForwardCard wf={m3Data.walk_forward} />

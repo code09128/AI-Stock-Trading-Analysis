@@ -6,8 +6,10 @@
 3. 價格波動限制與合規檢查
 """
 
-from typing import Dict
+from typing import Any, Dict, List, Optional
 import math
+
+from src.market.trade_rules import STATUTORY_FEES, statutory_cost
 
 def get_tw_tick_size(price: float) -> float:
     """
@@ -65,7 +67,8 @@ def calculate_friction_cost(
     price: float,
     shares: int,
     commission_discount: float = 1.0,
-    min_commission_twd: float = 20.0
+    min_commission_twd: float = 20.0,
+    fees: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, float]:
     """
     計算交易摩擦成本 (Friction Cost)。
@@ -78,15 +81,18 @@ def calculate_friction_cost(
     - 手續費: 一般券商零手續費 (或依自訂費率)
     - SEC 規費: 賣出時收取 (成交金額 * 0.0000278，最低 $0.01)
     - FINRA TAF: 賣出時每股 $0.000166 (上限 $8.30)
+
+    其他市場：只算 trade_rules 的法定稅費（不含券商佣金）；fees 可傳入個股規則（如港股 ETF 免印花稅）。
     """
     total_val = price * shares
     action_upper = action.upper()
     market_upper = market.upper()
 
     if market_upper == "TW":
+        # 手續費、證交稅都是元以下無條件捨去（+1e-9 避免浮點誤差把 1425.0 算成 1424.999…）
         base_fee = total_val * 0.001425 * commission_discount
-        fee = max(min_commission_twd, round(base_fee))
-        tax = round(total_val * 0.003) if action_upper in ("SELL", "賣出") else 0.0
+        fee = max(min_commission_twd, math.floor(base_fee + 1e-9))
+        tax = math.floor(total_val * 0.003 + 1e-9) if action_upper in ("SELL", "賣出") else 0.0
         return {
             "market": "TW",
             "total_value": round(total_val, 2),
@@ -94,6 +100,17 @@ def calculate_friction_cost(
             "tax": float(tax),
             "total_cost": float(fee + tax),
             "net_amount": round(total_val - (fee + tax) if action_upper in ("SELL", "賣出") else total_val + fee, 2)
+        }
+    elif market_upper in STATUTORY_FEES:
+        tax = statutory_cost(STATUTORY_FEES[market_upper] if fees is None else fees, action_upper, total_val)
+        sell = action_upper in ("SELL", "SHORT", "賣出")
+        return {
+            "market": market_upper,
+            "total_value": round(total_val, 2),
+            "fee": 0.0,
+            "tax": tax,
+            "total_cost": tax,
+            "net_amount": round(total_val - tax if sell else total_val + tax, 2)
         }
     else:
         # 美股

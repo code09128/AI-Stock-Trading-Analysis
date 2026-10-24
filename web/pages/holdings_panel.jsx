@@ -80,7 +80,7 @@
       const shares = Number(holdForm.shares);
       const cost = Number(holdForm.cost);
       if (!sym || !(shares > 0) || !(cost >= 0)) {
-        say('請填代號、股數（正數）與成本價');
+        say('⚠️ 沒有新增：請填代號、股數（正數）與成本價');
         return;
       }
       const old = holdings.find((h) => h.symbol === sym);
@@ -89,6 +89,9 @@
         { symbol: sym, shares, cost, opened: old?.opened || new Date().toISOString().slice(0, 10) },
       ]);
       setHoldForm({ symbol: '', shares: '', cost: '' });
+      window.TA.notifySaved(
+        old ? `已更新持股 ${sym}：${shares} 股、成本 ${cost}` : `已新增持股 ${sym}：${shares} 股、成本 ${cost}`,
+      );
     };
     const importCsv = () => {
       const rows = csvText
@@ -97,7 +100,7 @@
         .map(([a, b, c]) => ({ symbol: normSym(a || ''), shares: Number(b), cost: Number(c) }))
         .filter((r) => r.symbol && r.shares > 0 && r.cost >= 0);
       if (!rows.length) {
-        say('沒有讀到有效列。格式：代號,股數,成本價（每行一檔）');
+        say('⚠️ 沒有匯入：沒有讀到有效列。格式：代號,股數,成本價（每行一檔）');
         return;
       }
       const map = new Map(holdings.map((h) => [h.symbol, h]));
@@ -108,7 +111,7 @@
         });
       setHoldings([...map.values()]);
       setCsvText('');
-      say(`已匯入 ${rows.length} 檔持股`);
+      window.TA.notifySaved(`已匯入 ${rows.length} 檔持股`);
     };
 
     return (
@@ -289,8 +292,15 @@
                   title="直接移除（不記錄交易）"
                   onClick={(e) => {
                     e.stopPropagation();
+                    // 刪除沒辦法復原：先確認（要記錄賣出請改按「賣出」）
+                    if (!window.confirm(`確定移除持股 ${r.symbol}（${fmt(r.shares, 4)} 股）？\n不會寫入交易紀錄；要記錄賣出請改按「賣出」。`)) {
+                      say('ℹ️ 已取消，持股沒有變動');
+                      return;
+                    }
                     setHoldings(holdings.filter((h) => h.symbol !== r.symbol));
+                    window.TA.notifySaved(`已移除持股 ${r.symbol}`);
                   }}
+                  aria-label={`移除持股 ${r.symbol}`}
                   className="text-slate-600 hover:text-rose-400 text-xs px-1 cursor-pointer"
                 >
                   ✕
