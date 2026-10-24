@@ -7,30 +7,13 @@ AI 防價格幻覺與輸出合法性防禦檢查器 (anti_hallucination.py)
 4. 強制檢查決策流程是否包含具體價位門檻與失效條件
 """
 
-from typing import List, Dict, Any, Optional
-import re
+from typing import Dict, Any
 
 class AntiHallucinationGuard:
     def __init__(self, historical_high: float, historical_low: float, valid_indicators: Dict[str, float]):
         self.min_price = historical_low
         self.max_price = historical_high
         self.valid_indicators = valid_indicators
-
-    def extract_prices(self, text: str) -> List[float]:
-        """從文本中提取所有可能代表價格的數字 (例如 1050, 1050.5, $180.2)"""
-        # 匹配類似 1,050.5 或 1050 或 180.25 的數值
-        pattern = r"(?:[\$NTnt]?\s*)([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)"
-        matches = re.findall(pattern, text)
-        prices = []
-        for m in matches:
-            cleaned = m.replace(",", "")
-            try:
-                val = float(cleaned)
-                if val > 0:
-                    prices.append(val)
-            except ValueError:
-                pass
-        return prices
 
     def verify_price_bounds(self, price: float, tolerance_pct: float = 0.05) -> bool:
         """

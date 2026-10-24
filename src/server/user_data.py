@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
@@ -34,21 +35,48 @@ def allowed(key: str) -> bool:
     return isinstance(key, str) and key.startswith(PREFIX) and key not in SKIP and len(key) <= 64
 
 
-def _read() -> Dict[str, str]:
+def _retry(fn, tries: int = 5, wait: float = 0.1):
+    """Windows 上防毒軟體、OneDrive 同步會短暫鎖住檔案：稍等再試幾次，不要一次失敗就放棄。"""
+    for i in range(tries):
+        try:
+            return fn()
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(wait * (i + 1))
+
+
+def _read(strict: bool = False) -> Dict[str, str]:
+    """strict=True（存檔前讀取）：檔案存在卻讀不到時直接報錯，不能拿舊備份當底，否則會把今天的修改蓋掉。"""
     path = data_file()
     if not path.exists():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return {k: v for k, v in data.get("values", {}).items() if allowed(k) and isinstance(v, str)}
-    except (OSError, ValueError):
-        # 檔案損毀：改讀最近一份備份，不讓使用者看到空資料
-        for b in sorted((data_dir() / "backups").glob("userdata-*.json"), reverse=True):
+        text = _retry(lambda: path.read_text(encoding="utf-8"))
+    except OSError as e:
+        if strict:
+            raise ValueError(f"暫時讀不到 {path}（{e.strerror or e}），這次修改先不存，稍後會自動再試") from None
+        text = None
+    if text is not None:
+        try:
+            data = json.loads(text)
+            return {k: v for k, v in data.get("values", {}).items() if allowed(k) and isinstance(v, str)}
+        except ValueError:
+            # 內容損毀：先留一份損毀的檔案（之後存檔會覆蓋正本），再改用備份
             try:
-                return json.loads(b.read_text(encoding="utf-8")).get("values", {})
-            except (OSError, ValueError):
-                continue
-        return {}
+                bad = path.with_name(f"userdata.corrupt-{datetime.now():%Y%m%d-%H%M%S}.json")
+                if not any(path.parent.glob("userdata.corrupt-*.json")):
+                    shutil.copy2(path, bad)
+            except OSError:
+                pass
+    # 讀不到（只有顯示用時）或損毀：改讀最近一份備份，不讓使用者看到空資料
+    for b in sorted((data_dir() / "backups").glob("userdata-*.json"), reverse=True):
+        try:
+            values = json.loads(b.read_text(encoding="utf-8")).get("values", {})
+            return {k: v for k, v in values.items() if allowed(k) and isinstance(v, str)}
+        except (OSError, ValueError):
+            continue
+    return {}
 
 
 def _backup_today(path: Path) -> None:
@@ -80,7 +108,7 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError(f"{k} 的內容格式錯誤或太大")
     path = data_file()
     with _LOCK:
-        current = _read()
+        current = _read(strict=True)
         for k, v in values.items():
             if v is None:
                 current.pop(k, None)
@@ -88,11 +116,14 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
                 current[k] = v
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            _backup_today(path)
+            try:
+                _backup_today(path)
+            except OSError as e:  # 備份失敗不能擋住存檔
+                print(f"[user_data] 今日備份失敗：{e}")
             tmp = path.with_suffix(".tmp")
             tmp.write_text(json.dumps({"version": 1, "saved_at": datetime.now().isoformat(timespec="seconds"),
                                        "values": current}, ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, path)
+            _retry(lambda: os.replace(tmp, path))
         except OSError as e:
             raise ValueError(f"無法寫入 {path}（{e.strerror or e}）。請把程式放到有寫入權限的資料夾。") from None
     return {"saved": len(values), "path": str(path)}

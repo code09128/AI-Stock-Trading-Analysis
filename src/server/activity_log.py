@@ -64,11 +64,15 @@ def write(events: Iterable[Dict[str, Any]], source: str) -> int:
     if not lines:
         return 0
     with _LOCK:
-        LOG_DIR.mkdir(exist_ok=True)
-        _prune()
-        path = LOG_DIR / f"activity-{datetime.now().strftime('%Y%m%d')}.jsonl"
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
+        try:
+            LOG_DIR.mkdir(exist_ok=True)
+            _prune()
+            path = LOG_DIR / f"activity-{datetime.now().strftime('%Y%m%d')}.jsonl"
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+        except OSError as e:  # 紀錄寫不進去（資料夾沒權限、檔案被鎖）不能影響正常功能
+            print(f"[activity_log] 寫入失敗：{e}")
+            return 0
     return len(lines)
 
 

@@ -1,11 +1,11 @@
 """
 自動打包腳本 (build_app.py)
-一鍵將專案打包成：
-1. 綠色免安裝單一執行檔: dist/股票交易分析系統.exe
-2. 整合安裝程式: dist/股票交易分析系統_Setup.exe
+一鍵將專案打包成桌面視窗程式（desktop.py：Edge WebView2 獨立視窗＋載入動畫，沒有黑色主控台）：
+1. 綠色免安裝單一執行檔: dist/股票交易分析系統.exe（啟動時先解壓縮，期間顯示啟動圖）
+2. 整合安裝程式: dist/股票交易分析系統_Setup.exe（安裝資料夾版，不必解壓縮，開啟最快）
+需要：pip install -r requirements-desktop.txt（pywebview、pyinstaller）；有 Pillow 時會產生啟動圖。
 """
 
-import os
 import shutil
 import subprocess
 import sys
@@ -36,42 +36,127 @@ def get_pyinstaller_cmd() -> list:
     return [sys.executable, "-m", "PyInstaller"]
 
 
-def build_portable_exe() -> Path:
-    """第一步：使用 PyInstaller 打包單一便攜式 exe"""
-    print("\n[1/3] 正在打包單一可執行檔 (股票交易分析系統.exe)...")
-    # 前端事先編譯（JSX → app.bundle.js，不帶 Babel）；沒有 Node.js 時退回原始碼版（瀏覽器即時轉譯）
+APP_NAME = "股票交易分析系統"
+APP_DIR = DIST_DIR / APP_NAME  # 資料夾版（安裝程式用）
+
+
+def build_web_dir() -> Path:
+    """前端事先編譯（JSX → app.bundle.js，不帶 Babel）；沒有 Node.js 時退回原始碼版（瀏覽器即時轉譯）。"""
     try:
         import build_web
-        web_dir = build_web.build()
+        return build_web.build()
     except RuntimeError as e:
         if "JSX 編譯失敗" in str(e):
             raise  # 語法錯誤：不要打包出會白屏的版本
         print(f"  [略過] 前端事先編譯：{e}；改用原始碼版 web/")
-        web_dir = WEB_DIR
+        return WEB_DIR
 
-    cmd = get_pyinstaller_cmd() + [
+
+def make_splash_image():
+    """單一 exe 解壓縮期間顯示的啟動圖（PyInstaller --splash）。沒有 Pillow 就略過，不影響打包。"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("  [略過] 沒有 Pillow，單一 exe 不加啟動圖（pip install pillow 可加上）")
+        return None
+    w, h = 520, 300
+    img = Image.new("RGB", (w, h), "#0d1117")
+    d = ImageDraw.Draw(img)
+    # 圖示：藍色漸層圓角方塊＋兩根 K 棒（與 index.html 的載入動畫一致）
+    logo = Image.new("RGB", (72, 72))
+    for y in range(72):
+        for x in range(72):
+            t = (x + y) / 142
+            logo.putpixel((x, y), (int(14 + (79 - 14) * t), int(165 + (70 - 165) * t), int(233 + (229 - 233) * t)))
+    mask = Image.new("L", (72, 72), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, 71, 71), radius=16, fill=255)
+    lx, ly = (w - 72) // 2, 52
+    img.paste(logo, (lx, ly), mask)
+    s = 72 / 32
+    for x1, y1, x2, y2, wick, fill in ((9.5, 10, 14.5, 22, (12, 6, 12, 25), True), (18.5, 8, 23.5, 18, (21, 5, 21, 22), False)):
+        d.line([(lx + wick[0] * s, ly + wick[1] * s), (lx + wick[2] * s, ly + wick[3] * s)], fill="white", width=4)
+        d.rounded_rectangle((lx + x1 * s, ly + y1 * s, lx + x2 * s, ly + y2 * s), radius=2,
+                            fill="white" if fill else (36, 110, 230), outline="white", width=4)
+
+    def font(size, bold=False):
+        for name in (("msjhbd.ttc", "msjh.ttc") if bold else ("msjh.ttc",)) + ("arial.ttf",):
+            try:
+                return ImageFont.truetype(name, size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
+    for text, y, size, color, bold in ((APP_NAME, 150, 28, "#dde2e9", True), ("AI STOCK TRADING ANALYSIS", 194, 12, "#6b7584", False),
+                                       ("正在啟動…", 246, 14, "#9aa4b2", False)):
+        f = font(size, bold)
+        tw = d.textlength(text, font=f)
+        d.text(((w - tw) / 2, y), text, font=f, fill=color)
+    d.rounded_rectangle((150, 232, 370, 235), radius=2, fill="#222934")
+    d.rounded_rectangle((150, 232, 238, 235), radius=2, fill="#3987e5")
+    out = BUILD_DIR / "splash.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out)
+    return out
+
+
+def pyinstaller_base(web_dir: Path, name: str, mode: str) -> list:
+    """桌面版共用參數：desktop.py 為入口、無主控台（--windowed）。"""
+    return get_pyinstaller_cmd() + [
         "--noconfirm",
         "--clean",
-        "--onefile",
-        "--name=股票交易分析系統",
+        mode,
+        "--windowed",
+        f"--name={name}",
         f"--icon={ICON_PATH}",
         f"--add-data={web_dir};web",
         f"--add-data={ROOT / '.env.example'};.",
         "--collect-submodules=src",
-        str(ROOT / "run.py"),
+        f"--workpath={BUILD_DIR / mode.strip('-')}",
+        f"--specpath={BUILD_DIR}",
     ]
-    
+
+
+def check_desktop_deps() -> None:
+    try:
+        import webview  # noqa: F401  只檢查有沒有安裝
+    except ImportError:
+        raise RuntimeError("缺少 pywebview，請先執行：pip install -r requirements-desktop.txt") from None
+
+
+def build_portable_exe(web_dir: Path) -> Path:
+    """第一步：單一便攜式 exe（啟動時解壓縮到暫存區，期間顯示啟動圖）"""
+    print(f"\n[1/4] 正在打包單一可執行檔 ({APP_NAME}.exe)...")
+    cmd = pyinstaller_base(web_dir, APP_NAME, "--onefile")
+    splash = make_splash_image()
+    if splash:
+        cmd.append(f"--splash={splash}")
+    cmd.append(str(ROOT / "desktop.py"))
+
     res = subprocess.run(cmd, cwd=str(ROOT))
     if res.returncode != 0:
         raise RuntimeError("PyInstaller 打包可執行檔失敗！")
-    
-    exe_path = DIST_DIR / "股票交易分析系統.exe"
+
+    exe_path = DIST_DIR / f"{APP_NAME}.exe"
     if not exe_path.exists():
         raise FileNotFoundError(f"未找到產生的 exe: {exe_path}")
-    
+
     size_mb = exe_path.stat().st_size / (1024 * 1024)
     print(f"  [OK] 成功產生單一可執行檔: {exe_path} ({size_mb:.2f} MB)")
     return exe_path
+
+
+def build_app_folder(web_dir: Path) -> Path:
+    """第二步：資料夾版（exe＋_internal），不必解壓縮，給安裝程式用"""
+    print(f"\n[2/4] 正在打包資料夾版 ({APP_DIR})...")
+    cmd = pyinstaller_base(web_dir, APP_NAME, "--onedir") + [str(ROOT / "desktop.py")]
+    res = subprocess.run(cmd, cwd=str(ROOT))
+    if res.returncode != 0:
+        raise RuntimeError("PyInstaller 打包資料夾版失敗！")
+    if not (APP_DIR / f"{APP_NAME}.exe").exists():
+        raise FileNotFoundError(f"未找到產生的資料夾版: {APP_DIR}")
+    size_mb = sum(f.stat().st_size for f in APP_DIR.rglob("*") if f.is_file()) / (1024 * 1024)
+    print(f"  [OK] 成功產生資料夾版: {APP_DIR} ({size_mb:.2f} MB)")
+    return APP_DIR
 
 
 def create_installer_script() -> Path:
@@ -209,10 +294,21 @@ def main():
     base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     target_exe = install_dir / f"{APP_NAME}.exe"
     target_ico = install_dir / "app.ico"
-    for name, dst in ((f"{APP_NAME}.exe", target_exe), ("app.ico", target_ico)):
-        src = base_dir / name
-        if src.exists():
-            shutil.copy2(src, dst)
+    # 資料夾版（exe＋_internal）：先清掉舊的 _internal，避免殘留上一版的檔案；data\ 與 .env 不在裡面，不受影響
+    try:
+        if (install_dir / "_internal").exists():
+            shutil.rmtree(install_dir / "_internal")
+        shutil.copytree(base_dir / "app", install_dir, dirs_exist_ok=True)
+    except PermissionError:
+        msg = f"{APP_NAME} 正在執行中，無法覆蓋程式檔案。\n請先關閉程式視窗，再重新執行安裝程式。"
+        print("  [失敗] " + msg)
+        try:
+            ctypes.windll.user32.MessageBoxW(0, msg, "安裝失敗", 0x10)
+        except Exception:
+            pass
+        sys.exit(1)
+    if (base_dir / "app.ico").exists():
+        shutil.copy2(base_dir / "app.ico", target_ico)
     if (base_dir / ".env.example").exists():
         shutil.copy2(base_dir / ".env.example", install_dir / ".env.example")
     # 上次安裝在別的位置（或舊版的 %LOCALAPPDATA%\TradingSystem）：把金鑰（.env）與使用者資料（data\）帶過來
@@ -251,6 +347,7 @@ def main():
         *[f'del "{lnk}" 2>nul' for lnk in created],
         "echo 正在移除程式檔案（你的資料 data 資料夾與金鑰 .env 會保留）...",
         *[f'del "{install_dir / n}" 2>nul' for n in (f"{APP_NAME}.exe", "app.ico", ".env.example")],
+        f'rmdir /s /q "{install_dir / "_internal"}" 2>nul',
         f'rmdir /s /q "{install_dir / "logs"}" 2>nul',
         "echo 解除安裝已完成！",
         f"echo 你的持股、交易紀錄與金鑰仍保留在：{install_dir}",
@@ -284,18 +381,20 @@ if __name__ == "__main__":
     return script_path
 
 
-def build_installer_exe(portable_exe: Path) -> Path:
-    """第二步：將便攜版 exe 與安裝腳本打包成單一 Setup 安裝程式"""
-    print("\n[2/3] 正在製作安裝包 (股票交易分析系統_Setup.exe)...")
+def build_installer_exe(app_dir: Path) -> Path:
+    """第三步：將資料夾版與安裝腳本打包成單一 Setup 安裝程式"""
+    print("\n[3/4] 正在製作安裝包 (股票交易分析系統_Setup.exe)...")
     installer_script = create_installer_script()
-    
+
     cmd = get_pyinstaller_cmd() + [
         "--noconfirm",
         "--clean",
         "--onefile",
         "--name=股票交易分析系統_Setup",
         f"--icon={ICON_PATH}",
-        f"--add-data={portable_exe};.",
+        f"--workpath={BUILD_DIR / 'setup'}",
+        f"--specpath={BUILD_DIR}",
+        f"--add-data={app_dir};app",
         f"--add-data={ICON_PATH};.",
         f"--add-data={ROOT / '.env.example'};.",
         str(installer_script),
@@ -319,13 +418,17 @@ def main():
     print("開始構建 股票交易分析系統 Windows 執行檔與安裝包")
     print("=" * 60)
     
-    portable_exe = build_portable_exe()
-    installer_exe = build_installer_exe(portable_exe)
-    
-    print("\n[3/3] 全部打包構建完成！")
+    check_desktop_deps()
+    web_dir = build_web_dir()
+    portable_exe = build_portable_exe(web_dir)
+    app_dir = build_app_folder(web_dir)
+    installer_exe = build_installer_exe(app_dir)
+
+    print("\n[4/4] 全部打包構建完成！")
     print("=" * 60)
     print(f"1. 免安裝綠色單一執行檔: {portable_exe}")
-    print(f"2. 一鍵安裝程式 Setup:   {installer_exe}")
+    print(f"2. 資料夾版（可直接執行）: {app_dir / (APP_NAME + '.exe')}")
+    print(f"3. 一鍵安裝程式 Setup:     {installer_exe}")
     print("=" * 60)
 
 

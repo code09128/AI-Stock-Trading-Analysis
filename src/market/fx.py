@@ -6,7 +6,7 @@
 """
 
 from datetime import datetime
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable
 import json
 import threading
 import time

@@ -176,6 +176,7 @@
     const [width, setWidth] = useState(800);
     const boxRef = useRef(null);
     const reqId = useRef(0); // 只採用最後一次請求的結果（切換範圍時，慢回來的舊請求不能蓋掉新畫面）
+    const busyRef = useRef(false); // 定時更新：上一輪還沒回來就跳過
     useEffect(() => writeLS('tw_us_heatmap_pool_v1', pool), [pool]);
     useEffect(() => writeLS('tw_us_heatmap_size_v1', sizeChoice), [sizeChoice]);
 
@@ -192,6 +193,7 @@
 
     const load = useCallback(async () => {
       const id = ++reqId.current;
+      busyRef.current = true;
       setLoading(true);
       try {
         const res = await fetch('/api/heatmap', {
@@ -207,7 +209,10 @@
       } catch (e) {
         if (id === reqId.current) setErr(e.message);
       } finally {
-        if (id === reqId.current) setLoading(false);
+        if (id === reqId.current) {
+          setLoading(false);
+          busyRef.current = false;
+        }
       }
       // eslint-disable-next-line
     }, [pool, mineKey, holdKey]);
@@ -216,7 +221,7 @@
       setData(null);
       load();
       const t = setInterval(() => {
-        if (!document.hidden) load();
+        if (!document.hidden && !busyRef.current) load(); // 上一輪還沒回來就跳過
       }, 20000);
       return () => clearInterval(t);
     }, [load]);

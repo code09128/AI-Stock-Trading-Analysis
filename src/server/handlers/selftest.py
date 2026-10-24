@@ -5,8 +5,6 @@ from typing import Dict, Any
 from src.news.news_strategy import NewsStrategyAnalyzer
 from src.market.bar import Bar
 from src.backtest.backtest_engine import BacktestEngine
-from src.technical.indicators import calculate_ma
-from src.market.market_rules import align_tw_tick
 from src.portfolio.portfolio_risk import PortfolioRiskManager
 
 

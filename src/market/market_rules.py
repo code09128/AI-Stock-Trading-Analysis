@@ -6,7 +6,7 @@
 3. 價格波動限制與合規檢查
 """
 
-from typing import Dict, Any
+from typing import Dict
 import math
 
 def get_tw_tick_size(price: float) -> float:

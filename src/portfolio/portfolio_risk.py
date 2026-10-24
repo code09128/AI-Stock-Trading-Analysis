@@ -8,7 +8,7 @@
 5. 大盤下跌 20% 情境壓力測試與微台指 / 反向 ETF 避險試算
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 import math
 import re
 
@@ -125,13 +125,6 @@ class PortfolioRiskManager:
             return 0.0
 
         return round(cov / math.sqrt(var_a * var_b), 3)
-
-    def calculate_portfolio_beta(self, weights: List[float], betas: List[float]) -> float:
-        """計算投資組合加權 Beta 值"""
-        if len(weights) != len(betas) or len(weights) == 0:
-            return 1.0
-        weighted_beta = sum(w * b for w, b in zip(weights, betas))
-        return round(weighted_beta, 2)
 
     def simulate_crash_20pct(
         self,

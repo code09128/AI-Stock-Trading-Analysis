@@ -27,6 +27,9 @@ function App() {
   const [countdownSec, setCountdownSec] = useState(5);
   const [priceFlash, setPriceFlash] = useState(null); // "UP" | "DOWN" | null
   const prevPriceRef = useRef(null);
+  const m1ReqRef = useRef(0);
+  const m1Busy = useRef(false);
+  const toastTimer = useRef(null);
 
   // 新聞判斷 狀態
   const [m2Form, setM2Form] = useState(NEWS_PRESETS[0]);
@@ -74,7 +77,8 @@ function App() {
       /失敗|錯誤|無法|⚠️/.test(String(msg)) ? 'error' : 'info',
     );
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 2600);
+    clearTimeout(toastTimer.current); // 連續提示時，上一則的計時器不能提早關掉這一則
+    toastTimer.current = setTimeout(() => setToastMsg(null), 2600);
   }, []);
 
   // 技術分析 分析與盤中動態跳動
@@ -82,6 +86,8 @@ function App() {
     async ({ overrideTicker, overrideTimeframe, useAI = true } = {}) => {
       const targetTicker = overrideTicker || m1Ticker;
       const targetTf = overrideTimeframe || m1Timeframe;
+      const reqId = ++m1ReqRef.current; // 快速換股／換日週線時，慢回來的舊請求不能蓋掉新的
+      m1Busy.current = true;
       setM1Loading(true);
       try {
         const res = await fetch('/api/mod1/analyze', {
@@ -101,6 +107,7 @@ function App() {
           }),
         });
         const data = await res.json();
+        if (reqId !== m1ReqRef.current) return;
         if (data.error) throw new Error(data.error);
         const newClose = data?.snapshot?.latest_close;
         if (prevPriceRef.current !== null && newClose !== undefined) {
@@ -115,16 +122,22 @@ function App() {
         if (newClose !== undefined) prevPriceRef.current = newClose;
         setM1Data(data);
       } catch (err) {
-        showToast(`技術分析 分析失敗: ${err.message}`);
+        if (reqId === m1ReqRef.current) showToast(`技術分析 分析失敗: ${err.message}`);
       } finally {
-        setM1Loading(false);
+        if (reqId === m1ReqRef.current) {
+          setM1Loading(false);
+          m1Busy.current = false;
+        }
       }
     },
     [m1Ticker, m1BarCount, m1Timeframe, showToast],
   );
 
-  // 初始載入
+  // 初始載入：只跑一次（runMod1 會隨代號改變而換新，依賴它的話每次換股都會再分析一次 2330）
+  const initRef = useRef(false);
   useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
     fetch('/api/health')
       .then((r) => r.json())
       .then((d) => setHealth(d))
@@ -139,7 +152,7 @@ function App() {
     const timer = setInterval(() => {
       setCountdownSec((prev) => {
         if (prev <= 1) {
-          runMod1({ simulateTick: false });
+          if (!m1Busy.current) runMod1({ simulateTick: false }); // 上一次還沒回來就跳過這一輪
           return 5;
         }
         return prev - 1;
@@ -425,7 +438,10 @@ function App() {
     });
     setM4Holdings(DEFAULT_HOLDINGS);
     setM4CashPct(20.0);
+    // 換回範例時來源也要改成範例：否則仍標成「我的紀錄」，下次診斷會把範例寫回蓋掉真正的交易紀錄
+    setM5Source('sample');
     setM5Entries(DEFAULT_JOURNAL);
+    setM5Data(null);
     setIsResetModalOpen(false);
     runMod1({ overrideTicker: '2330.TW', overrideBarCount: 30, simulateTick: false });
     showToast('已將各分頁參數重置為出廠預設值');
@@ -969,6 +985,7 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 // 先把 data/userdata.json 的資料讀回瀏覽器再顯示畫面（最多等 4 秒，伺服器沒回應也照常開啟）
-Promise.race([window.TA.userDataReady, new Promise((r) => setTimeout(r, 4000))]).finally(() =>
-  root.render(<App />),
-);
+Promise.race([window.TA.userDataReady, new Promise((r) => setTimeout(r, 4000))]).finally(() => {
+  window.TA.appRendered = true; // sync_store 靠這個判斷資料是不是在畫面顯示之後才到
+  root.render(<App />);
+});

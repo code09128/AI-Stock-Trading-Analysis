@@ -15,6 +15,7 @@
 import json
 import sys
 import time
+import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Dict
 
@@ -86,6 +87,13 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    def handle(self) -> None:
+        # 頁面關掉、程式結束時連線被中斷（BrokenPipe／Reset／Aborted）：不是錯誤，不印一堆 Traceback
+        try:
+            super().handle()
+        except ConnectionError:
+            pass
+
     def _send_json(self, data: Dict[str, Any], status: int = 200) -> None:
         raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
@@ -103,9 +111,15 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = self.path.split("?")[0]
-        handler = next((fn for prefix, fn in GET_ROUTES.items() if path.startswith(prefix)), None)
+        handler = GET_ROUTES.get(path)  # 完整比對：前綴比對會讓 /api/env_xxx 之類的路徑誤中
         if handler:
-            self._send_json(handler())
+            try:
+                self._send_json(handler())
+            except ConnectionError:
+                return
+            except Exception as err:  # 回 JSON 錯誤，不要直接斷線（前端才看得到原因）
+                traceback.print_exc()
+                self._send_json({"error": str(err)}, status=500)
             return
         super().do_GET()
 
@@ -176,7 +190,7 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
                         final_res = ev
                     self.wfile.write((json.dumps(ev, ensure_ascii=False) + "\n").encode("utf-8"))
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except ConnectionError:
                 return
             self._log_request(200, started, payload, final_res)
             return
@@ -190,6 +204,8 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
             res = self._with_usage(handler(payload))
             self._send_json(res, status=200)
             self._log_request(200, started, payload, res)
+        except ConnectionError:  # 回應送到一半前端已斷線：不要當成 500 錯誤記錄
+            return
         except ValueError as err:  # 輸入有誤：回 400 與可直接顯示給使用者的訊息
             self._send_json(self._with_usage({"error": str(err)}), status=400)
             self._log_request(400, started, payload, {"error": str(err)})
@@ -198,13 +214,18 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
             self._log_request(500, started, payload, {"error": str(err)})
 
 
-def run_server(port: int = 8088) -> None:
+def make_server(port: int = 8088) -> ThreadingHTTPServer:
+    """載入 .env 並綁定埠號（綁定失敗會丟 OSError）；呼叫端自己決定在哪個執行緒 serve_forever。"""
     loaded = load_env_file()
     if loaded:
         print(f"已從 .env 載入：{', '.join(loaded)}")  # 只印鍵名，不印值
     server = ThreadingHTTPServer(("127.0.0.1", port), TradingAPIRequestHandler)
     print(f"Trading AI Full-Stack Server listening on http://localhost:{port}")
-    server.serve_forever()
+    return server
+
+
+def run_server(port: int = 8088) -> None:
+    make_server(port).serve_forever()
 
 
 if __name__ == "__main__":

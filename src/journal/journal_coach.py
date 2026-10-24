@@ -8,7 +8,7 @@
 5. 制定 3 條具體量化個人化交易守則
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dataclasses import dataclass
 
 @dataclass

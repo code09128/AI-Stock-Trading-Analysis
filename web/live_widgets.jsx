@@ -207,11 +207,18 @@
     const [rows, setRows] = useState([]);
     useEffect(() => {
       let stop = false;
-      const load = () =>
+      let busy = false; // 上一輪還沒回來就跳過
+      const load = () => {
+        if (busy) return;
+        busy = true;
         fetch('/api/indices')
           .then((r) => r.json())
           .then((d) => !stop && setRows(d.indices || []))
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            busy = false;
+          });
+      };
       load();
       const id = setInterval(load, 30000);
       return () => {

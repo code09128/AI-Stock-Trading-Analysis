@@ -31,7 +31,6 @@ from src.market import quote_provider as qp
 from src.market.data_adapter import DualMarketDataAdapter
 
 TW_TZ = zone("Asia/Taipei")
-US_TZ = zone("America/New_York")
 SEC_UA_DEFAULT = "local-trading-research-tool/1.0"
 TTL = 300
 _LOCK = threading.Lock()
@@ -286,13 +285,15 @@ def fetch_news(symbol: str, name: str = "") -> Dict[str, Any]:
                  lambda: _google_site(["wantgoo.com", "statementdog.com"], kw, "TW", "分析專欄", [name, code])),
                 ("證交所重大訊息", lambda: _twse_material(code))]
     else:
-        jobs = [("Google News", lambda: _google_news(code, "US")),
-                ("Yahoo Finance 新聞", lambda: _yahoo_news(code, "US")),
-                ("鉅亨網", lambda: _cnyes_news(code, code, "US")),
+        # 傳實際市場（港、日、英…）：發布時間才會換成該市場的當地時間，盤前盤後判斷才對
+        jobs = [("Google News", lambda: _google_news(code, market)),
+                ("Yahoo Finance 新聞", lambda: _yahoo_news(n["symbol"], market)),
+                ("鉅亨網", lambda: _cnyes_news(code, code, market)),
                 ("分析專欄（TradingView、ETFdb）",
-                 lambda: _google_site(["tradingview.com", "etfdb.com"], code, "US", "分析專欄",
-                                      [code, (name.split() or [""])[0]])),
-                ("SEC 8-K", lambda: _sec_8k(code))]
+                 lambda: _google_site(["tradingview.com", "etfdb.com"], code, market, "分析專欄",
+                                      [code, (name.split() or [""])[0]]))]
+        if market == "US":
+            jobs.append(("SEC 8-K", lambda: _sec_8k(code)))
     items: List[Dict[str, Any]] = []
     errors: List[str] = []
     sources: List[str] = []

@@ -41,6 +41,41 @@ class UserDataTests(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         user_data.data_file().write_text("{壞掉", encoding="utf-8")
         self.assertEqual(user_data.load()["values"]["tw_us_journal_v1"], "[1]")
+        self.assertTrue(list(user_data.data_dir().glob("userdata.corrupt-*.json")))  # 損毀檔先留一份
+
+    def test_locked_file_never_saved_from_old_backup(self):
+        """存檔前讀不到正本（防毒／OneDrive 鎖住）：要報錯讓前端稍後重送，不能拿舊備份當底蓋掉今天的修改。"""
+        user_data.save({"tw_us_journal_v1": "[1]"})
+        user_data.save({"tw_us_journal_v1": "[1,2]"})  # 備份裡是 [1]，正本是 [1,2]
+        real = Path.read_text
+
+        def locked(self, *a, **k):
+            if self.name == "userdata.json":
+                raise PermissionError(13, "被其他程式使用中")
+            return real(self, *a, **k)
+
+        with patch.object(Path, "read_text", locked), patch.object(user_data.time, "sleep"):
+            with self.assertRaises(ValueError):
+                user_data.save({"tw_us_cash_v1": '"1"'})
+        values = user_data.load()["values"]
+        self.assertEqual(values["tw_us_journal_v1"], "[1,2]")  # 今天的修改還在
+        self.assertNotIn("tw_us_cash_v1", values)
+
+    def test_transient_lock_is_retried(self):
+        user_data.save({"tw_us_journal_v1": "[1]"})
+        real, calls = Path.read_text, {"n": 0}
+
+        def flaky(self, *a, **k):
+            if self.name == "userdata.json" and calls["n"] < 2:
+                calls["n"] += 1
+                raise PermissionError(13, "暫時鎖住")
+            return real(self, *a, **k)
+
+        with patch.object(Path, "read_text", flaky), patch.object(user_data.time, "sleep"):
+            user_data.save({"tw_us_cash_v1": '"1"'})
+        values = user_data.load()["values"]
+        self.assertEqual(values["tw_us_journal_v1"], "[1]")
+        self.assertEqual(values["tw_us_cash_v1"], '"1"')
 
 
 if __name__ == "__main__":

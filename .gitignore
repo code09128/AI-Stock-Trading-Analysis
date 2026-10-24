@@ -16,3 +16,6 @@ logs/
 
 # 使用者資料（持股、交易紀錄、AI 設定…）與每日備份，不要提交
 data/
+
+# build_app.py 打包時自動產生
+installer_main.py

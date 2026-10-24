@@ -1,0 +1,4 @@
+# 只有「桌面視窗版」（desktop.py）與打包（build_app.py）需要；伺服器本身只用 Python 標準函式庫。
+# 安裝：pip install -r requirements-desktop.txt
+pywebview>=6.0
+pyinstaller>=6.0

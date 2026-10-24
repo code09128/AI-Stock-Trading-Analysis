@@ -24,18 +24,19 @@
   const isTW = (sym) => /^\d{4,6}[A-Z]?(\.TW|\.TWO)?$/i.test(sym);
   // 多市場：與後端 src/markets.py 同一份後綴規則（沒有後綴＝美股）
   const MARKET_INFO = {
-    TW: { name: '台股', currency: 'TWD', flag: '' },
-    US: { name: '美股', currency: 'USD', flag: '' },
-    HK: { name: '港股', currency: 'HKD', flag: '', suffixes: ['.HK'] },
-    JP: { name: '日股', currency: 'JPY', flag: '', suffixes: ['.T'] },
-    KR: { name: '韓股', currency: 'KRW', flag: '', suffixes: ['.KS', '.KQ'] },
-    CN: { name: '陸股', currency: 'CNY', flag: '', suffixes: ['.SS', '.SZ'] },
-    UK: { name: '英股', currency: 'GBp', flag: '', suffixes: ['.L'] },
-    DE: { name: '德股', currency: 'EUR', flag: '', suffixes: ['.DE', '.F'] },
-    CA: { name: '加股', currency: 'CAD', flag: '', suffixes: ['.TO', '.V'] },
-    AU: { name: '澳股', currency: 'AUD', flag: '', suffixes: ['.AX'] },
-    SG: { name: '星股', currency: 'SGD', flag: '', suffixes: ['.SI'] },
+    TW: { name: '台股', currency: 'TWD', flag: '', tz: 'Asia/Taipei' },
+    US: { name: '美股', currency: 'USD', flag: '', tz: 'America/New_York' },
+    HK: { name: '港股', currency: 'HKD', flag: '', suffixes: ['.HK'], tz: 'Asia/Hong_Kong' },
+    JP: { name: '日股', currency: 'JPY', flag: '', suffixes: ['.T'], tz: 'Asia/Tokyo' },
+    KR: { name: '韓股', currency: 'KRW', flag: '', suffixes: ['.KS', '.KQ'], tz: 'Asia/Seoul' },
+    CN: { name: '陸股', currency: 'CNY', flag: '', suffixes: ['.SS', '.SZ'], tz: 'Asia/Shanghai' },
+    UK: { name: '英股', currency: 'GBp', flag: '', suffixes: ['.L'], tz: 'Europe/London' },
+    DE: { name: '德股', currency: 'EUR', flag: '', suffixes: ['.DE', '.F'], tz: 'Europe/Berlin' },
+    CA: { name: '加股', currency: 'CAD', flag: '', suffixes: ['.TO', '.V'], tz: 'America/Toronto' },
+    AU: { name: '澳股', currency: 'AUD', flag: '', suffixes: ['.AX'], tz: 'Australia/Sydney' },
+    SG: { name: '星股', currency: 'SGD', flag: '', suffixes: ['.SI'], tz: 'Asia/Singapore' },
   };
+  const tzOf = (sym) => MARKET_INFO[marketOf(sym)]?.tz || 'America/New_York';
   const marketOf = (sym) => {
     const s = String(sym || '').toUpperCase();
     if (isTW(s)) return 'TW';
@@ -208,6 +209,7 @@
     isTW,
     MARKET_INFO,
     marketOf,
+    tzOf,
     marketName,
     currencyOf,
     normSym,

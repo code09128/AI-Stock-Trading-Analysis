@@ -76,11 +76,14 @@
   // 模擬下單「成交」：買進 → 加到持股（加權平均成本）；賣出 → 從持股扣除並寫一筆已平倉交易到交易紀錄
   const fillOrder = ({ symbol, side, price, shares, fees = 0 }) => {
     const { holdings, journal } = load();
-    const h = holdings.find((x) => x.symbol === symbol);
+    // 代號寫法可能不同（2330 / 2330.TW，CSV 匯入或舊資料）：跟其他頁一樣用 baseCode(normSym()) 比對
+    const key = (s) => window.TA.baseCode(window.TA.normSym(s));
+    const same = (x) => key(x.symbol) === key(symbol);
+    const h = holdings.find(same);
     if (side === 'BUY') {
       const next = h
         ? holdings.map((x) =>
-            x.symbol === symbol
+            same(x)
               ? {
                   ...x,
                   shares: x.shares + shares,
@@ -109,6 +112,8 @@
         ok: false,
         msg: `賣出失敗：持股中沒有足夠的 ${symbol}（目前 ${h ? h.shares : 0} 股）`,
       };
+    // 損益先算好（成本已含買進手續費，這裡再扣賣出的手續費與稅），交易檢討表格不必等診斷跑完才有數字
+    const netPnl = Math.round(((price - h.cost) * shares - fees) * 100) / 100;
     const trade = {
       trade_id: nextTradeId(journal),
       symbol,
@@ -118,15 +123,17 @@
       exit_price: price,
       shares,
       fees,
+      net_pnl: netPnl,
+      return_pct: h.cost ? Math.round((netPnl / (h.cost * shares)) * 10000) / 100 : 0,
       emotion_score: 0,
       source: '模擬下單成交',
     };
     setJournal([...journal, trade]);
     setHoldings(
       h.shares - shares < EPS
-        ? holdings.filter((x) => x.symbol !== symbol)
+        ? holdings.filter((x) => !same(x))
         : holdings.map((x) =>
-            x.symbol === symbol ? { ...x, shares: Math.round((x.shares - shares) * 1e6) / 1e6 } : x,
+            same(x) ? { ...x, shares: Math.round((x.shares - shares) * 1e6) / 1e6 } : x,
           ),
     );
     return { ok: true, msg: `已成交賣出 ${symbol} ${shares} 股，已寫入交易紀錄 ${trade.trade_id}` };

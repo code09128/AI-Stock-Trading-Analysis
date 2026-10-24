@@ -7,6 +7,8 @@
 """
 
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +27,7 @@ FIELDS: List[Dict[str, Any]] = [
      "help": "抓美股 SEC 8-K 公告時，SEC 要求附上聯絡方式，例如「王小明 you@example.com」。不填用預設值。"},
 ]
 ALLOWED = {f["key"] for f in FIELDS}
+_LOCK = threading.Lock()
 HEADER = "# 由「設定 → 金鑰與資料額度」自動產生，也可以手動編輯（每行 KEY=VALUE）\n"
 
 
@@ -78,6 +81,11 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
     if not updates:
         return status()
 
+    with _LOCK:  # 兩個存檔請求同時進來時不要互相蓋掉
+        return _save_locked(updates)
+
+
+def _save_locked(updates: Dict[str, str]) -> Dict[str, Any]:
     path = env_path()
     lines = path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else [HEADER.rstrip("\n")]
     done = set()
@@ -93,7 +101,16 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
     out += [f"{k}={v}" for k, v in updates.items() if k not in done and v]
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
+        tmp = path.with_name(".env.tmp")  # 先寫暫存檔再置換：寫到一半當機也不會弄壞原本的 .env
+        tmp.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
+        for i in range(5):  # 防毒軟體／同步軟體可能短暫鎖住檔案，稍等再試
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if i == 4:
+                    raise
+                time.sleep(0.1 * (i + 1))
     except OSError as e:  # 例如免安裝版放在 Program Files 這類沒有寫入權限的資料夾
         raise ValueError(f"無法寫入 {path}（{e.strerror or e}）。請把程式放到有寫入權限的資料夾，或改用安裝版。") from None
 

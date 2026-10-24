@@ -2,7 +2,7 @@
   // 我的持股：市值／成本／損益總覽（可切即時價或昨收、填帳戶現金／投資金額／已領配息以便和銀行對帳）、
   // 持股清單（分析、帶入賣出委託、移除）、新增與 CSV 匯入、送去組合風控
   const { useState, useEffect, useMemo } = React;
-  const { readLS, writeLS, isTW, currencyOf, normSym, baseCode, fmt, colorOf, Tip } = window.TA;
+  const { readLS, writeLS, currencyOf, normSym, baseCode, fmt, colorOf, Tip } = window.TA;
 
   function HoldingsPanel({
     holdings,
@@ -16,10 +16,18 @@
     onSell,
     say,
     onSendHoldings,
+    prefill,
+    onPrefillUsed,
   }) {
     const { Row } = window.TA;
     const setHoldings = window.TA.setHoldings;
     const [holdForm, setHoldForm] = useState({ symbol: '', shares: '', cost: '' });
+    // 看盤頁按「加入我的持股」：帶入代號與現價，用過就清掉，下次切回這個分頁不會再蓋掉表單
+    useEffect(() => {
+      if (!prefill) return;
+      setHoldForm(prefill);
+      onPrefillUsed?.();
+    }, [prefill, onPrefillUsed]);
     const [csvText, setCsvText] = useState('');
     // 持股損益：市值可選「即時價」或「昨收」（銀行／券商的參考市值多用昨收，方便對帳）
     const [holdBasis, setHoldBasis] = useState(() => readLS('tw_us_hold_basis_v1', 'live'));
@@ -346,7 +354,7 @@
               onSendHoldings(
                 holdRows.map((r) => ({
                   symbol: r.symbol,
-                  market: isTW(r.symbol) ? 'TW' : 'US',
+                  market: window.TA.marketOf(r.symbol),
                   shares: r.shares,
                   price: r.price ?? r.cost,
                 })),

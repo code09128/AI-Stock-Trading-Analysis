@@ -20,23 +20,69 @@
 
 各頁之間會互相連動（看盤 → 技術分析 → 回測；熱力圖 → 查新聞；模擬成交 → 交易檢討 → 規則回到下單），程式內「說明」頁有完整流程圖與新手導覽。
 
-## 快速開始
+## 使用方式
 
-**需求**：Windows／macOS／Linux、Python 3.10 以上、網路連線。**不需要 `pip install`**（只用 Python 標準函式庫）。
+有三種用法，依你的需要選一種：
+
+| 用法 | 適合誰 | 需要安裝 | 怎麼開 |
+|---|---|---|---|
+| **A. 直接執行（打包好的程式）** | 只想使用、不改程式 | 不用 Python | 執行安裝精靈，或雙擊免安裝 exe |
+| **B. 從原始碼執行** | 想用最新程式碼 | Python 3.10 以上 | `start.bat`（瀏覽器）或 `python desktop.py`（桌面視窗） |
+| **C. 開發模式** | 要修改程式 | Python 3.10 以上；選配 Node.js | `start.bat`，改完重新整理或重開 |
+
+服務只綁定 127.0.0.1，只有本機能連線。
+
+### A. 直接執行（打包好的程式）
+
+先打包（見下方「打包」），或拿別人打包好的檔案：
+
+- **安裝版（建議，開啟最快）**：執行 `股票交易分析系統_Setup.exe` → 桌面出現捷徑 → 雙擊開啟。重新安裝會沿用原本的資料與金鑰。
+- **免安裝版**：雙擊 `股票交易分析系統.exe`，可以放隨身碟帶著走。每次開啟要先解壓縮，會先顯示啟動圖（約 2 秒）。
+
+兩種都是獨立視窗、沒有黑色主控台，啟動時有載入動畫；**關閉視窗就是結束程式**（關閉前會先把最後的修改存檔）。電腦需要 Microsoft Edge WebView2 Runtime（Windows 11 與更新過的 Windows 10 內建）。資料存在程式所在資料夾的 `data/`。
+
+### B. 從原始碼執行
 
 ```bash
 git clone https://github.com/code09128/AI-Stock-Trading-Analysis.git
 cd AI-Stock-Trading-Analysis
-python run.py
 ```
 
-會自動打開 http://127.0.0.1:8088/ 。Windows 也可以直接雙擊 `start.bat`。停止：關閉視窗或按 Ctrl+C。
+- **瀏覽器版（不用安裝任何套件）**：
 
-- 換埠號：`python run.py 8090`
-- 只開伺服器不開瀏覽器：`python -m src.server.api_server [埠號]`
-- 服務只綁定 127.0.0.1，只有本機能連線。
+  ```bash
+  python run.py
+  ```
 
-> 更新程式碼（`git pull`）後，**要重新啟動** `start.bat`／`run.py` 後端才會載入新功能；只重新整理瀏覽器會出現「Route not found」。
+  Windows 也可以雙擊 `start.bat`。會自動用瀏覽器打開 http://127.0.0.1:8088/ ；停止：關閉黑色視窗或按 Ctrl+C。換埠號：`python run.py 8090`。
+
+- **桌面視窗版**（Windows，跟打包版一樣的獨立視窗）：
+
+  ```bash
+  pip install -r requirements-desktop.txt
+  python desktop.py
+  ```
+
+  8088 已經有本程式在跑（例如 `start.bat` 開著）時，桌面版會直接連過去，不會開第二個伺服器。
+
+### C. 開發模式
+
+用 `start.bat`（或 `python run.py`）開瀏覽器版開發，最方便：
+
+- **改前端（`web/*.jsx`、`index.html`）**：存檔後在瀏覽器按 F5 就生效（原始碼版由瀏覽器即時轉譯 JSX，不用編譯）。
+- **改後端（`src/*.py`）**：要**關掉黑色視窗、重新開 `start.bat`** 才會載入；只重新整理會看到舊功能或「Route not found」。
+- **只開伺服器、不開瀏覽器**：`python -m src.server.api_server [埠號]`
+- **測試與檢查**：
+
+  ```bash
+  python -m unittest discover tests     # 後端測試（全部離線，不連網）
+  npx @biomejs/biome lint web           # 前端語法／無障礙檢查（需要 Node.js）
+  ```
+
+- **離線範例資料**：設環境變數 `TRADING_ALLOW_SAMPLE=1`，查不到行情時改用範例資料（預設會直接報錯）。
+- 開發時的資料一樣存在專案的 `data/userdata.json`；要測試又不想動到自己的資料，可以把專案複製一份到別的資料夾再開。
+
+> `git pull` 更新程式碼後，同樣要重開 `start.bat`／`desktop.py`。
 
 ## 設定（全部選填）
 
@@ -56,7 +102,8 @@ python run.py
 |---|---|
 | 持股、交易紀錄、交易規則、自選股、提醒、AI 設定 | `data/userdata.json`（修改後 0.5 秒自動存檔；每天備份到 `data/backups/`，保留 14 天） |
 | 金鑰 | `.env` |
-| 操作紀錄 | `logs/`（每日一檔，保留 30 天） |
+| 操作紀錄 | `logs/`（每日一檔，保留 30 天）；桌面版的程式輸出與錯誤在 `logs/desktop.log` |
+| 桌面版視窗的瀏覽器資料（偏好設定、快取） | `data/webview/` |
 | 報價、日 K、新聞 | 只暫存在記憶體，不存檔 |
 
 `data/`、`.env`、`logs/` 都已排除在 Git 之外，不會上傳。搬移程式資料夾時連同這些一起搬，資料就不會遺失。
@@ -72,27 +119,43 @@ python run.py
 
 每次請求的網址、狀態與耗時都會記錄，看盤頁「看資料怎麼抓的」可以查看。公開資料源可能改版、限流或延遲。
 
-## 打包成 Windows 執行檔／安裝包
+## 打包成 Windows 程式
+
+**第一次**先安裝打包工具（只要做一次）：
 
 ```bash
-python build_app.py      # 或雙擊 package.bat
+pip install -r requirements-desktop.txt
 ```
 
-需要 `pip install pyinstaller`；有 Node.js 時會先用 esbuild 把前端 JSX 預先編譯（沒有就自動用原始碼版）。產出：
-
-- `dist/股票交易分析系統.exe`：免安裝單一執行檔
-- `dist/股票交易分析系統_Setup.exe`：安裝精靈（安裝到「執行安裝程式所在資料夾\股票交易分析系統」，建立桌面與開始功能表捷徑；重新安裝會帶過上次的 `data/` 與 `.env`，解除安裝會保留它們）
-
-## 開發
+之後每次打包：雙擊 `package.bat`，或執行：
 
 ```bash
-python -m unittest discover tests     # 後端測試（全部離線，不連網）
-npx @biomejs/biome lint web           # 前端語法／無障礙檢查
+python build_app.py
 ```
 
-開發時可設環境變數 `TRADING_ALLOW_SAMPLE=1`：查不到行情時改用離線範例資料（預設會直接報錯）。
+約 3～5 分鐘。有 Node.js 時會先用 esbuild 把前端 JSX 預先編譯（開啟更快；沒有就自動用原始碼版）；有 Pillow 時會產生啟動圖。產出在 `dist/`：
 
-### 程式碼架構
+| 檔案 | 說明 | 啟動速度（實測） |
+|---|---|---|
+| `股票交易分析系統_Setup.exe` | 安裝精靈：裝到「執行安裝程式所在資料夾\股票交易分析系統」，建立桌面與開始功能表捷徑；重新安裝會帶過上次的 `data/` 與 `.env`，解除安裝會保留它們 | 視窗約 1 秒、可操作約 1.5 秒 |
+| `股票交易分析系統.exe` | 免安裝單一執行檔，每次啟動先解壓縮（期間顯示啟動圖） | 視窗約 2 秒、可操作約 2.5 秒 |
+| `股票交易分析系統/` | 資料夾版（exe＋`_internal`），安裝精靈裝的就是這個；也可以整個資料夾直接複製使用 | 同安裝版 |
+
+> 每台電腦第一次開啟會多 2～3 秒（WebView2 建立設定檔）。打包版沒有黑色主控台，程式輸出與錯誤寫在程式資料夾的 `logs/desktop.log`，出問題時看這個檔案。
+>
+> 打包前請先關掉正在執行的打包版程式，否則檔案被佔用會打包失敗。
+
+## 程式碼架構
+
+根目錄的入口與工具：
+
+| 檔案 | 用途 |
+|---|---|
+| `run.py`／`start.bat` | 瀏覽器版：開伺服器並用預設瀏覽器打開 |
+| `desktop.py` | 桌面視窗版：WebView2 獨立視窗＋載入動畫，伺服器在背景執行（打包版的入口） |
+| `build_app.py`／`package.bat` | 打包成單一 exe、資料夾版與安裝精靈 |
+| `build_web.py` | 前端預先編譯（esbuild），打包時自動呼叫 |
+| `requirements-desktop.txt` | 桌面版與打包需要的套件（pywebview、PyInstaller） |
 
 後端 `src/`（純 Python 標準函式庫）依功能分資料夾：
 

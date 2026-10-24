@@ -8,7 +8,7 @@
 5. 提取前 5 大虧損交易背景
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dataclasses import dataclass
 from src.market.bar import Bar
 from src.market.market_rules import calculate_friction_cost

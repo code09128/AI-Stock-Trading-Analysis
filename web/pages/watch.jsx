@@ -36,6 +36,7 @@
   function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
     const [watch, setWatch] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH));
     const [listTab, setListTab] = useState('watch');
+    const [holdPrefill, setHoldPrefill] = useState(null); // 「加入我的持股」要預填到持股面板表單的內容
     const [etfs, setEtfs] = useState({ etfs: [], pending_yields: 0, sources: {} });
     const [etfSort, setEtfSort] = useState('hot');
     const [selected, setSelected] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH)[0] || '2330');
@@ -138,10 +139,15 @@
     }, [watch, etfs, selected, holdings, alerts]);
     const symKey = allSyms.join(',');
 
+    const quotesBusy = useRef(false);
     const loadQuotes = useCallback(async () => {
+      // 上一輪還沒回來（網路或資料來源卡住）就跳過這一輪，請求不會越疊越多
+      if (quotesBusy.current) return;
+      quotesBusy.current = true;
       // 台股與美股分開請求：台股很快就能先顯示，美股（Yahoo 較慢）晚點補上
       const syms = symKey.split(',').filter(Boolean);
       const groups = [syms.filter(isTW), syms.filter((x) => !isTW(x))].filter((g) => g.length);
+      try {
       await Promise.all(
         groups.map(async (group) => {
           try {
@@ -167,6 +173,9 @@
           }
         }),
       );
+      } finally {
+        quotesBusy.current = false;
+      }
     }, [symKey]);
 
     useEffect(() => {
@@ -235,8 +244,11 @@
     // 選中標的的當日分時圖，每 30 秒更新
     useEffect(() => {
       let stop = false;
+      let busy = false; // 上一輪還沒回來就跳過
       setIntraday(null);
-      const load = () =>
+      const load = () => {
+        if (busy) return;
+        busy = true;
         fetch('/api/intraday', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -244,7 +256,11 @@
         })
           .then((r) => r.json())
           .then((d) => !stop && setIntraday(d))
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            busy = false;
+          });
+      };
       load();
       const id = setInterval(load, 30000);
       return () => {
@@ -326,9 +342,13 @@
     const tw = isTW(selected);
     const etfFlag = /^00/.test(baseCode(selected));
 
-    // 選股時把價格預設帶入下單面板
+    // 選股時把價格預設帶入下單面板：每檔只帶一次，之後報價跳動不會蓋掉使用者手動輸入的限價
+    const pricedFor = useRef(null);
     useEffect(() => {
-      if (q?.price) setOrder((o) => ({ ...o, price: String(q.price) }));
+      if (q?.price && pricedFor.current !== selected) {
+        pricedFor.current = selected;
+        setOrder((o) => ({ ...o, price: String(q.price) }));
+      }
     }, [q?.price, selected]); // eslint-disable-line
 
     const addSymbol = () => {
@@ -463,7 +483,7 @@
         id: Date.now(),
         symbol: selected,
         name: q?.name || selected,
-        market: tw ? 'TW' : 'US',
+        market: window.TA.marketOf(selected),
         side: order.side,
         price: priceNum,
         qty: qtyNum,
@@ -803,6 +823,8 @@
                   }}
                   say={say}
                   onSendHoldings={onSendHoldings}
+                  prefill={holdPrefill}
+                  onPrefillUsed={() => setHoldPrefill(null)}
                 />
               )}
               {listTab === 'watch' && watch.length > 0 && watchRows.length === 0 && (
@@ -932,7 +954,7 @@
                   <IntradayChart
                     data={intraday}
                     lastTrade={q?.quote_time}
-                    tz={tw ? 'Asia/Taipei' : 'America/New_York'}
+                    tz={window.TA.tzOf(selected)}
                   />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <RangeBar label="今日區間（低—高）" low={q.low} high={q.high} value={q.price} />
@@ -1083,11 +1105,7 @@
                     <button
                       type="button"
                       onClick={() => {
-                        setHoldForm({
-                          symbol: baseCode(selected),
-                          shares: '',
-                          cost: String(q.price ?? ''),
-                        });
+                        setHoldPrefill({ symbol: baseCode(selected), shares: '', cost: String(q.price ?? '') });
                         setListTab('hold');
                       }}
                       className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"

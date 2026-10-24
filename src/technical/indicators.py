@@ -4,8 +4,7 @@
 包含：MA(5/20/60/200), RSI(14), MACD(12,26,9), ATR(14), 與 Swing High/Low 波段支撐壓力識別。
 """
 
-from typing import List, Dict, Tuple, Optional
-import math
+from typing import List, Dict, Optional
 
 def calculate_ma(prices: List[float], period: int) -> List[Optional[float]]:
     """

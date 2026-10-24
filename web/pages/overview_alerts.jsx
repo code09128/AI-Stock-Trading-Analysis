@@ -142,8 +142,19 @@
           }
         }
       };
-      check();
-      const id = setInterval(check, QUOTE_EVERY_MS);
+      // 上一輪還沒做完（網路卡住）就跳過，避免請求越疊越多
+      let busy = false;
+      const guarded = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          await check();
+        } finally {
+          busy = false;
+        }
+      };
+      guarded();
+      const id = setInterval(guarded, QUOTE_EVERY_MS);
       return () => {
         stop = true;
         clearInterval(id);

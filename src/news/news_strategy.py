@@ -7,7 +7,7 @@
 4. 強制驗證「判斷失效條件 (Invalidation Criteria)」具備量化價位或事件
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime, time
 import re
 

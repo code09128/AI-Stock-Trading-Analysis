@@ -49,7 +49,13 @@ def historical_stress(holdings: List[Dict[str, Any]], usd_twd: float) -> Dict[st
     # 從所有持股都有資料的第一天開始
     start = max(min(series[str(h["symbol"])]) for h in ok)
     dates = [d for d in dates if d >= start]
+    # 起點當天某市場可能休市（例如台股＋美股）：先帶入各檔在起點以前最近一天的收盤，不然那幾天市值會被當成 0
     last: Dict[str, float] = {}
+    for h in ok:
+        s = str(h["symbol"])
+        before = [d for d in series[s] if d <= start]
+        if before:
+            last[s] = series[s][max(before)]
     values: List[float] = []
     for d in dates:
         total = 0.0

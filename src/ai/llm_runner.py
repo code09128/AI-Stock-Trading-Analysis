@@ -211,11 +211,11 @@ class LLMRunner:
             f"系統識別支撐位：{snapshot['support_levels']}\n"
             f"系統識別壓力位：{snapshot['resistance_levels']}\n"
             + LLMRunner._score_prompt_line(snapshot)
-            + f"支撐位都低於現價、壓力位都高於現價。價位規則：BUY／HOLD 需 stop_loss_price < entry_price < take_profit_target；"
-            f"SELL 表示賣出／減碼，entry_price＝賣出價、stop_loss_price＝空方失效價（高於賣出價）、take_profit_target＝下檔目標（低於賣出價）。\n"
-            f"請回傳 JSON 格式包含：action ('BUY'|'HOLD'|'SELL'), support_levels (陣列), resistance_levels (陣列), "
-            f"entry_price, stop_loss_price, take_profit_target, order_type（台股只能 'ROD'|'IOC'|'FOK'；美股 'LIMIT'|'MARKET'）, "
-            f"invalidation_criteria（必須含具體價位數字的失效條件）, step_by_step_rationale（字串陣列，逐步理由，只能引用上面給的數字）。"
+            + "支撐位都低於現價、壓力位都高於現價。價位規則：BUY／HOLD 需 stop_loss_price < entry_price < take_profit_target；"
+            "SELL 表示賣出／減碼，entry_price＝賣出價、stop_loss_price＝空方失效價（高於賣出價）、take_profit_target＝下檔目標（低於賣出價）。\n"
+            "請回傳 JSON 格式包含：action ('BUY'|'HOLD'|'SELL'), support_levels (陣列), resistance_levels (陣列), "
+            "entry_price, stop_loss_price, take_profit_target, order_type（台股只能 'ROD'|'IOC'|'FOK'；美股 'LIMIT'|'MARKET'）, "
+            "invalidation_criteria（必須含具體價位數字的失效條件）, step_by_step_rationale（字串陣列，逐步理由，只能引用上面給的數字）。"
         )
 
     @staticmethod

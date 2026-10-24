@@ -172,8 +172,6 @@
     },
   ];
 
-  const BAR_ZOOM_OPTIONS = [20, 30, 45, 60];
-
   // 範例只放新聞標題；事件前漲跌與停損條件留空，由系統用真實日 K 與支撐壓力計算（不要寫死價位，價位會過時）
   const NEWS_PRESETS = [
     {
@@ -299,7 +297,6 @@
   window.TA = Object.assign(window.TA || {}, {
     NAV_ITEMS,
     NavIcon,
-    BAR_ZOOM_OPTIONS,
     NEWS_PRESETS,
     DEFAULT_HOLDINGS,
     DEFAULT_JOURNAL,

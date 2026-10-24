@@ -248,7 +248,7 @@ def get_quotes(symbols: List[str], names: Dict[str, str]) -> List[Dict[str, Any]
             if old and old["data"].get("is_live"):
                 q = dict(old["data"])
                 q["stale_warning"] = f"最新一次抓取失敗，沿用 {q.get('fetched_at')} 的資料"
-        out.append(q)
+        out.append(dict(q) if q else q)  # 回傳複本：呼叫端修改欄位時不會改到快取
     return out
 
 
