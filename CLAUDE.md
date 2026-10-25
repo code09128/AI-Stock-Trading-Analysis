@@ -8,11 +8,11 @@
 - 動用使用者的 AI API 金鑰（會產生費用）前要先取得同意。
 
 ## Git
-- GitHub：`code09128/AI-Stock-Trading-Analysis`（公開），本機 `master` 追蹤 `origin/main`。
+- GitHub：`code09128/AI-Stock-Trading-Analysis`（公開），本機 `main` 追蹤 `origin/main`。
 - commit 或 push 前一定要先問使用者。
 
 ## 開發慣例
-- 後端只用 Python 標準函式庫，不新增第三方套件。唯一例外：桌面視窗版 `desktop.py` 與打包用 pywebview／PyInstaller（`requirements-desktop.txt`），`run.py`／`start.bat` 不需要它們。
+- 後端只用 Python 標準函式庫，不新增第三方套件藥用要詢問使用者。唯一例外：桌面視窗版 `desktop.py` 與打包用 pywebview／PyInstaller（`requirements-desktop.txt`），`run.py`／`start.bat` 不需要它們。
 - 桌面版要測試時，寫一支暫存腳本把 `user_data.data_dir` 與 `desktop.get_app_dir` 指到 `%TEMP%\trading_sync_test` 再呼叫 `desktop.main()`（埠 8096），不要直接 `python desktop.py`（會用到真的 `data/`）。
 - 改完跑 `python -m unittest discover tests`（全部離線）；前端改動跑 `npx @biomejs/biome lint web`。
 - 批次檔（`.bat`）要用 CRLF 換行。
