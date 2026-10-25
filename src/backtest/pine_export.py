@@ -8,7 +8,7 @@ Pine 做不到、或資料不同的地方，都列在 notes 讓使用者知道�
 
 from typing import Any, Dict, List
 
-from src.backtest import strategies
+from src.backtest import custom_rules, strategies
 from src.market import markets
 from src.market.market_rules import tw_sell_tax_rate
 
@@ -66,6 +66,24 @@ buySig = gapNow and strategy.position_size == 0
 if buySig
     gapFloor := high[1]
 sellSig = not na(gapFloor) and close < gapFloor""",
+    # 下面三支：TradingView 拿不到台股法人、月營收、融資資料，只能用價量做「替代版」，結果會和本系統不同
+    "inst_buy": """// ⚠️ 替代版：TradingView 沒有台股三大法人資料，改用「連續 N 天收紅且量大於 20 日均量」近似法人連買
+upDay = close > close[1] and volume > ta.sma(volume, 20)
+downDay = close < close[1]
+buySig = math.sum(upDay ? 1 : 0, days) == days
+sellSig = math.sum(downDay ? 1 : 0, exit_days) == exit_days""",
+    "revenue_high": """// ⚠️ 替代版：TradingView 沒有台股月營收，改用「收盤創近 N 個月（約 N×21 根）新高」近似營收創新高
+exitMa = ta.sma(close, exit_ma)
+buySig = close >= ta.highest(close, lookback * 21)
+sellSig = close < exitMa
+plot(exitMa, "出場均線", color.blue)""",
+    "margin_down": """// ⚠️ 替代版：TradingView 沒有台股融資餘額，改用「N 天均量比前 N 天少 X% 且站上均線」近似籌碼沉澱
+basis = ta.sma(close, ma)
+volNow = ta.sma(volume, days)
+volChg = (volNow / volNow[days] - 1) * 100
+buySig = volChg <= -drop_pct and close > basis
+sellSig = close < basis or volChg >= drop_pct
+plot(basis, "均線", color.blue)""",
 }
 
 
@@ -145,7 +163,7 @@ strategy("{title}", overlay=true, initial_capital={_num(initial_capital)}, {qty_
 
 {chr(10).join(inputs)}
 
-{SIGNALS[strategy]}
+{custom_rules.to_pine(meta["custom_def"], params) if meta.get("custom_def") else SIGNALS[strategy]}
 
 // 大盤濾網：大盤收盤在 N 日均線之下不開新倉（只擋進場，已持有照原規則出場）
 idxClose = request.security(filterIndex, "D", close, lookahead=barmerge.lookahead_off)
@@ -194,6 +212,13 @@ plotshape(buySig and flat and not marketOk, "被濾網擋下", shape.xcross, loc
     notes.append("成交量 0（暫停交易）的日子本系統不成交、訊號順延；Pine 沒有這條規則。")
     if sl or tr:
         notes.append("進場當天：本系統從進場那根就檢查停損；Pine 的停損單在進場後下一根才生效，偶爾會差一筆。")
+    if meta.get("custom_def"):
+        notes.append("自訂策略的 MACD 柱狀體用本系統的定義 2×(DIF−訊號線)，和 TradingView 內建柱狀體差 2 倍；只和 0 比較時結果相同。")
+    if meta.get("needs") and not meta.get("custom_def"):
+        notes.insert(0, "⚠️ 這是替代版：TradingView 拿不到台股三大法人、月營收、融資餘額，"
+                        "程式碼改用價格與成交量近似，買賣點與績效都會和本系統明顯不同，只適合當作參考。")
+    if meta.get("custom_def") and custom_rules.uses_inst(meta["custom_def"]):
+        notes.insert(0, "⚠️ 這個自訂策略用到三大法人買賣超，TradingView 取不到，含它的條件在 Pine 裡永遠不成立。")
     if strategy == "kd_cross":
         notes.append("KD 用的是台灣常用公式（⅔ 前值＋⅓ 新值），不是 TradingView 內建的 Stoch，兩者數值不同。")
     return {"code": code, "notes": notes, "tv_symbol": tv_symbol(symbol), "commission": com,

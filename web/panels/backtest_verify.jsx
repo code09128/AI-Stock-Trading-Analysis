@@ -131,6 +131,7 @@
     return {
       target_asset: d.symbol,
       strategy,
+      custom: d.custom_def || undefined,
       params,
       initial_capital,
       commission_discount,

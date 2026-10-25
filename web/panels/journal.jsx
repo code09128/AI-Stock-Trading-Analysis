@@ -390,6 +390,15 @@
                   >
                     <div className="font-bold text-emerald-300">
                       規則 {rule.rule_number}：{rule.rule_name}
+                      {rule.source && (
+                        <span
+                          className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-normal ${
+                            rule.source === 'AI' ? 'bg-sky-500/20 text-sky-200' : 'bg-slate-700/60 text-slate-300'
+                          }`}
+                        >
+                          {rule.source}
+                        </span>
+                      )}
                       <span className="ml-2 text-[10px] font-normal text-emerald-400/80">
                         針對：{rule.target_bias}
                       </span>
@@ -397,6 +406,9 @@
                         <span className="block text-[10px] font-normal text-emerald-400/70">
                           依據：{rule.evidence}
                         </span>
+                      )}
+                      {rule.formula && (
+                        <span className="block text-[10px] font-normal text-sky-300/80">算法：{rule.formula}</span>
                       )}
                     </div>
                     <div>

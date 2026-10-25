@@ -16,6 +16,7 @@
   // 表單裡跟「標的」無關的策略與風控設定（今日訊號、Pine 匯出共用）
   const strategyPayload = (f) => ({
     strategy: f.strategy,
+    custom: f.custom,
     params: f.params,
     initial_capital: f.initial_capital,
     commission_discount: f.commission_discount,

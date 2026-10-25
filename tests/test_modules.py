@@ -127,7 +127,22 @@ class TestAdvancedModules(unittest.TestCase):
         # 3. 制定 3 條具體個人守則
         rules = coach.formulate_personalized_rules(biases)
         self.assertEqual(len(rules), 3)
-        self.assertIn("5.0%", rules[0]["condition"]) # 強制硬停損條件具備具體數字
+        self.assertRegex(rules[0]["condition"], r"\d+(\.\d+)?%")  # 停損門檻是依資料算出的具體數字
+        self.assertTrue(all(r.get("formula") for r in rules))  # 每條都說明怎麼算出來
+
+    def test_dynamic_rules_follow_data(self):
+        """停損線跟著平均獲利變；沒有賣飛紀錄時第 3 條改成賺賠比規則。"""
+        def coach(win_pct):
+            return JournalCoach([
+                JournalEntry("#1", "A", "", "", 100, 100 * (1 + win_pct / 100), 1000, 1000 * win_pct, win_pct, 3, 0),
+                JournalEntry("#2", "A", "", "", 100, 90, 1000, -10000, -10.0, 3, 0),
+            ])
+        r_small = coach(3.0).formulate_personalized_rules([])
+        r_big = coach(6.0).formulate_personalized_rules([])
+        self.assertIn("3.0%", r_small[0]["condition"])
+        self.assertIn("6.0%", r_big[0]["condition"])
+        self.assertIn("1.5", r_small[2]["formula"])  # 沒有賣飛 → 賺賠比規則
+        self.assertIn("#2", r_small[0]["evidence"])
 
 if __name__ == "__main__":
     unittest.main()

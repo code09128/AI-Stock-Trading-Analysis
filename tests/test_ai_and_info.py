@@ -177,3 +177,74 @@ class JournalEnrichTests(unittest.TestCase):
         self.assertEqual(out["return_pct"], 10.0)
         self.assertEqual(out["holding_days"], 9)
         self.assertEqual(out["high_5d_after_exit"], 115)  # 08-11~08-15 最高價
+
+
+class TestExtractJson(unittest.TestCase):
+    def test_extra_text_after_json(self):
+        from src.ai.ai_text import extract_json
+        raw = '{"rules": [{"rule_name": "a"}]}\n\n補充說明：{這是多寫的字}'
+        self.assertEqual(extract_json(raw, "rules")["rules"][0]["rule_name"], "a")
+
+    def test_think_block_and_fences_and_duplicates(self):
+        from src.ai.ai_text import extract_json
+        raw = '<think>先想一下 {x: 1}</think>```json\n{"note": 1}\n{"rules": []}\n```'
+        self.assertEqual(extract_json(raw, "rules"), {"rules": []})
+        self.assertEqual(extract_json(raw), {"note": 1})
+
+    def test_no_json(self):
+        from src.ai.ai_text import extract_json
+        with self.assertRaises(ValueError):
+            extract_json("沒有 JSON {壞掉")
+
+    def test_json_call_retries_once(self):
+        from unittest import mock
+        replies = iter(['{"rules": [1]} 多寫 {', '{"rules": [1, 2, 3]}'])
+        with mock.patch.object(ai_client, "complete", lambda *a, **k: next(replies)):
+            self.assertEqual(ai_client._json_call({"type": "gemini"}, "x", want="rules")["rules"], [1])
+        replies2 = iter(['亂寫', '{"rules": [1, 2, 3]}'])
+        with mock.patch.object(ai_client, "complete", lambda *a, **k: next(replies2)):
+            self.assertEqual(len(ai_client._json_call({"type": "gemini"}, "x", want="rules")["rules"]), 3)
+
+
+class AiRulePartialTests(unittest.TestCase):
+    GOOD = {"rule_name": "停損", "condition": "單筆虧損達 5% 時", "action": "立即全數賣出"}
+    BAD_NUM = {"rule_name": "不加碼", "condition": "停損後下一筆", "action": "不得加碼下單"}
+    BAD_CODE = {"rule_name": "鎖利", "condition": "獲利達 3% 時", "action": "執行 partial_close 鎖利"}
+
+    def test_retry_fixes_bad_rule(self):
+        from unittest.mock import patch
+        replies = iter([{"rules": [self.GOOD, self.BAD_NUM, dict(self.GOOD, rule_name="二")]},
+                        {"rules": [dict(self.GOOD, rule_name="補")]}])
+        with patch.object(ai_client, "_json_call", lambda *a, **k: next(replies)):
+            out = ai_client.personal_rules({"type": "openai_compatible", "model": "m"}, {}, [])
+        self.assertEqual([r["source"] for r in out], ["AI", "AI", "AI"])
+        self.assertEqual(out[2]["rule_name"], "補")
+
+    def test_fallback_fills_when_retry_still_bad(self):
+        from unittest.mock import patch
+        fb = [{"rule_number": 1, "rule_name": "範本A", "condition": "x 5%", "action": "賣出"},
+              {"rule_number": 2, "rule_name": "範本B", "condition": "y 2 筆", "action": "停止"}]
+        with patch.object(ai_client, "_json_call", lambda *a, **k: {"rules": [self.GOOD, self.BAD_CODE, self.BAD_NUM]}):
+            out = ai_client.personal_rules({"type": "openai_compatible", "model": "m"}, {}, [], fallback=fb)
+        self.assertEqual([r["source"] for r in out], ["AI", "依資料計算", "依資料計算"])
+        self.assertEqual([r["rule_number"] for r in out], [1, 2, 3])
+
+    def test_problem_messages(self):
+        self.assertIn("數字", ai_client._rule_problem(self.BAD_NUM))
+        self.assertIn("partial_close", ai_client._rule_problem(self.BAD_CODE))
+        self.assertIsNone(ai_client._rule_problem(self.GOOD))
+
+    def test_broken_outer_json_is_reported_not_inner_object(self):
+        from src.ai.ai_text import extract_json
+        cut = '{"rules": [{"rule_name": "a", "condition": "5%", "action": "賣出"}, {"rule_name": "b", "cond'
+        with self.assertRaises(ValueError) as cm:
+            extract_json(cut, "rules")
+        self.assertIn("截斷", str(cm.exception))
+        self.assertEqual(extract_json('[{"rule_name": "a"}]', "rules"), {"rules": [{"rule_name": "a"}]})
+
+    def test_compact_json_never_cuts_mid_string(self):
+        import json as _j
+        big = {"detected_biases": [{"ids": list(range(3000))}]}
+        text = ai_client._compact_json(big, 2000)
+        self.assertLessEqual(len(text), 2000)
+        _j.loads(text)  # 仍是合法 JSON

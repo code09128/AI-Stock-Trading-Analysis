@@ -3,6 +3,8 @@
   const MODES = [
     ['backtest', '📊 單檔回測'],
     ['signals', '📡 今日訊號'],
+    ['portfolio', '🧩 策略組合'],
+    ['custom', '🧱 自訂策略'],
     ['pine', '📤 匯出 Pine v5'],
   ];
   const TABS = [
@@ -11,6 +13,7 @@
     ['verify', '環境與前後段'],
     ['optimize', '參數最佳化'],
     ['mc', '蒙地卡羅'],
+    ['replay', '▶ K 線回放'],
   ];
 
   function Mod3Panel({ ctx }) {
@@ -34,6 +37,10 @@
       MonteCarloPanel,
       SignalsPanel,
       PineExportPanel,
+      ReplayPanel,
+      PortfolioPanel,
+      CustomPanel,
+      customStrategies,
       printReport,
     } = window.TA.BT;
     const [catalog, setCatalog] = React.useState(window.TA._btCatalog || null);
@@ -59,12 +66,25 @@
     }, [catalog]);
 
     const cat = catalog || FALLBACK_CATALOG;
-    const strat = cat.strategies.find((s) => s.key === m3Form.strategy) || cat.strategies[0];
+    // 內建策略＋使用者存的自訂策略（自訂的帶著條件定義 custom，送到後端時一起帶過去）
+    const allStrategies = [...cat.strategies, ...customStrategies()];
+    const strat = allStrategies.find((s) => s.key === m3Form.strategy) || cat.strategies[0];
     const params = { ...Object.fromEntries(strat.params.map((p) => [p.key, p.default])), ...(m3Form.params || {}) };
     const set = (patch) => setM3Form({ ...m3Form, ...patch });
     const pickStrategy = (key) => {
-      const s = cat.strategies.find((x) => x.key === key);
-      set({ strategy: key, params: Object.fromEntries(s.params.map((p) => [p.key, p.default])) });
+      const s = allStrategies.find((x) => x.key === key);
+      set({ strategy: key, custom: s.custom, params: Object.fromEntries(s.params.map((p) => [p.key, p.default])) });
+    };
+    // 自訂策略頁「拿去回測」
+    const applyCustom = (c) => {
+      set({
+        strategy: `custom:${c.id}`,
+        custom: c.definition,
+        params: Object.fromEntries(c.params.map((p) => [p.key, p.default])),
+      });
+      setView('backtest');
+      document.querySelector('[data-tour="mod3-root"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.TA.toast?.(`已選用自訂策略「${c.name}」，按「執行回測」開始`);
     };
     // 熱力圖點一格：把那組參數帶回表單（策略改回這次回測用的），捲回上方讓使用者確認後再執行
     const pickParams = (p) => {
@@ -130,9 +150,10 @@
                 onChange={(e) => pickStrategy(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
               >
-                {cat.strategies.map((s) => (
+                {allStrategies.map((s) => (
                   <option key={s.key} value={s.key}>
-                    {s.label}（{s.kind}）
+                    {s.label}（{s.kind}
+                    {s.tw_only ? '・僅台股' : ''}）
                   </option>
                 ))}
               </select>
@@ -292,6 +313,8 @@
 
         {view === 'signals' && <SignalsPanel m3Form={m3Form} onBacktest={backtestSymbol} />}
         {view === 'pine' && <PineExportPanel m3Form={m3Form} m3Data={m3Data} />}
+        {view === 'portfolio' && <PortfolioPanel m3Form={m3Form} />}
+        {view === 'custom' && <CustomPanel onUse={applyCustom} />}
 
         {view === 'backtest' && (m3Data?.strategy_warnings || []).map((w) => (
           <div key={w} className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
@@ -299,6 +322,11 @@
           </div>
         ))}
 
+        {view === 'backtest' && (m3Data?.data_notes || []).length > 0 && (
+          <div className="text-[11px] text-slate-500 px-1">
+            籌碼／營收資料（FinMind，存在本機 data/finmind_cache，之後只補抓最新幾天）：{m3Data.data_notes.join('；')}
+          </div>
+        )}
         {view === 'backtest' && r && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -433,6 +461,7 @@
             )}
             {tab === 'optimize' && <OptimizePanel m3Data={m3Data} onPick={pickParams} />}
             {tab === 'mc' && <MonteCarloPanel m3Data={m3Data} />}
+            {tab === 'replay' && <ReplayPanel key={`${m3Data.symbol}|${m3Data.period}|${m3Data.strategy?.key}|${m3Data.strategy?.params_text}`} m3Data={m3Data} />}
           </div>
         )}
         {view === 'backtest' && r && (

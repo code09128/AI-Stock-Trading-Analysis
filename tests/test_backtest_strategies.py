@@ -31,9 +31,29 @@ def flat(prices):
     return [Bar(f"2026-01-{i + 1:02d}", open=p, high=p, low=p, close=p, volume=1000) for i, p in enumerate(prices)]
 
 
+def with_extra(bars):
+    """替籌碼／月營收策略補上確定性的假資料（法人買賣超、融資餘額、月營收）。"""
+    from src.backtest import chip_features
+    n = len(bars)
+    inst = [round(1000 * math.sin(i / 3)) for i in range(n)]
+    margin = [50000 * (1 + 0.2 * math.sin(i / 15)) for i in range(n)]
+    first = date.fromisoformat(bars[0].timestamp)
+    rows = []
+    for k in range(-14, n // 20 + 2):
+        y, m = divmod(first.year * 12 + first.month - 1 + k, 12)
+        rows.append({"revenue_year": y, "revenue_month": m + 1, "revenue": 1e9 * (1 + 0.3 * math.sin(k / 2) + k * 0.01),
+                     "date": f"{y}-{m + 1:02d}-01"})
+    return strategies.BarSeries(bars, {"inst": inst, "margin": margin,
+                                       "revenue": chip_features.align_revenue(bars, rows)})
+
+
+def cut(series, k):
+    return strategies.BarSeries(series[:k], {name: v[:k] for name, v in series.extra.items()})
+
+
 class TestStrategies(unittest.TestCase):
     def test_every_strategy_has_valid_defaults_and_signals(self):
-        bars = make_bars(wave(400, drift=0.05))
+        bars = with_extra(make_bars(wave(400, drift=0.05)))
         for key in strategies.STRATEGIES:
             params = strategies.resolve_params(key, {})
             sig = strategies.signals(key, bars, params)
@@ -42,11 +62,15 @@ class TestStrategies(unittest.TestCase):
 
     def test_no_lookahead_prefix_invariance(self):
         """只用到當天為止的資料：截掉後面的 K 棒，前面的訊號不能改變。"""
-        bars = make_bars(wave(300, amp=15, period=30))
+        bars = with_extra(make_bars(wave(300, amp=15, period=30)))
         for key in strategies.STRATEGIES:
             p = strategies.resolve_params(key, {})
             full = strategies.signals(key, bars, p)
-            self.assertEqual(strategies.signals(key, bars[:200], p), full[:200], key)
+            self.assertEqual(strategies.signals(key, cut(bars, 200), p), full[:200], key)
+
+    def test_chip_strategies_require_data(self):
+        with self.assertRaises(ValueError):
+            strategies.signals("inst_buy", make_bars(wave(50)), strategies.resolve_params("inst_buy", {}))
 
     def test_kd_values_range(self):
         kd = strategies.kd_values(make_bars(wave(100)), 9)

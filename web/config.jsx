@@ -126,7 +126,7 @@
       group: '分析',
       short: '策略回測',
       title: '策略回測',
-      subtitle: '6 種技術策略回測與驗證、今日訊號掃描、匯出 Pine v5 與 PDF 報告',
+      subtitle: '9 種策略＋自訂條件積木、驗證、今日訊號、策略組合、K 線回放、Pine 與 PDF',
       icon: 'backtest',
     },
     {

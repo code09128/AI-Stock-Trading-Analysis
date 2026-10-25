@@ -4,9 +4,11 @@ AI 回答的文字整理與數字核對 (ai_text.py)
 - to_traditional／clean_math：小模型夾帶的簡體字轉繁體、LaTeX 數學語法轉成可讀符號
 - _clean：送給 AI 前拿掉佔篇幅又沒幫助的欄位（NOISY_KEYS）
 - _strip_opener：拿掉制式開場白
+- extract_json：從模型回覆中取出第一個完整的 JSON 物件（略過思考過程、程式碼框、JSON 後面多寫的文字）
 """
 
-from typing import Any, List
+from typing import Any, Dict, List, Optional
+import json
 import re
 
 _NUM = re.compile(r"-?\d[\d,]*\.?\d*")
@@ -55,7 +57,7 @@ def unverified_numbers(answer: str, data_text: str) -> List[str]:
 
 
 NOISY_KEYS = {"level_candidates", "MACD_hist", "trades", "equity_curve", "endpoint", "ai_usage",
-              "daily_equity", "mdd_hist", "final_hist"}
+              "daily_equity", "mdd_hist", "final_hist", "chart_bars"}
 
 
 # 小模型常夾帶簡體字：只轉換繁體中文裡不會用到的簡體字（「后、里、干」這類繁簡共用的字不動）
@@ -118,3 +120,41 @@ def _strip_opener(text: str) -> str:
             while lines and not lines[0].strip():
                 lines.pop(0)
     return "\n".join(lines)
+
+
+_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+_FENCE = re.compile(r"```(?:json)?", re.I)
+
+
+def extract_json(raw: str, want: Optional[str] = None) -> Dict[str, Any]:
+    """模型常在 JSON 前後多寫字、重複輸出兩次 JSON，或先輸出 <think> 思考過程（裡面也可能有大括號）。
+    依序從每個「{」嘗試解析一個完整物件，回傳第一個含 want 欄位的（沒指定就回第一個）；都失敗才拋 ValueError。"""
+    text = _FENCE.sub("", _THINK.sub("", raw or ""))
+    dec = json.JSONDecoder()
+    first: Optional[Dict[str, Any]] = None
+    last_err: Optional[str] = None
+    for m in re.finditer(r"\{", text):
+        try:
+            obj, _end = dec.raw_decode(text, m.start())
+        except json.JSONDecodeError as e:
+            last_err = str(e)
+            continue
+        if isinstance(obj, dict):
+            if want is None or want in obj:
+                return obj
+            first = first or obj
+    if want is not None:
+        # 外層 JSON 壞掉（常見：回覆太長被截斷）時，不要誤拿裡面的某個小物件當結果；
+        # 但模型直接回一個陣列（[{...}, {...}]）時，視為 want 的內容
+        for m in re.finditer(r"\[", text):
+            try:
+                arr, _end = dec.raw_decode(text, m.start())
+            except json.JSONDecodeError:
+                continue
+            if isinstance(arr, list) and arr and all(isinstance(x, dict) for x in arr):
+                return {want: arr}
+        raise ValueError(f"模型回覆的 JSON 不完整或缺少「{want}」（可能回覆太長被截斷）"
+                         + (f"：{last_err}" if last_err else ""))
+    if first is not None:
+        return first
+    raise ValueError("模型回覆中找不到完整的 JSON" + (f"（{last_err}）" if last_err else ""))

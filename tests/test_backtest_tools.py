@@ -102,3 +102,44 @@ class TestPine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPortfolioMix(unittest.TestCase):
+    @staticmethod
+    def leg(label, rets, start="2025-01-01"):
+        from datetime import date, timedelta
+        d, eq, out = date.fromisoformat(start), 100.0, []
+        for r in [0.0] + rets:
+            eq *= 1 + r
+            out.append({"date": d.isoformat(), "equity": eq})
+            d += timedelta(days=1)
+        return {"label": label, "daily": out}
+
+    def test_equal_weight_and_correlation(self):
+        from src.backtest import portfolio_mix as pm
+        a = [0.01 if i % 2 else -0.01 for i in range(100)]
+        b = [-x for x in a]  # 完全反向
+        out = pm.analyze([self.leg("A", a), self.leg("B", b)])
+        self.assertEqual(out["correlation"][0][1], -1.0)
+        eq = next(x for x in out["results"] if x["method"] == "equal")
+        self.assertLess(eq["annual_vol_pct"], out["lowest_single_vol_pct"])  # 互補 → 組合波動更低
+        self.assertEqual(eq["avg_weights"], [50.0, 50.0])
+
+    def test_weights_use_only_past_data(self):
+        """第一個月（還沒有歷史）三種方法都用等權重。"""
+        from src.backtest import portfolio_mix as pm
+        out = pm.analyze([self.leg("A", [0.02] * 90), self.leg("B", [0.001 * ((-1) ** i) for i in range(90)])])
+        for res in out["results"]:
+            self.assertEqual(res["curve"][0]["value"], 1.0)
+        self.assertEqual(pm._weights("inv_vol", [[0.01, 0.0]] * 5, 2), [0.5, 0.5])
+
+    def test_inv_vol_prefers_calm_leg(self):
+        from src.backtest import portfolio_mix as pm
+        hist = [[0.03 * ((-1) ** i), 0.003 * ((-1) ** i)] for i in range(60)]
+        w = pm._weights("inv_vol", hist, 2)
+        self.assertGreater(w[1], w[0])
+
+    def test_too_short(self):
+        from src.backtest import portfolio_mix as pm
+        with self.assertRaises(ValueError):
+            pm.analyze([self.leg("A", [0.01] * 10), self.leg("B", [0.01] * 10)])

@@ -152,6 +152,7 @@ class BacktestEngine:
 
         # 計算績效指標
         res = self._calculate_metrics(self._trades)
+        self.last_daily = daily  # 完整逐日淨值（策略組合用；回傳給前端的是抽樣後的 daily_equity）
         dd = self._drawdown(daily)
         res["max_drawdown"] = f"{dd['max_dd_pct']}%"
         res["max_drawdown_detail"] = dd
@@ -363,6 +364,7 @@ class BacktestEngine:
             "trades_detail": [
                 {
                     "trade_id": t.trade_id,
+                    "signal_date": t.signal_date,
                     "entry_date": t.entry_date,
                     "entry_price": t.entry_price,
                     "exit_date": t.exit_date,

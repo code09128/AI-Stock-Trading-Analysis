@@ -12,7 +12,7 @@ AI 只能「解讀」程式算好的數字：explain() 會檢查回答中出現�
 提示詞（研究主管口吻、各頁任務）在 ai_prompts.py；數字核對、簡轉繁、LaTeX 清理在 ai_text.py。
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import json
 import os
 import re
@@ -23,7 +23,7 @@ import urllib.request
 
 # 提示詞與文字整理分在兩個檔案；這裡重新匯出，舊的 ai_client.XXX 用法照樣可用
 from src.ai.ai_prompts import JSON_GUARD, MODULE_TASKS, SYSTEM_GUARD
-from src.ai.ai_text import _clean, _strip_opener, to_traditional, unverified_numbers
+from src.ai.ai_text import _clean, _strip_opener, extract_json, to_traditional, unverified_numbers
 
 DEFAULTS = {
     "gemini": "https://generativelanguage.googleapis.com",
@@ -671,15 +671,17 @@ def detect_local() -> List[Dict[str, Any]]:
 
 
 # ---------- 讓 AI 真的「產出」結果（不只是解讀）的兩個功能 ----------
-def _json_call(profile: Dict[str, Any], user: str, timeout: int = 150) -> Dict[str, Any]:
-    raw = complete(profile, JSON_GUARD + "只輸出 JSON，不要任何其他文字。", user, json_mode=True, timeout=timeout)
-    start, end = raw.find("{"), raw.rfind("}")
-    if start < 0 or end <= start:
-        raise AIError("模型回覆中找不到 JSON")
-    try:
-        return json.loads(raw[start : end + 1])
-    except json.JSONDecodeError as e:
-        raise AIError(f"模型回覆的 JSON 格式錯誤：{e}") from None
+def _json_call(profile: Dict[str, Any], user: str, timeout: int = 150, want: Optional[str] = None) -> Dict[str, Any]:
+    """要求模型只回 JSON。解析失敗（小模型常在後面多寫字）時再問一次，第二次仍失敗才拋錯。"""
+    last = ""
+    for attempt in range(2):
+        hint = "" if attempt == 0 else "\n上一次的回覆不是合法 JSON。這次只輸出一個 JSON 物件，前後不要有任何文字。"
+        raw = complete(profile, JSON_GUARD + "只輸出 JSON，不要任何其他文字。", user + hint, json_mode=True, timeout=timeout)
+        try:
+            return extract_json(raw, want)
+        except ValueError as e:
+            last = str(e)
+    raise AIError(f"模型回覆的 JSON 格式錯誤：{last}")
 
 
 def classify_sentiment(profile: Dict[str, Any], headline: str, symbol: str) -> Dict[str, Any]:
@@ -687,36 +689,114 @@ def classify_sentiment(profile: Dict[str, Any], headline: str, symbol: str) -> D
     out = _json_call(profile, (
         f"判斷這則新聞對股票 {symbol} 的短期影響方向。\n新聞標題：{headline}\n"
         '回傳 JSON：{"sentiment": "POSITIVE"|"NEGATIVE"|"NEUTRAL", "reason": "一句話理由（繁體中文，不要編造數字）"}'
-    ), timeout=90)
+    ), timeout=90, want="sentiment")
     s = str(out.get("sentiment", "")).upper()
     if s not in ("POSITIVE", "NEGATIVE", "NEUTRAL"):
         raise AIError(f"情緒結果不合法：{s}")
     return {"sentiment": s, "reason": str(out.get("reason", ""))[:200]}
 
 
-def personal_rules(profile: Dict[str, Any], stats: Dict[str, Any], biases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """AI 依據『真實統計＋偵測到的偏誤』寫 3 條個人化交易規則，每條都必須有可量化門檻。"""
-    data = json.dumps({"statistics": stats, "detected_biases": biases}, ensure_ascii=False)[:8000]
-    out = _json_call(profile, (
-        "根據以下交易統計與偵測到的行為偏誤，寫出 3 條專屬這位交易者、可以立刻執行的規則。"
-        "每條的 condition 必須含明確數字門檻（百分比、筆數、時間或價位），action 必須是具體動作。"
+_CJK = re.compile(r"[一-鿿]")
+_CODE_LIKE = re.compile(r"&&|\|\||==|[A-Za-z]+_[A-Za-z]+")
+RULE_KEYS = ("rules", "personalized_rules", "personalized_3_rules", "規則")
+
+
+def _rule_problem(r: Any) -> Optional[str]:
+    """一條規則哪裡不合格（給 AI 看的修正說明）；合格回 None。"""
+    if not isinstance(r, dict):
+        return "格式不是物件"
+    cond, act = str(r.get("condition", "")), str(r.get("action", ""))
+    if not re.search(r"\d", cond):
+        return "condition 沒有數字門檻（要寫出百分比、筆數、天數或價位）"
+    if len(act) < 4:
+        return "action 太短，要寫具體動作"
+    if not _CJK.search(cond) or not _CJK.search(act):
+        return "要用中文寫"
+    bad = _CODE_LIKE.search(cond + act)
+    if bad:
+        return f"出現英文欄位名稱或程式寫法「{bad.group(0)}」，請改用中文描述"
+    return None
+
+
+def _compact_json(obj: Any, limit: int = 8000) -> str:
+    """資料太長時縮短過長的清單（只留前幾筆），不從中間切斷 JSON。"""
+    def shrink(o: Any, n: int) -> Any:
+        if isinstance(o, list):
+            return [shrink(x, n) for x in o[:n]]
+        if isinstance(o, dict):
+            return {k: shrink(v, n) for k, v in o.items()}
+        return o
+    text = json.dumps(obj, ensure_ascii=False)
+    for n in (20, 10, 5, 3):
+        if len(text) <= limit:
+            break
+        text = json.dumps(shrink(obj, n), ensure_ascii=False)
+    return text
+
+
+def personal_rules(profile: Dict[str, Any], stats: Dict[str, Any], biases: List[Dict[str, Any]],
+                   fallback: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """AI 依據『真實統計＋偵測到的偏誤』寫 3 條個人化交易規則，每條都必須有可量化門檻。
+    逐條檢查：合格的保留；不合格的把原因告訴 AI 重寫一次；仍不足 3 條時用 fallback（固定範本）補，
+    每條規則的 source 標示「AI」或「固定範本」。一條合格的都沒有（或沒有 fallback 又不足 3 條）才拋 AIError。"""
+    data = _compact_json({"statistics": stats, "detected_biases": biases})
+    base = (
+        "根據以下交易統計與偵測到的行為偏誤，寫出 3 條專屬這位交易者、可以立刻執行的規則。\n"
+        "要求：每條的 condition 必須含明確數字門檻（百分比、筆數、天數或價位）；action 必須是具體動作；"
+        "全部用繁體中文，不要出現英文欄位名稱或程式寫法（例如 avg_win_amount、partial_close、&&）；"
+        "condition 要寫成「下單前或持倉中當下就能判斷的情況」（例如虧損達幾 %、連續幾筆停損、股數超過幾倍），"
+        "不要用勝率、賣飛比例這類整體統計當條件；"
         "引用交易時請用資料中的交易編號（如 #03）。\n"
         f"【資料】{data}\n"
         '回傳 JSON：{"rules": [{"rule_name": "...", "condition": "...", "action": "...", '
         '"target_bias": "...", "evidence": "引用的交易編號或統計"}]}'
-    ))
-    rules = out.get("rules")
-    if not isinstance(rules, list) or len(rules) < 3:
-        raise AIError("AI 沒有產出 3 條規則")
+    )
+
+    def ask(prompt: str) -> List[Any]:
+        out = _json_call(profile, prompt, want="rules")
+        for k in RULE_KEYS:
+            if isinstance(out.get(k), list):
+                return out[k]
+        return []
+
+    good: List[Dict[str, Any]] = []
+    problems: List[str] = []
+    for r in ask(base):
+        why = _rule_problem(r)
+        if why:
+            problems.append(f"「{str(r.get('rule_name', '')) if isinstance(r, dict) else ''}」：{why}")
+        elif len(good) < 3:
+            good.append(r)
+    if len(good) < 3:  # 告訴 AI 哪裡不合格，請它補寫不足的條數
+        need = 3 - len(good)
+        retry = (base + f"\n\n你上一次的規則有問題：{'；'.join(problems) or '條數不足'}。"
+                 f"已採用的規則名稱：{'、'.join(str(g.get('rule_name', '')) for g in good) or '無'}。"
+                 f"請只再寫 {need} 條不重複的新規則，同樣只回 JSON。")
+        try:
+            seen = {(str(g.get("rule_name")), str(g.get("condition"))) for g in good}
+            for r in ask(retry):
+                key = (str(r.get("rule_name")), str(r.get("condition"))) if isinstance(r, dict) else None
+                if len(good) < 3 and not _rule_problem(r) and key not in seen:  # 重寫時常把舊規則再寫一次
+                    good.append(r)
+                    seen.add(key)
+        except AIError:
+            pass
+    if not good:
+        raise AIError("AI 產出的規則都不合格：" + ("；".join(problems[:3]) or "沒有產出規則"))
     clean = []
-    for i, r in enumerate(rules[:3], start=1):
-        cond, act = str(r.get("condition", "")), str(r.get("action", ""))
-        if not re.search(r"\d", cond) or len(act) < 4:
-            raise AIError(f"第 {i} 條規則缺少數字門檻或具體動作，未採用")
-        cjk = re.compile(r"[一-鿿]")
-        if not cjk.search(cond) or not cjk.search(act) or re.search(r"&&|\|\||==|[A-Za-z]+_[A-Za-z]+", cond + act):
-            raise AIError(f"第 {i} 條規則不是可讀的中文規則（像程式碼或亂碼），未採用")
+    for i, r in enumerate(good, start=1):
         clean.append({"rule_number": i, "rule_name": str(r.get("rule_name", f"規則 {i}"))[:40],
-                      "condition": cond[:200], "action": act[:200],
-                      "target_bias": str(r.get("target_bias", ""))[:60], "evidence": str(r.get("evidence", ""))[:120]})
+                      "condition": str(r["condition"])[:200], "action": str(r["action"])[:200],
+                      "target_bias": str(r.get("target_bias", ""))[:60], "evidence": str(r.get("evidence", ""))[:120],
+                      "source": "AI"})
+    if len(clean) < 3:
+        if not fallback:
+            raise AIError(f"AI 只產出 {len(clean)} 條合格規則")
+        used = {c["rule_name"] for c in clean}
+        for f in fallback:
+            if len(clean) >= 3:
+                break
+            if f.get("rule_name") not in used:
+                clean.append({**f, "rule_number": len(clean) + 1, "source": "依資料計算"})
     return clean
+

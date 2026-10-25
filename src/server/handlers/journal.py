@@ -82,13 +82,17 @@ class JournalHandlers:
         stats = coach.compute_statistics()
         biases = coach.detect_behavioral_biases()
         rules = coach.formulate_personalized_rules(biases)
-        rules_source = "固定規則範本（未使用 AI，不是依你的交易量身產生）"
+        rules_source = "依你的交易紀錄計算門檻的規則（未使用 AI；每條附計算方式）"
         if ai_client.is_enabled(payload.get("ai")):
             try:
-                rules = ai_client.personal_rules(payload["ai"], stats, biases)
+                ai_rules = ai_client.personal_rules(payload["ai"], stats, biases, fallback=rules)
+                n_ai = sum(1 for r in ai_rules if r.get("source") == "AI")
+                rules = ai_rules
                 rules_source = f"AI（{payload['ai'].get('model')}）依你的交易統計與偏誤產生，已檢查每條都有數字門檻"
+                if n_ai < len(ai_rules):
+                    rules_source += f"；其中 {len(ai_rules) - n_ai} 條 AI 寫得不合格（重寫一次仍不行），改用依交易紀錄計算的規則補上"
             except ai_client.AIError as e:
-                rules_source = f"AI 產生失敗，改用固定規則範本（{e}）"
+                rules_source = f"AI 產生失敗，改用依交易紀錄計算的規則（{e}）"
 
         return {
             "module": 5,

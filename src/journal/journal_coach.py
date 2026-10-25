@@ -111,31 +111,116 @@ class JournalCoach:
 
         return biases
 
+    @staticmethod
+    def _clamp(v: float, lo: float, hi: float) -> float:
+        return max(lo, min(hi, v))
+
+    def _losing_streak(self) -> int:
+        best = cur = 0
+        for e in self.entries:
+            cur = cur + 1 if e.pnl_amount < 0 else 0
+            best = max(best, cur)
+        return best
+
+    def _max_size_jump_after_loss(self) -> Dict[str, Any]:
+        """虧損後下一筆股數放大最多的倍數與交易編號。"""
+        best = {"ratio": 0.0, "trade_id": None}
+        for prev, curr in zip(self.entries, self.entries[1:]):
+            if prev.pnl_amount < 0 and prev.shares > 0:
+                r = curr.shares / prev.shares
+                if r > best["ratio"]:
+                    best = {"ratio": round(r, 2), "trade_id": curr.trade_id}
+        return best
+
     def formulate_personalized_rules(self, biases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        根據行為偏誤診斷結果，制定 3 條可執行的具體量化規則 (非空泛心態口號)。
+        依你的交易紀錄計算門檻，制定 3 條可執行的量化規則（不是寫死的數字）。每條附 formula 說明怎麼算出來的：
+        1. 停損線＝你的平均獲利幅度（讓平均虧損不大於平均獲利），限制在 2%～8%；並估算過去照這條停損可少虧多少
+        2. 連虧冷靜期＝依你最長連虧筆數（至少 2 筆、最多 3 筆）；停損後下一筆股數上限＝前一筆的 1 倍
+        3. 鎖利：有賣飛紀錄時，用你賣出時的平均獲利與出場後平均續漲幅度決定「先賣一半」與移動停利回落幅度；
+           沒有賣飛紀錄時，要求進場前目標獲利至少是停損的 1.5 倍
+        資料不足（沒有獲利或虧損紀錄）時用保守預設值，並在 formula 註明。
         """
+        wins = [e for e in self.entries if e.pnl_amount > 0]
+        losses = [e for e in self.entries if e.pnl_amount < 0]
+        avg_win_pct = sum(e.pnl_pct for e in wins) / len(wins) if wins else None
+        avg_loss_pct = sum(abs(e.pnl_pct) for e in losses) / len(losses) if losses else None
+
+        # 1. 停損線
+        if avg_win_pct is not None:
+            stop = round(self._clamp(avg_win_pct, 2.0, 8.0), 1)
+            stop_formula = (f"你的平均獲利 {avg_win_pct:.1f}%（{len(wins)} 筆）→ 停損設在同樣幅度，"
+                            f"讓平均虧損不大於平均獲利（限制在 2%～8%）")
+        else:
+            stop = 5.0
+            stop_formula = "還沒有獲利交易可參考，先用常見的 5%"
+        deep = [e for e in losses if abs(e.pnl_pct) > stop]
+        saved = sum(abs(e.pnl_amount) * (1 - stop / abs(e.pnl_pct)) for e in deep)
+        stop_evidence = (f"過去 {len(deep)} 筆虧損超過 {stop}%（{', '.join(e.trade_id for e in deep)}），"
+                         f"照這條停損約可少虧 {saved:,.0f} 元" if deep else
+                         f"目前虧損都在 {stop}% 以內" if losses else "目前沒有虧損交易")
+        if avg_loss_pct is not None:
+            stop_evidence += f"；你的平均虧損是 {avg_loss_pct:.1f}%"
+
+        # 2. 連虧冷靜期與部位上限
+        streak = self._losing_streak()
+        n_cool = int(self._clamp(streak, 2, 3))
+        jump = self._max_size_jump_after_loss()
+        cool_evidence = f"你最長連續虧損 {streak} 筆"
+        if jump["trade_id"] and jump["ratio"] > 1:
+            cool_evidence += f"；虧損後下一筆股數最多放大到 {jump['ratio']:g} 倍（{jump['trade_id']}）"
+
+        # 3. 鎖利
+        early = []
+        for e in wins:
+            if e.post_exit_5d_high > 0 and e.exit_price > 0:
+                rally = (e.post_exit_5d_high - e.exit_price) / e.exit_price * 100
+                if rally >= 5.0:
+                    early.append((e, rally))
+        if early:
+            sold = sum(e.pnl_pct for e, _ in early) / len(early)
+            rally = sum(r for _, r in early) / len(early)
+            half_at = round(self._clamp(sold, 1.0, 15.0), 1)
+            trail = round(self._clamp(rally / 2, 3.0, 10.0), 1)
+            rule3 = {
+                "rule_name": "先賣一半、剩下移動停利",
+                "condition": f"單筆帳面獲利達 +{half_at}% 時",
+                "action": f"只賣出一半，另一半改用移動停利：從持有期間最高價回落 {trail}% 才出場，不再一次全部賣掉。",
+                "target_bias": "過早賣飛（抱不住贏家）",
+                "formula": (f"你賣飛的 {len(early)} 筆平均在 +{sold:.1f}% 賣出、之後 5 天平均又漲 {rally:.1f}% → "
+                            f"在 +{half_at}% 先賣一半，移動停利取續漲幅度的一半 {trail}%（限制 3%～10%）"),
+                "evidence": "、".join(e.trade_id for e, _ in early),
+            }
+        else:
+            target = round(stop * 1.5, 1)
+            rule3 = {
+                "rule_name": "進場前先確認賺賠比",
+                "condition": f"進場前預估的目標獲利不到 +{target}%（停損 {stop}% 的 1.5 倍）時",
+                "action": "不進場；目標價至少要是停損距離的 1.5 倍才下單。",
+                "target_bias": "賺小賠大",
+                "formula": f"沒有賣飛紀錄 → 改要求賺賠比至少 1.5：停損 {stop}% × 1.5 = {target}%",
+                "evidence": f"目前賺賠比（平均獲利金額 ÷ 平均虧損金額）{self.compute_statistics().get('payoff_ratio')}",
+            }
+
         rules = [
             {
-                "rule_number": 1,
-                "rule_name": "強制單筆硬停損線",
-                "condition": "單筆持倉未實現虧損達 5.0% 時",
-                "action": "無條件以市價 IOC 停損出場，嚴禁取消停損單或盤中改單。",
-                "target_bias": "處置效應 (凹單)"
+                "rule_name": "依你的平均獲利設定硬停損",
+                "condition": f"單筆持倉未實現虧損達 {stop}% 時",
+                "action": "無條件以市價停損出場，嚴禁取消停損單或盤中改單。",
+                "target_bias": "處置效應（凹單）",
+                "formula": stop_formula,
+                "evidence": stop_evidence,
             },
             {
-                "rule_number": 2,
-                "rule_name": "連虧冷靜期與部位鎖定",
-                "condition": "若當日或連續 2 筆交易觸發停損",
-                "action": "當日強制停止開新倉；次日單筆委託股數嚴格降為標準部位的 50%，禁止翻倍加碼。",
-                "target_bias": "報復性交易"
+                "rule_name": "連虧冷靜期與部位上限",
+                "condition": f"連續 {n_cool} 筆交易停損出場時",
+                "action": "當天停止開新倉；下一筆的股數不得超過上一筆（停損後絕不加碼翻倍），最好降為一半。",
+                "target_bias": "報復性交易",
+                "formula": f"你最長連虧 {streak} 筆 → 冷靜期門檻取 {n_cool} 筆（限制 2～3 筆）",
+                "evidence": cool_evidence,
             },
-            {
-                "rule_number": 3,
-                "rule_name": "移動鎖利防賣飛鐵律",
-                "condition": "當帳面獲利突破 +3.0% 時",
-                "action": "僅允許平倉 50% 部位，剩餘 50% 強制以 10MA 或前日低點作為移動停利基準，不得手動急躁出清。",
-                "target_bias": "過早賣飛 (抱不住贏家)"
-            }
+            rule3,
         ]
+        for k, r in enumerate(rules, start=1):
+            r["rule_number"] = k
         return rules

@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 227 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 249 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -72,7 +72,14 @@
    - 修正舊問題：回測台股一律用 0.3% 證交稅 → 改依標的（`market_rules.tw_sell_tax_rate`：股票 0.3%、ETF 0.1%、債券 ETF 停徵到 2026-12-31）；看盤頁模擬下單的債券 ETF 也改為免證交稅（前後端同一規則 `window.TA.twSellTaxRate`）。停徵期限到期若延長，要改 `BOND_ETF_TAX_FREE_UNTIL` 與 `ui.jsx`。
    - 設定頁 AI 用量：模型分成「目前連線」與「只在歷史紀錄出現」（收合），每個模型顯示次數、tokens、估算費用、最後使用日；OpenRouter 這類回報實際費用的不必填單價；付費模型未填單價時提示有幾次沒算進去。
    - 測試 `tests/test_backtest_tools.py`（11 個）＋證交稅 2 個。
-14. **量化回測後續（未做）**：籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
+14. ✅ **量化回測第四批（2026-10-25）**：
+   - 籌碼／月營收策略：`strategies.py` 新增法人連買、月營收創新高、融資減少（`needs` 宣告資料、`BarSeries` 把對齊好的資料附在日 K 上）；`chip_features.py` 對齊（月營收從次月 10 日起才算已知）；`src/market/finmind_store.py` 把 FinMind 歷史存在 `data/finmind_cache/<資料集>/<代號>.json`，6 小時內不重抓、之後只補最後幾天（法人／融資 10 天、營收 70 天），抓失敗沿用舊資料並標 stale。實測每個資料集第一次 1 次請求、之後 0 次。只支援台股；Pine 匯出是價量替代版並標明。
+   - K 線回放：`web/panels/backtest_replay.jsx`，回測結果新增「▶ K 線回放」分頁；後端回傳 `chart_bars`（AI 與匯出報告不送）與每筆交易 `signal_date`。逐根播放、訊號／進場／出場自動暫停並說明（技術策略帶出當天指標數字），停損線、持有區間底色，`speechSynthesis` 中文語音。
+   - 策略組合：`src/backtest/portfolio_mix.py`＋`POST /api/mod3/portfolio`（2～8 支、各支共用表單的期間與風控），等權重／波動率倒數／夏普值加權，每月第一個交易日只用之前 120 天重算權重（不偷看未來），相關係數矩陣、績效貢獻；`backtest_portfolio.jsx`，清單存 `tw_us_bt_portfolio_v1`。實測 4 支平均相關 0.01，等權重年化波動 7.07% 低於任何單一策略。
+   - 自訂條件積木：`src/backtest/custom_rules.py`（20 種運算元 × 大於／小於／向上穿越／向下穿越，進出場各最多 6 條、全部或任一成立、5 個範本）；條件裡的天數與門檻變成參數（同指標同天數合併），`register()` 依內容產生固定代號放進策略表，回測、熱力圖、前後段、今日訊號、組合、Pine 都通用；`GET /api/mod3/custom/templates`、`POST /api/mod3/custom/describe`；前端 `backtest_custom.jsx`，存 `tw_us_bt_custom_v1`。
+   - 其他：看盤頁移除「看資料怎麼抓的」按鈕與面板；AI 回 JSON 時多寫文字或附 `<think>` 造成「Extra data」→ `ai_text.extract_json` 依序嘗試每個 `{` 解析、`_json_call` 失敗自動再問一次（交易檢討規則、新聞情緒、技術分析 AI 都適用）。
+   - 測試：`test_chip_strategies.py`、`test_custom_rules.py`、組合與 JSON 解析測試。
+15. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
 
 ---
 

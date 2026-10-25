@@ -13,6 +13,7 @@ import time
 import os
 
 from src.ai import ai_client
+from src.ai.ai_text import extract_json
 from src.ai.anti_hallucination import AntiHallucinationGuard
 from src.market.market_rules import align_tw_tick
 
@@ -175,12 +176,8 @@ class LLMRunner:
 
     @staticmethod
     def _extract_json(raw: str) -> Dict[str, Any]:
-        """從模型回覆中取出 JSON（容忍 ```json 圍欄與前後說明文字）。"""
-        text = raw.strip()
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("模型回覆中找不到 JSON")
-        return json.loads(text[start : end + 1])
+        """從模型回覆中取出 JSON（容忍 ```json 圍欄、<think> 思考過程與 JSON 前後多寫的文字）。"""
+        return extract_json(raw)
 
     @staticmethod
     def _score_prompt_line(snapshot: Dict[str, Any]) -> str:
@@ -327,7 +324,7 @@ class LLMRunner:
             data = json.loads(resp.read().decode("utf-8"))
         ai_client.record_usage("gemini", model_name, "Gemini（環境變數）", data, started)
         text = data["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
+        return extract_json(text)
 
     def _call_openai_json(self, prompt: str) -> Dict[str, Any]:
         model_name = self.model or "gpt-4o-mini"

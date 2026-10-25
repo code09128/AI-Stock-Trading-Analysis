@@ -12,7 +12,7 @@
 | **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
 | **技術分析** | 還權日 K、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
 | **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
-| **策略回測** | 6 種技術策略（雙均線、KD 低檔黃金交叉、均線多頭排列、量價突破、乖離率回歸、跳空缺口），訊號隔日開盤成交、含各市場手續費與法定稅；部位模型（資金比例／固定金額／ATR 風險定額）、單筆停損與移動停利、大盤均線濾網（統計擋下次數）、成交量 0 視同暫停交易；最大回撤以每日收盤市值計算；1／3／5／10 年、多空盤整環境拆解、前後段驗證；參數熱力圖（★ 穩定高原、對照買進持有）、滾動前進分析（WFE）、蒙地卡羅（打亂順序／重抽樣 500～3,000 次）；📡 今日訊號（自選股／持股／自訂清單 × 策略，匯出 CSV）、📤 匯出 TradingView Pine v5（附使用說明與差異說明）、🖨️ PDF 報告；台股證交稅依股票 0.3%／ETF 0.1%／債券 ETF 停徵自動套用 |
+| **策略回測** | 9 種策略：技術面 6 種（雙均線、KD 低檔黃金交叉、均線多頭排列、量價突破、乖離率回歸、跳空缺口）＋台股籌碼／基本面 3 種（法人連買、月營收創新高、融資減少；FinMind 歷史存在本機只補抓最新幾天），另可用 🧱 條件積木自訂策略（5 個範本）；訊號隔日開盤成交、含各市場手續費與法定稅；部位模型（資金比例／固定金額／ATR 風險定額）、單筆停損與移動停利、大盤均線濾網（統計擋下次數）、成交量 0 視同暫停交易；最大回撤以每日收盤市值計算；1／3／5／10 年、多空盤整環境拆解、前後段驗證；參數熱力圖（★ 穩定高原、對照買進持有）、滾動前進分析（WFE）、蒙地卡羅（打亂順序／重抽樣 500～3,000 次）；📡 今日訊號（自選股／持股／自訂清單 × 策略，匯出 CSV）、📤 匯出 TradingView Pine v5（附使用說明與差異說明）、🖨️ PDF 報告、🧩 策略組合（等權重／波動率倒數／夏普值加權、相關係數矩陣、績效貢獻）、▶ K 線回放教學（逐根播放、買賣點自動暫停說明、語音解說）；台股證交稅依股票 0.3%／ETF 0.1%／債券 ETF 停徵自動套用 |
 | **組合風控** | 集中度、ETF 穿透曝險、Beta、相關係數、大盤下跌情境、歷史回落重演（2020 疫情、2022 升息） |
 | **交易檢討** | 分析交易紀錄的勝率、賺賠比、處置效應、報復性交易，產生 3 條個人規則，並成為下單前的勾選清單 |
 | **AI 解讀** | 每頁底部，研究主管／交易員口吻的報告格式（表格與段落），依你的持股給建議，回答中的數字自動與資料核對 |
@@ -178,12 +178,12 @@ python build_app.py --portable   # 另外再產生免安裝單一執行檔（多
 ```
 src/
 ├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar、
-│                trade_rules（海外手續費/每手股數）、finmind、chip_data（籌碼）、etf_data、etf_reference、
+│                trade_rules（海外手續費/每手股數）、finmind、finmind_store（FinMind 歷史本機快取）、chip_data（籌碼）、etf_data、etf_reference、
 │                chart_data、heatmap（股市熱力圖）、fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
 ├── news/        新聞：news_feed（多來源抓取與去重）、announcement_store（重大訊息每日存檔與歷史）、
 │                news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
-├── backtest/    策略回測：strategies（6 種策略與參數定義）、backtest_engine（Next Bar Open、部位模型、停損停利、濾網）、
+├── backtest/    策略回測：strategies（9 種策略與參數定義）、custom_rules（條件積木）、chip_features（籌碼／月營收對齊）、portfolio_mix（策略組合）、backtest_engine（Next Bar Open、部位模型、停損停利、濾網）、
 │                backtest_analysis（大盤濾網、環境拆分、前後段驗證）、validation（參數熱力圖、滾動前進、蒙地卡羅）、
 │                live_signals（今日訊號）、pine_export（匯出 Pine v5）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）
@@ -200,7 +200,7 @@ src/
 
 - 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效；打包時 `build_web.py` 用 esbuild 預先編譯成 `app.bundle.js`。
 - `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認與畫面縮放；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
-- `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF）、portfolio、journal、selftest（各分析頁）
+- `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
 - `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
 - `pages/`：watch（看盤）、heatmap（股市熱力圖）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide

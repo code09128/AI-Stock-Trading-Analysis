@@ -23,7 +23,6 @@
   } = window.TA;
   const {
     Row,
-    SourcePanel,
     useAlerts,
     AlertsPanel,
     OverviewPanel,
@@ -41,12 +40,10 @@
     const [etfSort, setEtfSort] = useState('hot');
     const [selected, setSelected] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH)[0] || '2330');
     const [quotes, setQuotes] = useState({});
-    const [fetchLog, setFetchLog] = useState([]);
     const [updatedAt, setUpdatedAt] = useState('--:--:--');
     const [netError, setNetError] = useState(null);
     const [polling, setPolling] = useState(true);
     const [input, setInput] = useState('');
-    const [showSource, setShowSource] = useState(false);
     const [toast, setToast] = useState(null);
     const [cart, setCart] = useState(() => readLS(LS_CART, []));
     const [sparks, setSparks] = useState({});
@@ -163,7 +160,6 @@
               for (const qq of data.quotes) next[baseCode(qq.symbol)] = qq;
               return next;
             });
-            setFetchLog(data.fetch_log || []);
             setUpdatedAt(data.timestamp);
             setNetError(null);
           } catch (e) {
@@ -1167,16 +1163,7 @@
                     >
                       設提醒
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowSource(!showSource)}
-                      className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
-                    >
-                      {showSource ? '收起' : '看資料怎麼抓的'}
-                    </button>
                   </div>
-
-                  {showSource && <SourcePanel q={q} log={fetchLog} />}
                 </div>
 
                 <window.TA.OrderPanel

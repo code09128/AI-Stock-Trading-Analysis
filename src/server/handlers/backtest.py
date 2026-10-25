@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 from src.market.bar import Bar
 
 from src.backtest.backtest_engine import BacktestEngine, SIZING_MODES
-from src.backtest import backtest_analysis, live_signals, pine_export, strategies, validation
+from src.backtest import backtest_analysis, chip_features, custom_rules, live_signals, pine_export, portfolio_mix, strategies, validation
 from src.market import markets, trade_rules
 from src.market.market_rules import tw_sell_tax_rate
 from src.server.params import arg_num, arg_ticker
@@ -23,6 +23,10 @@ class BacktestHandlers:
     def _settings(payload: Dict[str, Any]) -> Dict[str, Any]:
         """策略、參數與風控設定（不含標的）：回測、參數掃描、今日訊號、Pine 匯出共用。"""
         strategy = str(payload.get("strategy") or "ma_cross")
+        if strategy.startswith("custom"):  # 自訂策略：定義跟著請求送來，依內容註冊成固定代號
+            if not payload.get("custom"):
+                raise ValueError("自訂策略缺少條件定義，請到「自訂策略」重新選一次")
+            strategy = custom_rules.register(payload["custom"])
         raw_params = dict(payload.get("params") or {})
         if strategy == "ma_cross":  # 舊版只送 fast_ma／slow_ma
             for k in ("fast_ma", "slow_ma"):
@@ -58,6 +62,18 @@ class BacktestHandlers:
         }
 
     @staticmethod
+    def _with_chip_data(feed: Dict[str, Any], st: Dict[str, Any]) -> Dict[str, Any]:
+        """籌碼／月營收策略：抓（或讀本機快取）FinMind 資料並附在日 K 上；其他策略原樣回傳。"""
+        needs = st["meta"].get("needs")
+        if not needs:
+            return {"bars": feed["bars"], "notes": []}
+        if feed["market"] != "TW":
+            raise ValueError(f"「{st['meta']['label']}」需要台股的法人／月營收／融資資料，只支援台股")
+        code = feed["symbol"].split(".")[0]
+        got = chip_features.load(code, feed["bars"], needs)
+        return {"bars": strategies.BarSeries(feed["bars"], got["extra"]), "notes": got["notes"]}
+
+    @staticmethod
     def _engine_kw(ticker: str, market: str, st: Dict[str, Any]) -> Dict[str, Any]:
         """引擎設定：每手股數與海外稅費依標的、台股證交稅依股票／ETF／債券 ETF；_rules_error 由呼叫端取出。"""
         rules = trade_rules.rules_for(ticker) if market not in ("TW", "US") else {}
@@ -83,13 +99,14 @@ class BacktestHandlers:
         use_filter, filter_ma = st["use_filter"], st["filter_ma"]
 
         feed = self.adapter.fetch_bars(ticker, days=250 * period_years)
-        bars: List[Bar] = feed["bars"]
         market = feed["market"]
+        chip = self._with_chip_data(feed, st)
+        bars: List[Bar] = chip["bars"]
         signals = strategies.signals(strategy, bars, params)
 
         # 不再偷換策略：若此參數在期間內沒有產生足夠訊號，就如實回報（交易次數少/為 0）
         buy_signals = sum(1 for sg in signals if sg == 1)
-        strategy_warnings = []
+        strategy_warnings = [n for n in chip["notes"] if "沒更新成功" in n]
         if buy_signals < 2:
             strategy_warnings.append(
                 f"「{meta['label']}」（{backtest_analysis.params_text(strategy, params)}）在這段期間只產生 {buy_signals} 次買進訊號，"
@@ -121,6 +138,7 @@ class BacktestHandlers:
             "val_kw": {**engine_kw, "initial_capital": initial_capital},
             "initial_capital": initial_capital, "commission_discount": commission_discount,
             "period_years": period_years, "index_sym": index_sym, "idx_bars": idx_bars, "allowed": allowed,
+            "data_notes": chip["notes"],
             "risk": {
                 "sizing_mode": sizing_mode, "sizing_label": SIZING_MODES[sizing_mode], "sizing_value": sizing_value,
                 "atr_mult": atr_mult, "stop_loss_pct": stop_loss_pct, "trailing_pct": trailing_pct,
@@ -189,6 +207,7 @@ class BacktestHandlers:
             "data_note": "價格為真實還權日 K；交易是這個策略在歷史價格上的「模擬成交」（訊號隔日開盤價），不是你的真實交易",
             "strategy": {"key": strategy, "label": meta["label"], "rule": meta["rule"],
                          "params_text": backtest_analysis.params_text(strategy, params)},
+            "custom_def": meta.get("custom_def"),
             "strategy_params": {
                 **params,
                 "strategy": strategy,
@@ -198,10 +217,13 @@ class BacktestHandlers:
             },
             "risk_settings": risk_settings,
             "strategy_warnings": strategy_warnings,
+            "data_notes": c["data_notes"],
             "regime_breakdown": breakdown,
             "walk_forward": wf,
             "next_step_ideas": backtest_analysis.next_step_ideas(bt_result, breakdown, wf, risk_settings),
             "execution_rule": "NEXT_BAR_OPEN (零偷看未來數據)",
+            # K 線回放用：[日期, 開, 高, 低, 收, 量]（AI 解讀與匯出報告不會送這份）
+            "chart_bars": [[b.timestamp, b.open, b.high, b.low, b.close, b.volume] for b in bars],
             "equity_curve": equity_curve,
             "backtest_result": bt_result,
         }
@@ -260,9 +282,10 @@ class BacktestHandlers:
         def one(sym: str) -> Dict[str, Any]:
             try:
                 feed = self.adapter.fetch_bars(sym, days=days)
+                bars = self._with_chip_data(feed, st)["bars"]
                 kw = self._engine_kw(sym, feed["market"], st)
                 kw.pop("_rules_error")
-                row = live_signals.evaluate(feed["bars"], feed["market"], st["strategy"], st["params"], kw,
+                row = live_signals.evaluate(bars, feed["market"], st["strategy"], st["params"], kw,
                                             index_ok(feed["market"], feed["bars"]), st["commission_discount"])
                 return {"symbol": feed["symbol"], "input": sym, "market": feed["market"],
                         "currency": feed["currency"], **row}
@@ -274,6 +297,9 @@ class BacktestHandlers:
         order = {k: i for i, k in enumerate(live_signals.STATUS_ORDER)}
         rows.sort(key=lambda r: (1 if r.get("error") else 0, order.get(r.get("status"), 99)))
         warnings = [f"大盤 {k} 資料取得失敗，這個市場沒有套用大盤濾網。" for k, v in idx_cache.items() if v is None]
+        if st["meta"].get("needs"):
+            warnings.append("籌碼／月營收資料來自 FinMind：三大法人與融資約在收盤後才公布，"
+                            "下午收盤前掃描時「今天」還沒有資料；第一次掃描每檔要抓一次歷史，之後只補最新幾天。")
         if any(r.get("provisional") for r in rows):
             warnings.append("部分標的目前還在盤中：最新一根是盤中 K 棒，訊號要到收盤才確定，可能消失或改變。")
         return {
@@ -301,3 +327,39 @@ class BacktestHandlers:
         }
         return pine_export.build(ticker, markets.market_of(ticker), st["strategy"], st["params"],
                                  st["initial_capital"], st["commission_discount"], risk)
+
+    def handle_mod3_portfolio(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """策略組合：2～8 支「標的 × 策略」各自回測（共用部位、停損、濾網、期間設定），再用三種權重法合成比較。"""
+        legs_in = payload.get("legs")
+        if not isinstance(legs_in, list) or not 2 <= len(legs_in) <= 8:
+            raise ValueError("策略組合需要 2～8 支（每支＝一個標的＋一支策略）")
+
+        def run(leg: Dict[str, Any]) -> Dict[str, Any]:
+            c = self._prepare({**payload, "target_asset": leg.get("target_asset"), "strategy": leg.get("strategy"),
+                               "params": leg.get("params") or {}, "custom": leg.get("custom")})
+            eng = BacktestEngine(market=c["market"], initial_capital=c["initial_capital"],
+                                 commission_discount=c["commission_discount"], **c["engine_kw"])
+            r = eng.run(c["bars"], c["signals"], c["allowed"])
+            label = f"{c['feed']['symbol']} {c['meta']['label']}"
+            return {"label": label, "daily": eng.last_daily, "symbol": c["feed"]["symbol"],
+                    "strategy": c["meta"]["label"], "params_text": backtest_analysis.params_text(c["strategy"], c["params"]),
+                    "trades": r["total_trades"], "warnings": c["warnings"]}
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            legs = list(ex.map(run, legs_in))
+        labels = [leg["label"] for leg in legs]
+        if len(set(labels)) != len(labels):
+            raise ValueError("有重複的「標的＋策略」組合，請換參數或刪掉重複的那支")
+        out = portfolio_mix.analyze(legs)
+        out["leg_info"] = [{k: leg[k] for k in ("label", "symbol", "strategy", "params_text", "trades", "warnings")}
+                           for leg in legs]
+        return out
+
+    def handle_mod3_custom_templates(self) -> Dict[str, Any]:
+        return {"templates": custom_rules.TEMPLATES,
+                "operands": {k: {"label": v[0], "needs_n": v[1], "default_n": v[2]} for k, v in custom_rules.OPERANDS.items()},
+                "ops": custom_rules.OPS, "max_rules": custom_rules.MAX_RULES}
+
+    def handle_mod3_custom_describe(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """存檔前檢查自訂策略：回傳整理過的定義、可調參數、白話規則。"""
+        return custom_rules.describe(payload.get("custom"))

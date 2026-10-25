@@ -4,12 +4,29 @@
 訊號當天收盤確認，由回測引擎在隔天開盤成交，所以不會偷看未來。
 - 參數定義（PARAMS）讓前端自動產生表單、後端檢查範圍
 - GRID 是前後段驗證要掃的兩個參數；HEATMAP 是參數熱力圖的兩軸（格子比較細）
+- needs：策略需要的額外資料（台股籌碼／月營收，來自 FinMind），由呼叫端用 BarSeries 附在日 K 上
 """
 
 from typing import Any, Callable, Dict, List, Optional
 
 from src.market.bar import Bar
 from src.technical.indicators import calculate_ma
+
+
+class BarSeries(list):
+    """日 K 串列＋對齊好的額外資料（extra["inst"][i] 是第 i 根 K 棒當天的值）。
+    驗證、熱力圖都是「整段算訊號、再切段成交」，所以切片後變回一般 list 也沒關係。"""
+
+    def __init__(self, bars: List[Bar], extra: Dict[str, List[Any]]):
+        super().__init__(bars)
+        self.extra = extra
+
+
+def _extra(bars: List[Bar], name: str) -> List[Any]:
+    data = getattr(bars, "extra", None)
+    if not data or name not in data:
+        raise ValueError("這支策略需要台股籌碼／月營收資料（FinMind），資料沒有載入")
+    return data[name]
 
 
 def _p(key: str, label: str, default: float, lo: float, hi: float, tip: str, integer: bool = True) -> Dict[str, Any]:
@@ -129,6 +146,59 @@ def gap_up(bars: List[Bar], p: Dict[str, Any]) -> List[int]:
     return sig
 
 
+def inst_buy(bars: List[Bar], p: Dict[str, Any]) -> List[int]:
+    """三大法人合計連續 N 天買超＝買進；連續 M 天賣超＝賣出。沒有資料的日子中斷連續天數。"""
+    net = _extra(bars, "inst")
+    n, m = int(p["days"]), int(p["exit_days"])
+    sig, in_pos, up, down = [0] * len(bars), False, 0, 0
+    for i, v in enumerate(net):
+        up = up + 1 if v is not None and v > 0 else 0
+        down = down + 1 if v is not None and v < 0 else 0
+        if not in_pos and up >= n:
+            sig[i], in_pos = 1, True
+        elif in_pos and down >= m:
+            sig[i], in_pos = -1, False
+    return sig
+
+
+def revenue_high(bars: List[Bar], p: Dict[str, Any]) -> List[int]:
+    """新公布的月營收是近 N 個月最高、且比去年同月成長＝買進；收盤跌破出場均線，或新公布的月營收年減＝賣出。"""
+    rev = _extra(bars, "revenue")
+    n = int(p["lookback"])
+    exit_ma = calculate_ma([b.close for b in bars], int(p["exit_ma"]))
+    sig, in_pos = [0] * len(bars), False
+    for i in range(1, len(bars)):
+        r = rev[i]
+        new = r is not None and (rev[i - 1] is None or rev[i - 1]["month"] != r["month"])
+        if not in_pos:
+            if new and len(r["history"]) >= n and r["revenue"] >= max(r["history"][-n:]) \
+                    and r["yoy_pct"] is not None and r["yoy_pct"] > 0:
+                sig[i], in_pos = 1, True
+        elif (exit_ma[i] is not None and bars[i].close < exit_ma[i]) or \
+                (new and r["yoy_pct"] is not None and r["yoy_pct"] < 0):
+            sig[i], in_pos = -1, False
+    return sig
+
+
+def margin_down(bars: List[Bar], p: Dict[str, Any]) -> List[int]:
+    """融資餘額 N 天內減少 X% 以上、且收盤站上均線（籌碼從散戶流出、股價仍強）＝買進；
+    收盤跌破均線，或融資 N 天內反而增加 X% 以上＝賣出。"""
+    mg = _extra(bars, "margin")
+    n, x = int(p["days"]), float(p["drop_pct"]) / 100
+    ma = calculate_ma([b.close for b in bars], int(p["ma"]))
+    sig, in_pos = [0] * len(bars), False
+    for i in range(n, len(bars)):
+        now, before = mg[i], mg[i - n]
+        if now is None or not before or ma[i] is None:
+            continue
+        chg = now / before - 1
+        if not in_pos and chg <= -x and bars[i].close > ma[i]:
+            sig[i], in_pos = 1, True
+        elif in_pos and (bars[i].close < ma[i] or chg >= x):
+            sig[i], in_pos = -1, False
+    return sig
+
+
 STRATEGIES: Dict[str, Dict[str, Any]] = {
     "ma_cross": {
         "label": "雙均線交叉",
@@ -205,12 +275,54 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
         "grid": {"min_gap_pct": (0, 0.5, 1, 2, 3)},
         "heatmap": {"min_gap_pct": (0, 0.5, 1, 1.5, 2, 3)},
     },
+    "inst_buy": {
+        "label": "法人連買",
+        "kind": "籌碼",
+        "rule": "三大法人（外資＋投信＋自營商）合計連續 N 天買超時買進；連續 M 天賣超時賣出。法人資料當天收盤後公布，隔天開盤成交。只支援台股。",
+        "fn": inst_buy,
+        "needs": ("inst",),
+        "params": [
+            _p("days", "連續買超天數 N", 3, 1, 20, "法人合計連續幾天買超才進場。"),
+            _p("exit_days", "連續賣超天數 M", 2, 1, 20, "法人合計連續幾天賣超就出場。"),
+        ],
+        "grid": {"days": (2, 3, 5, 8), "exit_days": (1, 2, 3, 5)},
+        "heatmap": {"days": (1, 2, 3, 4, 5, 8), "exit_days": (1, 2, 3, 4, 5, 8)},
+    },
+    "revenue_high": {
+        "label": "月營收創新高",
+        "kind": "基本面",
+        "rule": "新公布的月營收是近 N 個月最高、且比去年同月成長時買進；收盤跌破出場均線、或新公布的月營收年減時賣出。"
+                "月營收一律從次月 10 日（法定公布期限）起才算已知，不會偷看未來。只支援台股。",
+        "fn": revenue_high,
+        "needs": ("revenue",),
+        "params": [
+            _p("lookback", "比較月數 N", 12, 3, 36, "新公布的月營收要是近幾個月的最高，12＝近一年新高。"),
+            _p("exit_ma", "出場均線", 60, 10, 120, "收盤跌破這條均線就出場，例如 60 日季線。"),
+        ],
+        "grid": {"lookback": (6, 12, 18, 24), "exit_ma": (20, 40, 60, 120)},
+        "heatmap": {"lookback": (6, 9, 12, 18, 24, 36), "exit_ma": (20, 30, 40, 60, 90, 120)},
+    },
+    "margin_down": {
+        "label": "融資減少",
+        "kind": "籌碼",
+        "rule": "融資餘額 N 天內減少 X% 以上、且收盤站上均線（散戶退場、股價仍強）時買進；收盤跌破均線、或融資 N 天內反而增加 X% 以上時賣出。只支援台股（有融資的股票）。",
+        "fn": margin_down,
+        "needs": ("margin",),
+        "params": [
+            _p("days", "比較天數 N", 10, 3, 60, "融資餘額和幾天前比較。"),
+            _p("drop_pct", "融資變化 %", 5, 1, 30, "減少超過這個 % 才算「融資減少」；增加超過這個 % 就出場。", integer=False),
+            _p("ma", "均線天數", 20, 5, 120, "收盤要站上這條均線才進場，跌破就出場。"),
+        ],
+        "grid": {"days": (5, 10, 20, 40), "drop_pct": (3, 5, 8, 12)},
+        "heatmap": {"days": (5, 10, 15, 20, 30, 40), "drop_pct": (2, 3, 5, 8, 10, 15)},
+    },
 }
 
 
 def catalog() -> List[Dict[str, Any]]:
     """給前端的策略清單（不含函式）。"""
-    return [{"key": k, **{f: v[f] for f in ("label", "kind", "rule", "params")}} for k, v in STRATEGIES.items()]
+    return [{"key": k, **{f: v[f] for f in ("label", "kind", "rule", "params")}, "needs": list(v.get("needs", ())),
+             "tw_only": bool(v.get("needs"))} for k, v in STRATEGIES.items() if not v.get("custom_def")]
 
 
 def resolve_params(key: str, raw: Dict[str, Any]) -> Dict[str, Any]:
