@@ -42,16 +42,35 @@
       ['本月', usage.filter((u) => String(u.time).startsWith(month))],
       ['全部紀錄', usage],
     ].map(([label, list]) => [label, sum(list)]);
-    const models = [
-      ...new Map(
-        [
-          ...cfg.profiles
-            .filter((p) => p.model)
-            .map((p) => [p.model, p.type === 'openai_compatible']),
-          ...usage.map((u) => [u.model, !!u.local]),
-        ].reverse(),
-      ),
-    ].reverse();
+    // 模型清單：目前 AI 連線用的模型＋用量紀錄裡出現過的模型（連線刪掉後舊紀錄仍要靠單價算費用）
+    const current = new Map(
+      cfg.profiles.filter((p) => p.model).map((p) => [p.model, p.type === 'openai_compatible']),
+    );
+    const stats = new Map();
+    for (const u of usage) {
+      const st = stats.get(u.model) || {
+        calls: 0,
+        input: 0,
+        output: 0,
+        cost: 0,
+        unpriced: 0,
+        reported: 0,
+        last: '',
+        local: !!u.local,
+      };
+      st.calls += 1;
+      st.input += u.input_tokens || 0;
+      st.output += u.output_tokens || 0;
+      if (typeof u.cost_usd === 'number') st.reported += 1;
+      const c = usageCost(u, prices);
+      if (c == null) st.unpriced += 1;
+      else st.cost += c;
+      if (String(u.time) > st.last) st.last = String(u.time);
+      stats.set(u.model, st);
+    }
+    const byLast = (a, b) => (stats.get(b)?.last || '').localeCompare(stats.get(a)?.last || '');
+    const currentModels = [...current.keys()].sort(byLast);
+    const historyModels = [...stats.keys()].filter((m) => !current.has(m)).sort(byLast);
     const money = (usd) =>
       `US$${usd.toFixed(usd < 1 ? 4 : 2)}${usdTwd ? `（約 NT$${(usd * usdTwd).toFixed(usd * usdTwd < 10 ? 2 : 0)}）` : ''}`;
     const setPrice = (model, field, value) =>
@@ -59,6 +78,59 @@
         ...prices,
         [model]: { ...(prices[model] || {}), [field]: value === '' ? '' : Number(value) },
       });
+
+    const priceInput = (model, field, local) => (
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        aria-label={`${model} ${field === 'in' ? '輸入' : '輸出'}單價`}
+        value={prices[model]?.[field] ?? ''}
+        placeholder={local ? '0' : '未設定'}
+        onChange={(e) => setPrice(model, field, e.target.value)}
+        className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
+      />
+    );
+    // 一個模型一列：用量統計＋單價；付費模型沒填單價、又有沒算到費用的紀錄時特別提醒。
+    // 用一般函式呼叫（不是 <ModelRow />），否則每次重繪都是新元件，輸入單價時游標會跳掉
+    const modelRow = (model, local, st) => {
+      const allReported = st && st.reported === st.calls;
+      return (
+        <div key={model} className="rounded-lg bg-slate-950/50 px-2 py-1.5 text-xs space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-slate-200 min-w-[12rem] break-all">{model}</span>
+            {local && <span className="text-[10px] text-emerald-400">本地（預設免費）</span>}
+            {allReported && <span className="text-[10px] text-sky-300">供應商回報實際費用，不必填單價</span>}
+            {!allReported && (
+              <>
+                <span className="flex items-center gap-1 text-slate-400">
+                  輸入 {priceInput(model, 'in', local)}
+                </span>
+                <span className="flex items-center gap-1 text-slate-400">
+                  輸出 {priceInput(model, 'out', local)}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-400 font-mono">
+            {st ? (
+              <>
+                <span>
+                  {st.calls} 次・入 {st.input.toLocaleString()}／出 {st.output.toLocaleString()}
+                </span>
+                <span className="text-emerald-300">{money(st.cost)}</span>
+                <span>最後使用 {st.last.slice(0, 10)}</span>
+              </>
+            ) : (
+              <span>還沒有呼叫紀錄</span>
+            )}
+            {st?.unpriced > 0 && (
+              <span className="text-amber-300 font-sans">⚠️ 未設定單價，{st.unpriced} 次費用沒有算進去</span>
+            )}
+          </div>
+        </div>
+      );
+    };
 
     return (
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
@@ -86,45 +158,34 @@
           ))}
         </div>
 
-        <div>
-          <div className="text-xs text-slate-300 font-semibold mb-1">
-            各模型單價（美元／每百萬 tokens）
+        <div className="space-y-2">
+          <div className="text-xs text-slate-300 font-semibold">
+            各模型用量與單價（美元／每百萬 tokens）
+            <window.TA.Tip text="上面是目前 AI 連線用的模型；下面收合的是只在用量紀錄出現過的模型（連線已刪除或換掉），保留它們的單價才算得出「本月」「全部紀錄」的費用。OpenRouter 會回報每次實際花費，不必填單價；Gemini、OpenAI、Claude 等付費模型請到官網查單價填入。" />
           </div>
-          {models.length === 0 ? (
+          {currentModels.length + historyModels.length === 0 ? (
             <div className="text-xs text-slate-500">還沒有 AI 連線或呼叫紀錄。</div>
           ) : (
-            <div className="space-y-1.5">
-              {models.map(([model, local]) => (
-                <div key={model} className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-mono text-slate-200 min-w-[12rem] truncate">{model}</span>
-                  {local && <span className="text-[10px] text-emerald-400">本地（預設免費）</span>}
-                  <label className="flex items-center gap-1 text-slate-400">
-                    輸入
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={prices[model]?.in ?? ''}
-                      placeholder={local ? '0' : '未設定'}
-                      onChange={(e) => setPrice(model, 'in', e.target.value)}
-                      className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
-                    />
-                  </label>
-                  <label className="flex items-center gap-1 text-slate-400">
-                    輸出
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={prices[model]?.out ?? ''}
-                      placeholder={local ? '0' : '未設定'}
-                      onChange={(e) => setPrice(model, 'out', e.target.value)}
-                      className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
-                    />
-                  </label>
+            <>
+              <div className="text-[11px] text-slate-400">目前連線的模型（{currentModels.length}）</div>
+              {currentModels.length === 0 ? (
+                <div className="text-xs text-slate-500">目前沒有 AI 連線。</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {currentModels.map((m) => modelRow(m, current.get(m), stats.get(m)))}
                 </div>
-              ))}
-            </div>
+              )}
+              {historyModels.length > 0 && (
+                <details className="rounded-lg border border-slate-800 px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] text-slate-400 select-none">
+                    只在歷史紀錄出現的模型（{historyModels.length}）— 連線已刪除或換掉，保留單價供舊紀錄計費
+                  </summary>
+                  <div className="space-y-1.5 mt-2">
+                    {historyModels.map((m) => modelRow(m, stats.get(m).local, stats.get(m)))}
+                  </div>
+                </details>
+              )}
+            </>
           )}
         </div>
 

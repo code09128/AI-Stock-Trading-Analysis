@@ -6,8 +6,10 @@
 3. 價格波動限制與合規檢查
 """
 
+from datetime import date
 from typing import Any, Dict, List, Optional
 import math
+import re
 
 from src.market.trade_rules import STATUTORY_FEES, statutory_cost
 
@@ -61,6 +63,19 @@ def align_tw_tick(price: float, mode: str = "nearest") -> float:
     else:
         return round(aligned, 1) if aligned % 1 != 0 else float(int(aligned))
 
+BOND_ETF_TAX_FREE_UNTIL = date(2026, 12, 31)  # 債券 ETF 證交稅停徵期限（到期若再延長要改這裡）
+
+
+def tw_sell_tax_rate(code: str, on: Optional[date] = None) -> float:
+    """台股賣出證交稅率：股票 0.3%、ETF（00 開頭）0.1%、債券 ETF（00 開頭且 B 結尾）停徵期間 0。"""
+    c = re.sub(r"\.(TW|TWO)$", "", str(code).upper())
+    if not c.startswith("00"):
+        return 0.003
+    if c.endswith("B") and (on or date.today()) <= BOND_ETF_TAX_FREE_UNTIL:
+        return 0.0
+    return 0.001
+
+
 def calculate_friction_cost(
     market: str,
     action: str,
@@ -68,7 +83,8 @@ def calculate_friction_cost(
     shares: int,
     commission_discount: float = 1.0,
     min_commission_twd: float = 20.0,
-    fees: Optional[List[Dict[str, Any]]] = None
+    fees: Optional[List[Dict[str, Any]]] = None,
+    tw_tax_rate: Optional[float] = None,
 ) -> Dict[str, float]:
     """
     計算交易摩擦成本 (Friction Cost)。
@@ -92,7 +108,8 @@ def calculate_friction_cost(
         # 手續費、證交稅都是元以下無條件捨去（+1e-9 避免浮點誤差把 1425.0 算成 1424.999…）
         base_fee = total_val * 0.001425 * commission_discount
         fee = max(min_commission_twd, math.floor(base_fee + 1e-9))
-        tax = math.floor(total_val * 0.003 + 1e-9) if action_upper in ("SELL", "賣出") else 0.0
+        rate = 0.003 if tw_tax_rate is None else tw_tax_rate  # 用 tw_sell_tax_rate() 依股票／ETF／債券 ETF 決定
+        tax = math.floor(total_val * rate + 1e-9) if action_upper in ("SELL", "賣出") else 0.0
         return {
             "market": "TW",
             "total_value": round(total_val, 2),

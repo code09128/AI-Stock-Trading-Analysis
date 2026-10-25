@@ -470,7 +470,7 @@
       }, 0);
     const tax = tw
       ? order.side === 'SELL'
-        ? Math.floor(amount * (etfFlag ? 0.001 : 0.003) + 1e-9)
+        ? Math.floor(amount * window.TA.twSellTaxRate(baseCode(selected)) + 1e-9)
         : 0
       : Math.round(statutoryTax * 100) / 100;
     const orderIssues = [];

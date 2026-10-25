@@ -126,7 +126,7 @@
       group: '分析',
       short: '策略回測',
       title: '策略回測',
-      subtitle: '6 種技術策略、停損停利與大盤濾網、參數熱力圖、滾動前進分析與蒙地卡羅',
+      subtitle: '6 種技術策略回測與驗證、今日訊號掃描、匯出 Pine v5 與 PDF 報告',
       icon: 'backtest',
     },
     {

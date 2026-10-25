@@ -220,3 +220,20 @@ class TestFinMindBudget(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTwSellTax(unittest.TestCase):
+    def test_rates_by_type(self):
+        from datetime import date as d
+        from src.market.market_rules import tw_sell_tax_rate
+        self.assertEqual(tw_sell_tax_rate("2330.TW"), 0.003)
+        self.assertEqual(tw_sell_tax_rate("0050"), 0.001)
+        self.assertEqual(tw_sell_tax_rate("00679B.TWO", d(2026, 6, 1)), 0.0)
+        self.assertEqual(tw_sell_tax_rate("00679B", d(2027, 1, 1)), 0.001)  # 停徵到期
+
+    def test_engine_uses_etf_rate(self):
+        bars = flat([100, 100, 100, 100])
+        stock = BacktestEngine(market="TW", initial_capital=1_000_000).run(bars, [1, 0, -1, 0])
+        etf = BacktestEngine(market="TW", initial_capital=1_000_000, tw_tax_rate=0.001).run(bars, [1, 0, -1, 0])
+        # 賣出 9,000 股 × 100 元：股票稅 2,700、ETF 稅 900
+        self.assertAlmostEqual(etf["trades_detail"][0]["net_pnl"] - stock["trades_detail"][0]["net_pnl"], 1800, places=0)

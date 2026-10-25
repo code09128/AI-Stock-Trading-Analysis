@@ -47,6 +47,13 @@
   };
   const marketName = (sym) => MARKET_INFO[marketOf(sym)].name;
   // 預設計價幣別（實際以報價回傳的 currency 為準；英股是 GBp 便士）
+  // 台股賣出證交稅率（與後端 market_rules.tw_sell_tax_rate 相同）：股票 0.3%、ETF 0.1%、債券 ETF 停徵到 2026-12-31
+  const twSellTaxRate = (code) => {
+    const c = String(code || '').toUpperCase().replace(/\.(TW|TWO)$/, '');
+    if (!c.startsWith('00')) return 0.003;
+    if (c.endsWith('B') && new Date().toLocaleDateString('sv-SE') <= '2026-12-31') return 0;
+    return 0.001;
+  };
   const currencyOf = (sym) => MARKET_INFO[marketOf(sym)].currency;
   // 以代號第一段判斷，與後端 normalize_symbol 同一規則；港股補滿 4 位數（700.HK → 0700.HK）
   const normSym = (raw) => {
@@ -212,6 +219,7 @@
     tzOf,
     marketName,
     currencyOf,
+    twSellTaxRate,
     normSym,
     baseCode,
     fmt,

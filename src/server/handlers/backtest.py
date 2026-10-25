@@ -1,12 +1,15 @@
-"""策略回測（/api/mod3/backtest、/api/mod3/strategies、/api/mod3/optimize、/api/mod3/montecarlo）"""
+"""策略回測（/api/mod3/backtest、strategies、optimize、montecarlo、signals 今日訊號、pine 匯出）"""
 
+from concurrent.futures import ThreadPoolExecutor
+import threading
 from typing import Dict, Any, List, Optional
 
 from src.market.bar import Bar
 
 from src.backtest.backtest_engine import BacktestEngine, SIZING_MODES
-from src.backtest import backtest_analysis, strategies, validation
+from src.backtest import backtest_analysis, live_signals, pine_export, strategies, validation
 from src.market import markets, trade_rules
+from src.market.market_rules import tw_sell_tax_rate
 from src.server.params import arg_num, arg_ticker
 
 
@@ -16,9 +19,9 @@ class BacktestHandlers:
     def handle_mod3_strategies(self) -> Dict[str, Any]:
         return {"strategies": strategies.catalog(), "sizing_modes": SIZING_MODES}
 
-    def _prepare(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """回測、參數掃描共用：檢查參數、抓日 K 與大盤、組出引擎設定。"""
-        ticker = arg_ticker(payload, "target_asset", "ticker")
+    @staticmethod
+    def _settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """策略、參數與風控設定（不含標的）：回測、參數掃描、今日訊號、Pine 匯出共用。"""
         strategy = str(payload.get("strategy") or "ma_cross")
         raw_params = dict(payload.get("params") or {})
         if strategy == "ma_cross":  # 舊版只送 fast_ma／slow_ma
@@ -46,6 +49,38 @@ class BacktestHandlers:
         trailing_pct = arg_num(payload, "trailing_pct", 0.0, "移動停利回落 %", lo=0, hi=50)
         use_filter = bool(payload.get("market_filter"))
         filter_ma = int(arg_num(payload, "filter_ma", 60, "大盤濾網均線", integer=True, lo=5, hi=250))
+        return {
+            "strategy": strategy, "params": params, "meta": meta, "initial_capital": initial_capital,
+            "commission_discount": commission_discount, "period_years": period_years,
+            "sizing": {"mode": sizing_mode, "value": sizing_value, "atr_mult": atr_mult},
+            "stop_loss_pct": stop_loss_pct, "trailing_pct": trailing_pct,
+            "use_filter": use_filter, "filter_ma": filter_ma,
+        }
+
+    @staticmethod
+    def _engine_kw(ticker: str, market: str, st: Dict[str, Any]) -> Dict[str, Any]:
+        """引擎設定：每手股數與海外稅費依標的、台股證交稅依股票／ETF／債券 ETF；_rules_error 由呼叫端取出。"""
+        rules = trade_rules.rules_for(ticker) if market not in ("TW", "US") else {}
+        return {
+            "lot_size": rules.get("lot"),
+            "fees": rules.get("fees"),
+            "sizing": st["sizing"],
+            "stop_loss_pct": st["stop_loss_pct"],
+            "trailing_pct": st["trailing_pct"],
+            "tw_tax_rate": tw_sell_tax_rate(ticker) if market == "TW" else None,
+            "_rules_error": rules.get("error"),
+        }
+
+    def _prepare(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """回測、參數掃描共用：檢查參數、抓日 K 與大盤、組出引擎設定。"""
+        ticker = arg_ticker(payload, "target_asset", "ticker")
+        st = self._settings(payload)
+        strategy, params, meta = st["strategy"], st["params"], st["meta"]
+        initial_capital, commission_discount, period_years = (
+            st["initial_capital"], st["commission_discount"], st["period_years"])
+        sizing_mode, sizing_value, atr_mult = st["sizing"]["mode"], st["sizing"]["value"], st["sizing"]["atr_mult"]
+        stop_loss_pct, trailing_pct = st["stop_loss_pct"], st["trailing_pct"]
+        use_filter, filter_ma = st["use_filter"], st["filter_ma"]
 
         feed = self.adapter.fetch_bars(ticker, days=250 * period_years)
         bars: List[Bar] = feed["bars"]
@@ -61,16 +96,10 @@ class BacktestHandlers:
                 "結果沒有統計意義；請調整參數或拉長期間，系統不會自動換成別的策略。"
             )
 
-        rules = trade_rules.rules_for(ticker) if market not in ("TW", "US") else {}
-        if rules.get("error"):
-            strategy_warnings.append(f"{rules['error']}，這次回測以每手 1 股計算。")
-        engine_kw = {
-            "lot_size": rules.get("lot"),
-            "fees": rules.get("fees"),
-            "sizing": {"mode": sizing_mode, "value": sizing_value, "atr_mult": atr_mult},
-            "stop_loss_pct": stop_loss_pct,
-            "trailing_pct": trailing_pct,
-        }
+        engine_kw = self._engine_kw(ticker, market, st)
+        rules_error = engine_kw.pop("_rules_error")
+        if rules_error:
+            strategy_warnings.append(f"{rules_error}，這次回測以每手 1 股計算。")
 
         # 大盤資料：市場環境拆分要 200 日線（多抓 1 年），大盤濾網也共用這份
         index_sym = markets.info(market)["index"]
@@ -203,3 +232,72 @@ class BacktestHandlers:
         runs = int(arg_num(payload, "runs", 1000, "模擬次數", integer=True, lo=500, hi=3000))
         mode = str(payload.get("mode") or "shuffle")
         return validation.monte_carlo(returns[:5000], runs=runs, mode=mode)
+
+    def handle_mod3_signals(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """今日訊號：自選股 × 這組策略設定，跑到最新一根日 K 判斷買進／賣出／持有／被擋下。"""
+        raw = payload.get("symbols")
+        if not isinstance(raw, list) or not raw:
+            raise ValueError("請提供要掃描的代號（symbols）")
+        symbols = list(dict.fromkeys(str(x).strip() for x in raw if str(x).strip()))[:60]
+        st = self._settings(payload)
+        days = 500  # 約 2 年日 K：長均線（最長 250 日）暖機後，策略的持有狀態才接得上
+        idx_cache: Dict[str, Any] = {}
+        idx_lock = threading.Lock()
+
+        def index_ok(market: str, bars: List[Bar]) -> Optional[List[bool]]:
+            if not st["use_filter"]:
+                return None
+            sym = markets.info(market)["index"]
+            with idx_lock:
+                if sym not in idx_cache:
+                    try:
+                        idx_cache[sym] = self.adapter._fetch_from_yahoo(sym, days=days)
+                    except Exception:  # 大盤抓不到：這個市場不套濾網，列在 warnings
+                        idx_cache[sym] = None
+                idx = idx_cache[sym]
+            return backtest_analysis.market_filter(bars, idx, st["filter_ma"]) if idx else None
+
+        def one(sym: str) -> Dict[str, Any]:
+            try:
+                feed = self.adapter.fetch_bars(sym, days=days)
+                kw = self._engine_kw(sym, feed["market"], st)
+                kw.pop("_rules_error")
+                row = live_signals.evaluate(feed["bars"], feed["market"], st["strategy"], st["params"], kw,
+                                            index_ok(feed["market"], feed["bars"]), st["commission_discount"])
+                return {"symbol": feed["symbol"], "input": sym, "market": feed["market"],
+                        "currency": feed["currency"], **row}
+            except Exception as e:  # 單檔失敗不影響其他檔
+                return {"symbol": sym, "input": sym, "error": str(e)}
+
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            rows = list(ex.map(one, symbols))
+        order = {k: i for i, k in enumerate(live_signals.STATUS_ORDER)}
+        rows.sort(key=lambda r: (1 if r.get("error") else 0, order.get(r.get("status"), 99)))
+        warnings = [f"大盤 {k} 資料取得失敗，這個市場沒有套用大盤濾網。" for k, v in idx_cache.items() if v is None]
+        if any(r.get("provisional") for r in rows):
+            warnings.append("部分標的目前還在盤中：最新一根是盤中 K 棒，訊號要到收盤才確定，可能消失或改變。")
+        return {
+            "strategy": {"key": st["strategy"], "label": st["meta"]["label"],
+                         "params_text": backtest_analysis.params_text(st["strategy"], st["params"])},
+            "risk": {"sizing_mode": st["sizing"]["mode"], "stop_loss_pct": st["stop_loss_pct"],
+                     "trailing_pct": st["trailing_pct"], "market_filter": st["use_filter"],
+                     "filter_ma": st["filter_ma"]},
+            "rows": rows,
+            "summary": live_signals.summarize(rows),
+            "warnings": warnings,
+            "labels": live_signals.STATUS_LABEL,
+            "note": ("「持有中」是這支策略在歷史上的模擬部位（用同一套規則一路跑到今天），不是你的真實持股；"
+                     "買進／賣出代表下一個交易日開盤執行。"),
+        }
+
+    def handle_mod3_pine(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """匯出 TradingView Pine Script v5。"""
+        ticker = arg_ticker(payload, "target_asset", "ticker")
+        st = self._settings(payload)
+        risk = {
+            "sizing_mode": st["sizing"]["mode"], "sizing_value": st["sizing"]["value"],
+            "atr_mult": st["sizing"]["atr_mult"], "stop_loss_pct": st["stop_loss_pct"],
+            "trailing_pct": st["trailing_pct"], "market_filter": st["use_filter"], "filter_ma": st["filter_ma"],
+        }
+        return pine_export.build(ticker, markets.market_of(ticker), st["strategy"], st["params"],
+                                 st["initial_capital"], st["commission_discount"], risk)

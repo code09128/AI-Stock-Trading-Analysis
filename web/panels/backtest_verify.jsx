@@ -158,6 +158,8 @@
 
   // 進階驗證結果只對「產生它的那次回測」有效：換一次回測就清掉，避免拿舊結果判讀
   const cache = { opt: { for: null, data: null }, mc: { for: null, data: null } };
+  // PDF 報告用：只拿「這次回測」算過的結果，舊回測的不算
+  const peekCached = (slot, owner) => (cache[slot].for === owner ? cache[slot].data : null);
   function useCached(slot, owner) {
     const [data, setData] = React.useState(cache[slot].for === owner ? cache[slot].data : null);
     React.useEffect(() => {
@@ -566,6 +568,7 @@
       WalkForwardCard,
       OptimizePanel,
       MonteCarloPanel,
+      peekCached,
     }),
   });
 })();

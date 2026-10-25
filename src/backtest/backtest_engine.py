@@ -48,7 +48,8 @@ class Trade:
 class BacktestEngine:
     def __init__(self, market: str = "TW", initial_capital: float = 1_000_000.0, commission_discount: float = 1.0,
                  lot_size: Optional[int] = None, fees: Optional[List[Dict[str, Any]]] = None,
-                 sizing: Optional[Dict[str, Any]] = None, stop_loss_pct: float = 0.0, trailing_pct: float = 0.0):
+                 sizing: Optional[Dict[str, Any]] = None, stop_loss_pct: float = 0.0, trailing_pct: float = 0.0,
+                 tw_tax_rate: Optional[float] = None):
         self.market = market
         self.initial_capital = initial_capital
         self.commission_discount = commission_discount
@@ -60,6 +61,7 @@ class BacktestEngine:
         self.sizing = {"mode": "percent", "value": 100.0, "atr_mult": 2.0, **(sizing or {})}
         self.stop_loss_pct = stop_loss_pct or 0.0
         self.trailing_pct = trailing_pct or 0.0
+        self.tw_tax_rate = tw_tax_rate  # 台股賣出證交稅率（ETF 0.1%、債券 ETF 停徵）；None＝0.3%
 
     def run(self, bars: List[Bar], signals: List[int], entry_allowed: Optional[List[bool]] = None) -> Dict[str, Any]:
         """
@@ -195,7 +197,7 @@ class BacktestEngine:
             self.market, "BUY", entry_price, shares, self.commission_discount, min_fee, self.fees
         )
         exit_costs = calculate_friction_cost(
-            self.market, "SELL", exit_price, shares, self.commission_discount, min_fee, self.fees
+            self.market, "SELL", exit_price, shares, self.commission_discount, min_fee, self.fees, self.tw_tax_rate
         )
         gross_pnl = (exit_price - entry_price) * shares
         net_pnl = gross_pnl - entry_costs["total_cost"] - exit_costs["total_cost"]

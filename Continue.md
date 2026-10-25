@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 214 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 227 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -64,7 +64,15 @@
    - `src/ai/ai_client.py`（926→724 行）拆出 `ai_prompts.py`（`SYSTEM_GUARD`、`JSON_GUARD`、`MODULE_TASKS`）與 `ai_text.py`（`unverified_numbers`、`to_traditional`、`clean_math`、`_clean`、`_strip_opener`）；`ai_client` 仍可用舊名稱取用，測試替換用的 `_request`、`time` 留在原檔。
    - 新檔都在 `index.html` 依相依順序載入（被用到的先載入），打包時 `build_web.py` 依同一份清單編譯。看盤頁 `watch.jsx` 先不拆：報價、匯率、分時、下單共用同一批即時資料，等要改資料流（即時推送、多清單、同時看多檔、列表顯示今日訊號）時再一起重構。
    - 驗證：214 個測試、biome、pyflakes、前端編譯；隔離伺服器實測設定頁（新增／取消 AI 連線、本機偵測、背景服務、金鑰與 FinMind 用量）、技術分析（籌碼面板、持股卡片停損／目標損益）、匯出報告四段內容、回測 5 個分頁。
-13. **量化回測後續（未做）**：第三批（今日訊號掃描自選股＋CSV、Pine v5 匯出（證交稅依股票 0.3%／ETF 0.1% 分開攤）、PDF 報告）；之後再考慮籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
+13. ✅ **量化回測第三批與修正（2026-10-25）**：
+   - 回測頁上方切換「📊 單檔回測／📡 今日訊號／📤 匯出 Pine v5」，三者共用同一份策略與風控表單。
+   - 今日訊號：`src/backtest/live_signals.py`＋`POST /api/mod3/signals`（最多 60 檔、6 執行緒、每檔約 2 年日 K、大盤每市場只抓一次）。狀態：買進／賣出／今日停損停利出場／被大盤濾網擋下／持有中（附進場價、帳面損益、目前停損價）／觀望；最新一根是今天且未收盤標「盤中」。單檔失敗不影響其他檔；可匯出 CSV（含 BOM，Excel 不亂碼）；「回測這檔」帶回表單。
+   - Pine v5：`src/backtest/pine_export.py`＋`POST /api/mod3/pine`。6 支策略各有 Pine 版（KD 用台灣公式）、部位三模式、停損與移動停利（高點用到前一根）、大盤濾網（`request.security` 大盤代號可改）、台股手續費＋證交稅攤到買賣兩邊；頁面有「什麼是 Pine／5 步使用說明」，程式碼下方列出與本系統的差異（還權價格、證交稅攤提、整張股數、暫停交易、進場當天停損、KD 公式）。程式碼未在 TradingView 實際編譯過，第一次使用請留意編輯器錯誤訊息。
+   - PDF 報告：回測結果右上角「🖨️ PDF 報告」，在隱藏 iframe 組白底頁面後呼叫列印（桌面版、瀏覽器都可「另存為 PDF」）；已算過的滾動前進／參數穩定度／蒙地卡羅會一起放進去，沒算的會註明。
+   - 修正舊問題：回測台股一律用 0.3% 證交稅 → 改依標的（`market_rules.tw_sell_tax_rate`：股票 0.3%、ETF 0.1%、債券 ETF 停徵到 2026-12-31）；看盤頁模擬下單的債券 ETF 也改為免證交稅（前後端同一規則 `window.TA.twSellTaxRate`）。停徵期限到期若延長，要改 `BOND_ETF_TAX_FREE_UNTIL` 與 `ui.jsx`。
+   - 設定頁 AI 用量：模型分成「目前連線」與「只在歷史紀錄出現」（收合），每個模型顯示次數、tokens、估算費用、最後使用日；OpenRouter 這類回報實際費用的不必填單價；付費模型未填單價時提示有幾次沒算進去。
+   - 測試 `tests/test_backtest_tools.py`（11 個）＋證交稅 2 個。
+14. **量化回測後續（未做）**：籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
 
 ---
 

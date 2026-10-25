@@ -1,5 +1,10 @@
 // 策略回測頁：表單＋結果分頁。小元件在 backtest_parts.jsx，驗證類在 backtest_verify.jsx
 (() => {
+  const MODES = [
+    ['backtest', '📊 單檔回測'],
+    ['signals', '📡 今日訊號'],
+    ['pine', '📤 匯出 Pine v5'],
+  ];
   const TABS = [
     ['perf', '績效總覽'],
     ['trades', '交易明細'],
@@ -27,9 +32,20 @@
       WalkForwardCard,
       OptimizePanel,
       MonteCarloPanel,
+      SignalsPanel,
+      PineExportPanel,
+      printReport,
     } = window.TA.BT;
     const [catalog, setCatalog] = React.useState(window.TA._btCatalog || null);
     const [tab, setTab] = React.useState('perf');
+    const [view, setView] = React.useState('backtest');
+    // 今日訊號 →「回測這檔」：換標的、切回單檔回測，使用者確認後按執行
+    const backtestSymbol = (sym) => {
+      setM3Form({ ...m3Form, target_asset: sym });
+      setView('backtest');
+      document.querySelector('[data-tour="mod3-root"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.TA.toast?.(`已帶入 ${sym}，按「執行回測」開始`);
+    };
     React.useEffect(() => {
       if (catalog) return;
       fetch('/api/mod3/strategies')
@@ -64,6 +80,22 @@
     return (
       <div className="space-y-5" data-tour="mod3-root">
         <HelpCard />
+        <div className="flex flex-wrap gap-2">
+          {MODES.map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setView(k)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border ${
+                view === k
+                  ? 'bg-sky-600/25 border-sky-500/60 text-sky-100'
+                  : 'border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div>
             <h2 className="text-base font-semibold text-white">回測參數</h2>
@@ -116,7 +148,7 @@
             <NumField
               id="m3-disc"
               label="台股手續費折數"
-              tip="券商手續費 0.1425% 乘上折數，例如 0.6＝六折。台股賣出另扣 0.3% 證交稅（ETF 0.1%）。"
+              tip="券商手續費 0.1425% 乘上折數，例如 0.6＝六折。台股賣出另扣證交稅：股票 0.3%、ETF 0.1%、債券 ETF（代號 B 結尾）停徵到 2026 年底，回測會依標的自動套用。"
               step="0.1"
               min="0.1"
               max="1.0"
@@ -246,7 +278,7 @@
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className={`flex justify-end ${view === 'backtest' ? '' : 'hidden'}`}>
             <button
               type="button"
               onClick={runMod3}
@@ -258,13 +290,16 @@
           </div>
         </div>
 
-        {(m3Data?.strategy_warnings || []).map((w) => (
+        {view === 'signals' && <SignalsPanel m3Form={m3Form} onBacktest={backtestSymbol} />}
+        {view === 'pine' && <PineExportPanel m3Form={m3Form} m3Data={m3Data} />}
+
+        {view === 'backtest' && (m3Data?.strategy_warnings || []).map((w) => (
           <div key={w} className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
             ⚠️ {w}
           </div>
         ))}
 
-        {r && (
+        {view === 'backtest' && r && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               {TABS.map(([k, label]) => (
@@ -285,6 +320,14 @@
               <span className="ml-auto text-[11px] text-slate-500">
                 {m3Data.symbol}｜{m3Data.strategy?.label || '雙均線交叉'}（{m3Data.strategy?.params_text}）｜{m3Data.period}
               </span>
+              <button
+                type="button"
+                onClick={() => printReport(m3Data)}
+                className="px-3 py-1.5 rounded-lg text-xs border border-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              >
+                🖨️ PDF 報告
+                <window.TA.Tip text="開啟列印視窗，目的地選「另存為 PDF」即可存檔。內容：績效摘要、每日淨值、環境拆分、前後段驗證、交易明細；如果已在「參數最佳化」「蒙地卡羅」分頁按過計算，也會一起放進去（重新回測後要再算一次）。報告一律白底，方便列印。" />
+              </button>
             </div>
 
             {tab === 'perf' && (
@@ -392,7 +435,7 @@
             {tab === 'mc' && <MonteCarloPanel m3Data={m3Data} />}
           </div>
         )}
-        {r && (
+        {view === 'backtest' && r && (
           <window.TA.AiExplain
             module="mod3"
             provenance={[{ text: '回測使用真實還權日 K，並已扣除手續費與稅' }]}
