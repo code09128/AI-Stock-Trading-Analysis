@@ -114,7 +114,7 @@
           .clone()
           .json()
           .then((d) => d && Array.isArray(d.ai_usage) && recordUsage(d.ai_usage))
-          .catch(() => {});
+          .catch(() => { });
       }
       return res;
     };
@@ -280,7 +280,7 @@
       const etf = /ETF|債/.test(d?.label || '');
       return [
         pos &&
-          `我持有成本 ${f(pos.平均成本)}（目前 ${f(pos.目前損益率)}%），以現在的評價還值得續抱嗎？`,
+        `我持有成本 ${f(pos.平均成本)}（目前 ${f(pos.目前損益率)}%），以現在的評價還值得續抱嗎？`,
         etf
           ? '這檔適合放在投資組合的什麼角色？配息穩定嗎？'
           : '以目前估值，適合長期存股還是波段操作？',
@@ -424,11 +424,10 @@
                     type="button"
                     key={s}
                     onClick={() => setQuestion(s)}
-                    className={`text-[11px] px-2 py-1 rounded-full border cursor-pointer text-left ${
-                      question === s
+                    className={`text-[11px] px-2 py-1 rounded-full border cursor-pointer text-left ${question === s
                         ? 'border-violet-400 bg-violet-500/20 text-violet-100'
                         : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-violet-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     {s}
                   </button>
@@ -453,7 +452,7 @@
               </div>
             )}
             <div className="text-[11px] text-slate-500">
-              只會把這一頁已計算好的資料送給「{profile.name}」；AI 只負責解釋，不負責算數字。
+              {/* 只會把這一頁已計算好的資料送給「{profile.name}」；AI 只負責解釋，不負責算數字。 */}
             </div>
           </>
         )}

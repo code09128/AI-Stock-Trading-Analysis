@@ -60,11 +60,10 @@
                     : 'ℹ️ 已改用內建範例（不會動到你的交易紀錄）',
                 );
               }}
-              className={`px-3 py-1 rounded-lg border cursor-pointer ${
-                m5Source === k
+              className={`px-3 py-1 rounded-lg border cursor-pointer ${m5Source === k
                   ? 'bg-sky-500/20 border-sky-400 text-white'
                   : 'border-slate-700 text-slate-400'
-              }`}
+                }`}
             >
               {label}
             </button>
@@ -233,9 +232,8 @@
                     </td>
                     <td className="py-1.5 px-1.5">{en.shares}</td>
                     <td
-                      className={`py-1.5 px-1.5 font-bold ${
-                        en.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
+                      className={`py-1.5 px-1.5 font-bold ${en.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
                     >
                       {en.net_pnl}
                     </td>
@@ -329,9 +327,8 @@
                   <window.TA.Tip text="平均每筆交易的淨損益（元）。大於 0 代表長期平均下來每筆是賺的。" />
                 </div>
                 <div
-                  className={`text-lg font-bold font-mono mt-1 ${
-                    m5Data.statistics?.expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}
+                  className={`text-lg font-bold font-mono mt-1 ${m5Data.statistics?.expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
                 >
                   {m5Data.statistics?.expectancy}
                 </div>
@@ -377,11 +374,10 @@
                   <window.TA.Tip text="每條規則都要有明確數字門檻與動作，才能真的執行。用你的交易紀錄產生後，會同步成下單前必須勾選的清單。" />
                 </div>
                 <div
-                  className={`text-[11px] ${
-                    m5Data.rules_source?.startsWith('AI（') ? 'text-violet-300' : 'text-amber-300'
-                  }`}
+                  className={`text-[11px] ${m5Data.rules_source?.startsWith('AI（') ? 'text-violet-300' : 'text-amber-300'
+                    }`}
                 >
-                  {m5Data.rules_source?.startsWith('AI（') ? '' : '⚠️'} 來源：{m5Data.rules_source}
+                  {/* {m5Data.rules_source?.startsWith('AI（') ? '' : '⚠️'} 來源：{m5Data.rules_source} */}
                 </div>
                 {(m5Data.personalized_3_rules || []).map((rule) => (
                   <div
@@ -392,9 +388,8 @@
                       規則 {rule.rule_number}：{rule.rule_name}
                       {rule.source && (
                         <span
-                          className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-normal ${
-                            rule.source === 'AI' ? 'bg-sky-500/20 text-sky-200' : 'bg-slate-700/60 text-slate-300'
-                          }`}
+                          className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-normal ${rule.source === 'AI' ? 'bg-sky-500/20 text-sky-200' : 'bg-slate-700/60 text-slate-300'
+                            }`}
                         >
                           {rule.source}
                         </span>
