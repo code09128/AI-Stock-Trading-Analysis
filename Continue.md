@@ -57,7 +57,14 @@
    - 前端拆檔：`panels/backtest.jsx`（表單＋分頁）、`backtest_parts.jsx`（說明卡、欄位、每日淨值、風控統計、交易明細）、`backtest_verify.jsx`（環境拆分、前後段、熱力圖、滾動前進、蒙地卡羅），共用 `window.TA.BT`。分頁：績效總覽／交易明細／環境與前後段／參數最佳化／蒙地卡羅；熱力圖點格子帶回參數；重新回測後進階結果自動清掉。
    - 實測 2330：5 年雙均線熱力圖 ★ 1／34 格、最高分是孤島，所有參數都輸給買進持有（339.69%）；滾動前進 WFE 0.69。10 年參數掃描約 0.5～4 秒，蒙地卡羅 3,000 次約 0.1 秒。
    - 測試 `tests/test_backtest_validation.py`（10 個）。
-12. **量化回測後續（未做）**：第三批（今日訊號掃描自選股＋CSV、Pine v5 匯出（證交稅依股票 0.3%／ETF 0.1% 分開攤）、PDF 報告）；之後再考慮籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
+12. ✅ **拆檔整理（2026-10-25，功能不變）**：
+   - `web/pages/settings.jsx`（859→385 行）拆出 `settings_ai.jsx`（AI 連線編輯 `ProfileEditor`、本機模型偵測 `LocalDetect`、`AI_TYPES`、`newAIProfile`）與 `settings_background.jsx`（`BackgroundServicePanel`）。
+   - `web/panels/technical.jsx`（953→617 行）拆出 `technical_parts.jsx`（`ChipPanel` 籌碼面板、`MyPositionCard`）。
+   - `web/app.jsx`（991→864 行）拆出 `export_report.jsx`（`buildExportReport`、`downloadText`、`stamp`）。
+   - `src/ai/ai_client.py`（926→724 行）拆出 `ai_prompts.py`（`SYSTEM_GUARD`、`JSON_GUARD`、`MODULE_TASKS`）與 `ai_text.py`（`unverified_numbers`、`to_traditional`、`clean_math`、`_clean`、`_strip_opener`）；`ai_client` 仍可用舊名稱取用，測試替換用的 `_request`、`time` 留在原檔。
+   - 新檔都在 `index.html` 依相依順序載入（被用到的先載入），打包時 `build_web.py` 依同一份清單編譯。看盤頁 `watch.jsx` 先不拆：報價、匯率、分時、下單共用同一批即時資料，等要改資料流（即時推送、多清單、同時看多檔、列表顯示今日訊號）時再一起重構。
+   - 驗證：214 個測試、biome、pyflakes、前端編譯；隔離伺服器實測設定頁（新增／取消 AI 連線、本機偵測、背景服務、金鑰與 FinMind 用量）、技術分析（籌碼面板、持股卡片停損／目標損益）、匯出報告四段內容、回測 5 個分頁。
+13. **量化回測後續（未做）**：第三批（今日訊號掃描自選股＋CSV、Pine v5 匯出（證交稅依股票 0.3%／ETF 0.1% 分開攤）、PDF 報告）；之後再考慮籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
 
 ---
 

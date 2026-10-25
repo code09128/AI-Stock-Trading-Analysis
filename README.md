@@ -188,7 +188,8 @@ src/
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）
 ├── journal/     交易檢討：journal_coach
 ├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）
-├── ai/          AI：ai_client、ai_context、llm_runner、anti_hallucination（防幻覺稽核）
+├── ai/          AI：ai_client（各家連線與串流）、ai_prompts（提示詞）、ai_text（數字核對、簡轉繁）、ai_context、
+│                llm_runner、anti_hallucination（防幻覺稽核）
 └── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、config、params、
                  alert_engine（背景提醒檢查）、tray_icon（Win32 系統匣常駐）、notifier（Toast 通知）、
                  autostart（開機啟動）、env_settings、user_data（資料存檔與備份）、activity_log
@@ -198,8 +199,9 @@ src/
 
 - 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效；打包時 `build_web.py` 用 esbuild 預先編譯成 `app.bundle.js`。
 - `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認與畫面縮放；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
-- `panels/`：technical、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類）、portfolio、journal、selftest（各分析頁）
+- `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類）、portfolio、journal、selftest（各分析頁）
+- `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
 - `pages/`：watch（看盤）、heatmap（股市熱力圖）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
-  settings／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
+  settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 
 開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。
