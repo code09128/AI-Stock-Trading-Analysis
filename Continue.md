@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 204 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 214 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -51,7 +51,13 @@
    - FinMind：`finmind.py` 自我節流（近 1 小時請求數到官方上限 80% 就先停）；設定頁顯示用量。計數在各程式行程記憶體中，重開程式歸零，瀏覽器版與桌面版同時開時各算各的。
    - 修正舊問題：回測 0 筆交易時伺服器回 500（`win_rate` 為數字無法 `.replace`）。
    - 測試 `tests/test_backtest_strategies.py`（23 個）。
-11. **量化回測後續（未做）**：第二批（參數熱力圖與 ★ 穩定高原、多段滾動 Walk-forward＋WFE、蒙地卡羅）；第三批（今日訊號掃描自選股＋CSV、Pine v5 匯出（證交稅依股票 0.3%／ETF 0.1% 分開攤）、PDF 報告）；之後再考慮籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
+11. ✅ **量化回測第二批（2026-10-25）**：
+   - `src/backtest/validation.py`：參數熱力圖（各策略 `heatmap` 兩軸各 6 值；★＝前 40%、鄰格都賺且不低於中位數、鄰格平均 ≥ 自己一半；標出最高分是否孤島，並對照同期買進持有）、滾動前進分析（測試段＝總長 ÷ 7、訓練段＝2 倍，最多 6 段接到資料結尾；WFE＝樣本外平均年化 ÷ 樣本內平均年化）、蒙地卡羅（shuffle／bootstrap，500～3,000 次，固定亂數種子，回撤以逐筆平倉計算）。
+   - API：`POST /api/mod3/optimize`（熱力圖＋滾動前進，按鈕觸發，與回測共用 `_prepare`）、`POST /api/mod3/montecarlo`（只送每筆報酬 %，不重抓資料）。前後段驗證與進階驗證都帶入同一筆本金。
+   - 前端拆檔：`panels/backtest.jsx`（表單＋分頁）、`backtest_parts.jsx`（說明卡、欄位、每日淨值、風控統計、交易明細）、`backtest_verify.jsx`（環境拆分、前後段、熱力圖、滾動前進、蒙地卡羅），共用 `window.TA.BT`。分頁：績效總覽／交易明細／環境與前後段／參數最佳化／蒙地卡羅；熱力圖點格子帶回參數；重新回測後進階結果自動清掉。
+   - 實測 2330：5 年雙均線熱力圖 ★ 1／34 格、最高分是孤島，所有參數都輸給買進持有（339.69%）；滾動前進 WFE 0.69。10 年參數掃描約 0.5～4 秒，蒙地卡羅 3,000 次約 0.1 秒。
+   - 測試 `tests/test_backtest_validation.py`（10 個）。
+12. **量化回測後續（未做）**：第三批（今日訊號掃描自選股＋CSV、Pine v5 匯出（證交稅依股票 0.3%／ETF 0.1% 分開攤）、PDF 報告）；之後再考慮籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
 
 ---
 

@@ -3,7 +3,7 @@
 每支策略都是「只用到當天收盤為止的資料」產生訊號：1＝買進、-1＝賣出、0＝無；
 訊號當天收盤確認，由回測引擎在隔天開盤成交，所以不會偷看未來。
 - 參數定義（PARAMS）讓前端自動產生表單、後端檢查範圍
-- GRID 是前後段驗證要掃的兩個參數
+- GRID 是前後段驗證要掃的兩個參數；HEATMAP 是參數熱力圖的兩軸（格子比較細）
 """
 
 from typing import Any, Callable, Dict, List, Optional
@@ -140,6 +140,7 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
             _p("slow_ma", "長均線", 20, 3, 250, "必須大於短均線。"),
         ],
         "grid": {"fast_ma": (3, 5, 10, 20), "slow_ma": (20, 30, 60, 120)},
+        "heatmap": {"fast_ma": (3, 5, 8, 10, 13, 20), "slow_ma": (20, 30, 40, 60, 90, 120)},
     },
     "kd_cross": {
         "label": "KD 低檔黃金交叉",
@@ -151,6 +152,7 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
             _p("buy_below", "買進 K 值門檻", 50, 10, 90, "只在 K 值低於這個數字時的黃金交叉才買，避開高檔追價。"),
         ],
         "grid": {"kd_n": (5, 9, 14, 20), "buy_below": (20, 30, 50, 80)},
+        "heatmap": {"kd_n": (5, 7, 9, 12, 14, 20), "buy_below": (20, 30, 40, 50, 60, 80)},
     },
     "ma_align": {
         "label": "均線多頭排列",
@@ -163,6 +165,7 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
             _p("long_ma", "長均線", 60, 20, 250, "例如 60 日線（季線），要大於中均線。"),
         ],
         "grid": {"short_ma": (3, 5, 10, 20), "mid_ma": (20, 30, 40, 60)},
+        "heatmap": {"short_ma": (3, 5, 8, 10, 13, 20), "mid_ma": (15, 20, 25, 30, 40, 50)},
     },
     "volume_breakout": {
         "label": "量價突破",
@@ -175,6 +178,7 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
             _p("exit_ma", "出場均線", 10, 3, 60, "收盤跌破這條均線就出場。"),
         ],
         "grid": {"lookback": (10, 20, 40, 60), "vol_mult": (1.2, 1.5, 2.0, 3.0)},
+        "heatmap": {"lookback": (10, 15, 20, 30, 40, 60), "vol_mult": (1.0, 1.2, 1.5, 2.0, 2.5, 3.0)},
     },
     "bias_revert": {
         "label": "乖離率回歸",
@@ -188,6 +192,7 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
             _p("exit_bias", "出場乖離 %", 0, -10, 20, "乖離回到幾 % 以上賣出，0＝回到均線。", integer=False),
         ],
         "grid": {"ma": (10, 20, 40, 60), "entry_bias": (4, 6, 8, 12)},
+        "heatmap": {"ma": (10, 20, 30, 40, 60, 90), "entry_bias": (3, 4, 6, 8, 10, 12)},
     },
     "gap_up": {
         "label": "跳空缺口",
@@ -198,6 +203,7 @@ STRATEGIES: Dict[str, Dict[str, Any]] = {
             _p("min_gap_pct", "最小缺口 %", 1, 0, 10, "缺口至少要多大才算，0＝只要有跳空就算。", integer=False),
         ],
         "grid": {"min_gap_pct": (0, 0.5, 1, 2, 3)},
+        "heatmap": {"min_gap_pct": (0, 0.5, 1, 1.5, 2, 3)},
     },
 }
 

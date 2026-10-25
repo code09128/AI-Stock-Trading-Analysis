@@ -1,11 +1,11 @@
-"""策略回測（/api/mod3/backtest、/api/mod3/strategies）"""
+"""策略回測（/api/mod3/backtest、/api/mod3/strategies、/api/mod3/optimize、/api/mod3/montecarlo）"""
 
 from typing import Dict, Any, List, Optional
 
 from src.market.bar import Bar
 
 from src.backtest.backtest_engine import BacktestEngine, SIZING_MODES
-from src.backtest import backtest_analysis, strategies
+from src.backtest import backtest_analysis, strategies, validation
 from src.market import markets, trade_rules
 from src.server.params import arg_num, arg_ticker
 
@@ -16,7 +16,8 @@ class BacktestHandlers:
     def handle_mod3_strategies(self) -> Dict[str, Any]:
         return {"strategies": strategies.catalog(), "sizing_modes": SIZING_MODES}
 
-    def handle_mod3_backtest(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _prepare(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """回測、參數掃描共用：檢查參數、抓日 K 與大盤、組出引擎設定。"""
         ticker = arg_ticker(payload, "target_asset", "ticker")
         strategy = str(payload.get("strategy") or "ma_cross")
         raw_params = dict(payload.get("params") or {})
@@ -84,6 +85,26 @@ class BacktestHandlers:
                 allowed = backtest_analysis.market_filter(bars, idx_bars, filter_ma)
             else:
                 strategy_warnings.append("大盤資料取得失敗，這次回測沒有套用大盤濾網。")
+        return {
+            "ticker": ticker, "strategy": strategy, "params": params, "meta": meta, "feed": feed, "bars": bars,
+            "market": market, "signals": signals, "warnings": strategy_warnings, "engine_kw": engine_kw,
+            # 進階驗證要用同一筆本金（固定金額部位才會一致）
+            "val_kw": {**engine_kw, "initial_capital": initial_capital},
+            "initial_capital": initial_capital, "commission_discount": commission_discount,
+            "period_years": period_years, "index_sym": index_sym, "idx_bars": idx_bars, "allowed": allowed,
+            "risk": {
+                "sizing_mode": sizing_mode, "sizing_label": SIZING_MODES[sizing_mode], "sizing_value": sizing_value,
+                "atr_mult": atr_mult, "stop_loss_pct": stop_loss_pct, "trailing_pct": trailing_pct,
+                "market_filter": use_filter and allowed is not None, "filter_ma": filter_ma, "filter_index": index_sym,
+            },
+        }
+
+    def handle_mod3_backtest(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        c = self._prepare(payload)
+        strategy, params, meta, feed, bars, market = (c[k] for k in ("strategy", "params", "meta", "feed", "bars", "market"))
+        signals, strategy_warnings, engine_kw, allowed = c["signals"], c["warnings"], c["engine_kw"], c["allowed"]
+        initial_capital, commission_discount, period_years = c["initial_capital"], c["commission_discount"], c["period_years"]
+        idx_bars, index_sym = c["idx_bars"], c["index_sym"]
 
         engine = BacktestEngine(
             market=market,
@@ -123,21 +144,11 @@ class BacktestHandlers:
             breakdown = backtest_analysis.regime_breakdown(trades_list, backtest_analysis.regime_by_date(idx_bars))
             breakdown["index"] = index_sym
         wf = backtest_analysis.walk_forward(bars, market, commission_discount, strategy=strategy, params=params,
-                                            engine_kw=engine_kw, allowed=allowed)
+                                            engine_kw=c["val_kw"], allowed=allowed)
         if wf is None:
             strategy_warnings.append("期間太短或訊號太少，無法做前後段驗證；請把回測期間拉長到 3 年以上。")
 
-        risk_settings = {
-            "sizing_mode": sizing_mode,
-            "sizing_label": SIZING_MODES[sizing_mode],
-            "sizing_value": sizing_value,
-            "atr_mult": atr_mult,
-            "stop_loss_pct": stop_loss_pct,
-            "trailing_pct": trailing_pct,
-            "market_filter": use_filter and allowed is not None,
-            "filter_ma": filter_ma,
-            "filter_index": index_sym,
-        }
+        risk_settings = c["risk"]
         return {
             "module": 3,
             "symbol": feed["symbol"],
@@ -165,3 +176,30 @@ class BacktestHandlers:
             "equity_curve": equity_curve,
             "backtest_result": bt_result,
         }
+
+    def handle_mod3_optimize(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """參數熱力圖＋滾動前進分析（同一組資料與風控設定），按鈕觸發才算。"""
+        c = self._prepare(payload)
+        args = (c["bars"], c["market"], c["commission_discount"], c["strategy"], c["params"], c["val_kw"], c["allowed"])
+        rolling = validation.rolling_walk_forward(*args)
+        warnings = list(c["warnings"])
+        if rolling is None:
+            warnings.append("資料太短，切不出 2 段以上的滾動前進分析；請把回測期間拉長到 3 年以上。")
+        return {
+            "symbol": c["feed"]["symbol"],
+            "strategy": {"key": c["strategy"], "label": c["meta"]["label"],
+                         "params_text": backtest_analysis.params_text(c["strategy"], c["params"])},
+            "period": f"{c['bars'][0].timestamp} ~ {c['bars'][-1].timestamp}" if c["bars"] else "",
+            "heatmap": validation.param_heatmap(*args),
+            "rolling": rolling,
+            "warnings": warnings,
+        }
+
+    def handle_mod3_montecarlo(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """用這次回測的每筆交易報酬 % 做蒙地卡羅，不必重抓資料。"""
+        returns = payload.get("returns")
+        if not isinstance(returns, list):
+            raise ValueError("缺少每筆交易報酬（returns）")
+        runs = int(arg_num(payload, "runs", 1000, "模擬次數", integer=True, lo=500, hi=3000))
+        mode = str(payload.get("mode") or "shuffle")
+        return validation.monte_carlo(returns[:5000], runs=runs, mode=mode)

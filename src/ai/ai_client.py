@@ -631,7 +631,8 @@ MODULE_TASKS = {
 }
 
 
-NOISY_KEYS = {"level_candidates", "MACD_hist", "trades", "equity_curve", "endpoint", "ai_usage"}
+NOISY_KEYS = {"level_candidates", "MACD_hist", "trades", "equity_curve", "endpoint", "ai_usage",
+              "daily_equity", "mdd_hist", "final_hist"}
 MAX_DATA_CHARS = 24000
 
 
