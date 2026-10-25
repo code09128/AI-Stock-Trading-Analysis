@@ -49,21 +49,30 @@
   const IntradayChart = ({ data, lastTrade, tz }) => {
     const [hover, setHover] = useState(null);
     const pts = data?.points || [];
+
+    // lastTrade 例如 "20261022 13:30:00"：最後成交不是今天＝今天沒有交易（假日、颱風停市），而不是「尚未開盤」
+    const d = String(lastTrade || '').match(/^(\d{4})-?(\d{2})-?(\d{2})\s*(\d{2}:\d{2})?/);
+    let today;
+    try {
+      today = new Date().toLocaleDateString('sv-SE', { timeZone: tz }); // 交易所當地日期 YYYY-MM-DD
+    } catch {
+      today = new Date().toLocaleDateString('sv-SE');
+    }
+    const lastDay = d ? `${d[1]}-${d[2]}-${d[3]}` : (data?.trade_date || null);
+    const lastTime = d?.[4] ? ` ${d[4]}` : '';
+    const isClosedOrNoTrade = Boolean(
+      (lastDay && lastDay < today) ||
+      (data?.trade_date && data.trade_date < today) ||
+      data?.is_fallback,
+    );
+    const noTradeNotice = isClosedOrNoTrade
+      ? `最後成交：${lastDay || '--'}${lastTime}`
+      : null;
+
     if (pts.length < 2) {
-      // lastTrade 例如 "20261022 13:30:00"：最後成交不是今天＝今天沒有交易（假日、颱風停市），而不是「尚未開盤」
-      const d = String(lastTrade || '').match(/^(\d{4})-?(\d{2})-?(\d{2})\s*(\d{2}:\d{2})?/);
-      let today;
-      try {
-        today = new Date().toLocaleDateString('sv-SE', { timeZone: tz }); // 交易所當地日期 YYYY-MM-DD
-      } catch {
-        today = new Date().toLocaleDateString('sv-SE');
-      }
-      const lastDay = d ? `${d[1]}-${d[2]}-${d[3]}` : null;
       const msg = data?.error
         ? `分時資料取得失敗：${data.error}`
-        : lastDay && lastDay < today
-          ? `今天沒有成交資料（休市或停止交易）。最後成交：${lastDay}${d[4] ? ` ${d[4]}` : ''}`
-          : '目前沒有分時資料（尚未開盤）';
+        : noTradeNotice || '目前沒有分時資料（尚未開盤）';
       return (
         <div className="h-40 flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-700 rounded-xl px-4 text-center">
           {msg}
@@ -116,6 +125,12 @@
     });
     return (
       <div>
+        {noTradeNotice && (
+          <div className="mb-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-amber-300 flex flex-wrap items-center justify-between gap-1">
+            <span>ℹ️ {noTradeNotice}</span>
+            <span className="text-[11px] text-slate-400">（顯示最後成交日走勢）</span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-4 text-[11px] mono text-slate-400 mb-1">
           <span>時間 {act.t}</span>
           <span className="text-white">價 {fmt(act.close)}</span>
@@ -130,11 +145,11 @@
           viewBox={`0 0 ${W} ${H}`}
           className="w-full h-auto"
           role="img"
-          aria-label="當日分時走勢圖"
+          aria-label={isClosedOrNoTrade ? '最後成交日分時走勢圖' : '當日分時走勢圖'}
           onMouseMove={onMove}
           onMouseLeave={() => setHover(null)}
         >
-          <title>當日分時走勢圖</title>
+          <title>{isClosedOrNoTrade ? '最後成交日分時走勢圖' : '當日分時走勢圖'}</title>
           {ticks.map((t) => (
             <g key={t.y}>
               <line x1={padL} x2={W - padR} y1={t.y} y2={t.y} stroke="#1e293b" strokeWidth="1" />
@@ -214,7 +229,7 @@
         fetch('/api/indices')
           .then((r) => r.json())
           .then((d) => !stop && setRows(d.indices || []))
-          .catch(() => {})
+          .catch(() => { })
           .finally(() => {
             busy = false;
           });

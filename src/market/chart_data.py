@@ -73,43 +73,87 @@ def indices() -> List[Dict[str, Any]]:
     return out
 
 
+def _extract_intraday_points(res: Dict[str, Any]):
+    meta = res.get("meta") or {}
+    quote = (res.get("indicators", {}).get("quote") or [{}])[0]
+    gmt = meta.get("gmtoffset", 0)
+    pts = []
+    for i, ts in enumerate(res.get("timestamp") or []):
+        c = quote.get("close", [None] * (i + 1))[i]
+        if c is None:
+            continue
+        v = (quote.get("volume") or [0] * (i + 1))[i] or 0
+        local = datetime.utcfromtimestamp(ts + gmt)
+        pts.append({"date": local.strftime("%Y-%m-%d"), "t": local.strftime("%H:%M"), "ts": ts, "close": round(c, 4), "volume": v})
+    return pts, meta, gmt
+
+
 def intraday(symbol: str) -> Optional[Dict[str, Any]]:
-    """當日 5 分鐘走勢 + 昨收 + 日內/52 週高低 + 交易時段。"""
+    """當日 5 分鐘走勢 + 昨收 + 日內/52 週高低 + 交易時段；若當日無資料則自動回退取最後成交日。"""
     key = f"intraday:{symbol}"
     cached = _get(key, INTRADAY_TTL)
     if cached:
         return cached
     last_err = None
     for ysym in _yahoo_symbols(symbol):
+        res = None
         try:
             res = _chart(ysym, "5m", "1d")
         except Exception as e:
             last_err = str(e)
-            continue
-        meta = res["meta"]
-        quote = (res.get("indicators", {}).get("quote") or [{}])[0]
-        gmt = meta.get("gmtoffset", 0)
-        pts = []
-        for i, ts in enumerate(res.get("timestamp") or []):
-            c = quote.get("close", [None] * (i + 1))[i]
-            if c is None:
-                continue
-            v = (quote.get("volume") or [0] * (i + 1))[i] or 0
-            local = datetime.utcfromtimestamp(ts + gmt)
-            pts.append({"t": local.strftime("%H:%M"), "ts": ts, "close": round(c, 4), "volume": v})
+
+        pts_1d, meta_1d, gmt_1d = _extract_intraday_points(res) if res else ([], {}, 0)
+        pts = [{"t": p["t"], "ts": p["ts"], "close": p["close"], "volume": p["volume"]} for p in pts_1d]
+        meta = meta_1d
+        is_fallback = False
+        trade_date = pts_1d[-1]["date"] if pts_1d else None
+        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose")
+        day_high = meta.get("regularMarketDayHigh")
+        day_low = meta.get("regularMarketDayLow")
         reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+        session_start = reg.get("start")
+        session_end = reg.get("end")
+
+        if len(pts) < 2:
+            try:
+                res_5d = _chart(ysym, "5m", "5d")
+                pts_5d, meta_5d, gmt_5d = _extract_intraday_points(res_5d)
+                distinct_dates = sorted(set(p["date"] for p in pts_5d))
+                if distinct_dates:
+                    candidate_date = distinct_dates[-1]
+                    candidate_pts = [p for p in pts_5d if p["date"] == candidate_date]
+                    if len(candidate_pts) >= 2:
+                        pts = [{"t": p["t"], "ts": p["ts"], "close": p["close"], "volume": p["volume"]} for p in candidate_pts]
+                        meta = meta_5d
+                        is_fallback = True
+                        trade_date = candidate_date
+                        prev_close = meta_5d.get("previousClose") or meta_5d.get("chartPreviousClose")
+                        closes = [p["close"] for p in pts]
+                        day_high = max(closes)
+                        day_low = min(closes)
+                        session_start = pts[0]["ts"]
+                        session_end = pts[-1]["ts"]
+            except Exception as e:
+                if not last_err:
+                    last_err = str(e)
+
+        if not pts and not res:
+            continue
+
         data = {
             "symbol": symbol,
             "yahoo_symbol": ysym,
             "points": pts,
-            "prev_close": meta.get("chartPreviousClose"),
-            "day_high": meta.get("regularMarketDayHigh"),
-            "day_low": meta.get("regularMarketDayLow"),
+            "prev_close": prev_close,
+            "day_high": day_high,
+            "day_low": day_low,
             "week52_high": meta.get("fiftyTwoWeekHigh"),
             "week52_low": meta.get("fiftyTwoWeekLow"),
-            "session_start": reg.get("start"),
-            "session_end": reg.get("end"),
+            "session_start": session_start,
+            "session_end": session_end,
             "timezone": meta.get("timezone"),
+            "is_fallback": is_fallback,
+            "trade_date": trade_date,
             "source": "Yahoo Finance Chart API（5 分鐘線）",
         }
         _put(key, data)

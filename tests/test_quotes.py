@@ -86,6 +86,33 @@ class ChartDataTests(unittest.TestCase):
         self.assertEqual(bad["points"], [])
         self.assertIn("down", bad["error"])
 
+    def test_intraday_fallback_to_last_trading_day(self):
+        from src.market import chart_data
+        chart_data._CACHE.clear()
+        fake_1d = {
+            "meta": {"chartPreviousClose": 50.0, "gmtoffset": 28800},
+            "timestamp": [],
+            "indicators": {"quote": [{}]},
+        }
+        fake_5d = {
+            "meta": {"previousClose": 51.0, "chartPreviousClose": 50.0, "gmtoffset": 28800,
+                     "fiftyTwoWeekHigh": 60, "fiftyTwoWeekLow": 40},
+            "timestamp": [1792630800, 1792631100],
+            "indicators": {"quote": [{"close": [51.5, 52.0], "volume": [10, 20]}]},
+        }
+
+        def mock_chart(ysym, interval, rng):
+            if rng == "1d":
+                return fake_1d
+            return fake_5d
+
+        with patch.object(chart_data, "_chart", side_effect=mock_chart):
+            d = chart_data.intraday("0055")
+        self.assertTrue(d["is_fallback"])
+        self.assertEqual(len(d["points"]), 2)
+        self.assertEqual(d["trade_date"], "2026-10-22")
+        self.assertEqual(d["prev_close"], 51.0)
+
 
 class WeeklyNewsStressTests(unittest.TestCase):
     def test_weekly_aggregation(self):
