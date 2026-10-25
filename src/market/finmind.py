@@ -5,10 +5,14 @@ FinMind API 共用呼叫 (finmind.py)
 - 403 = IP 被封鎖（官方說明 30 分鐘自動解除，期間持續送錯誤請求會再被封）→ 暫停 PAUSE_403_SEC
 有 FINMIND_TOKEN 時以 Authorization: Bearer 標頭送出（不放網址，避免出現在抓取紀錄）。
 暫停期間直接拋 FinMindPaused，不送出任何請求；請求仍記錄在 quote_provider 的抓取紀錄。
+自我節流：記錄近 1 小時實際送出的請求數，到上限的 80%（不填 token 240 次、有 token 480 次，
+可用 FINMIND_HOURLY_BUDGET 改）就先停，等最早那次滿 1 小時再放行；留下的 20% 給其他功能與手動操作，
+避免真的打到 402 被暫停 30 分鐘。各功能本身也都有快取，同一檔同一份資料不會重複抓。
 """
 
+from collections import deque
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 import os
 import threading
 import time
@@ -20,19 +24,72 @@ PAUSE_402_SEC = 30 * 60
 PAUSE_403_SEC = 31 * 60
 _LOCK = threading.Lock()
 _PAUSE: Dict[str, Any] = {"until": 0.0, "reason": ""}
+_SENT: Deque[float] = deque()  # 近 1 小時送出請求的時間
+WINDOW_SEC = 3600
+BUDGET_RATIO = 0.8
 
 
 class FinMindPaused(RuntimeError):
     pass
 
 
+def _has_token() -> bool:
+    return bool((os.environ.get("FINMIND_TOKEN") or "").strip())
+
+
+def hourly_budget() -> Dict[str, int]:
+    """官方每小時上限與本程式自己用到的上限。"""
+    limit = 600 if _has_token() else 300
+    try:
+        budget = int(os.environ.get("FINMIND_HOURLY_BUDGET") or 0)
+    except ValueError:
+        budget = 0
+    if not 0 < budget <= limit:
+        budget = int(limit * BUDGET_RATIO)
+    return {"limit": limit, "budget": budget}
+
+
+def _prune(now: float) -> None:
+    while _SENT and now - _SENT[0] >= WINDOW_SEC:
+        _SENT.popleft()
+
+
+def usage() -> Dict[str, Any]:
+    now = time.time()
+    with _LOCK:
+        _prune(now)
+        used = len(_SENT)
+        oldest = _SENT[0] if _SENT else None
+    b = hourly_budget()
+    out: Dict[str, Any] = {"used_last_hour": used, **b}
+    if used >= b["budget"] and oldest:
+        out["throttled_until"] = datetime.fromtimestamp(oldest + WINDOW_SEC).strftime("%H:%M:%S")
+    return out
+
+
+def _take_slot() -> None:
+    """要送出請求前呼叫：超過自我上限就拋 FinMindPaused，不送出。"""
+    now = time.time()
+    b = hourly_budget()
+    with _LOCK:
+        _prune(now)
+        if len(_SENT) >= b["budget"]:
+            resume = datetime.fromtimestamp(_SENT[0] + WINDOW_SEC).strftime("%H:%M:%S")
+            raise FinMindPaused(
+                f"FinMind 近 1 小時已用 {len(_SENT)} 次，達本程式自設上限 {b['budget']} 次"
+                f"（官方 {b['limit']} 次，保留餘量避免被暫停），{resume} 後恢復"
+            )
+        _SENT.append(now)
+
+
 def pause_status() -> Dict[str, Any]:
     with _LOCK:
         until, reason = _PAUSE["until"], _PAUSE["reason"]
+    u = usage()
     if until <= time.time():
-        return {"paused": False}
+        return {"paused": False, "usage": u}
     return {"paused": True, "reason": reason,
-            "resume_at": datetime.fromtimestamp(until).strftime("%H:%M:%S")}
+            "resume_at": datetime.fromtimestamp(until).strftime("%H:%M:%S"), "usage": u}
 
 
 def _pause(code: int, msg: str) -> None:
@@ -46,6 +103,7 @@ def _pause(code: int, msg: str) -> None:
 def reset_pause() -> None:
     with _LOCK:
         _PAUSE.update(until=0.0, reason="")
+        _SENT.clear()
 
 
 def get_data(dataset: str, data_id: str, start_date: str, token: Optional[str] = None,
@@ -56,6 +114,7 @@ def get_data(dataset: str, data_id: str, start_date: str, token: Optional[str] =
     status = pause_status()
     if status["paused"]:
         raise FinMindPaused(f"{status['reason']}，暫停到 {status['resume_at']} 前不再請求")
+    _take_slot()
     params = {"dataset": dataset, "data_id": data_id, "start_date": start_date}
     # token 放 Authorization 標頭而不是網址參數，才不會出現在前端的抓取紀錄裡
     tok = (token or os.environ.get("FINMIND_TOKEN") or "").strip()

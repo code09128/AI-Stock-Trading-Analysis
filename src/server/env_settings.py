@@ -16,7 +16,7 @@ from src.server.config import get_app_dir
 
 FIELDS: List[Dict[str, Any]] = [
     {"key": "FINMIND_TOKEN", "label": "FinMind Token", "secret": True,
-     "help": "台股日 K 備援、籌碼、配息、月營收、季財報的資料額度。不填每小時 300 次；到 finmindtrade.com 免費註冊後填入可提高到 600 次。",
+     "help": "台股日 K 備援、籌碼、配息、月營收、季財報的資料額度。不填每小時 300 次；到 finmindtrade.com 免費註冊後填入可提高到 600 次。程式只用到上限的 80%（保留餘量），各功能也都有快取。",
      "link": "https://finmindtrade.com/"},
     {"key": "GEMINI_API_KEY", "label": "Google Gemini 金鑰", "secret": True,
      "help": "選填。填在這裡後，在「AI 連線」新增 Gemini 時金鑰欄可以留空，金鑰就不會存進瀏覽器。"},
@@ -65,7 +65,8 @@ def status() -> Dict[str, Any]:
         elif v:
             src = "系統環境變數"
         fields.append({**f, "set": bool(v), "display": _mask(v, f["secret"]) if v else "", "source": src})
-    return {"path": str(path), "exists": path.exists(), "fields": fields}
+    from src.market import finmind  # 延遲匯入：只有設定頁讀狀態時才需要
+    return {"path": str(path), "exists": path.exists(), "fields": fields, "finmind": finmind.pause_status()}
 
 
 def save(values: Dict[str, Any]) -> Dict[str, Any]:

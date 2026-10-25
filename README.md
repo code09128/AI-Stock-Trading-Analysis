@@ -12,7 +12,7 @@
 | **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
 | **技術分析** | 還權日 K、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
 | **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
-| **策略回測** | 均線策略，訊號隔日開盤成交、含各市場手續費與法定稅；每手整數倍部位管理；1／3／5／10 年、多空盤整環境拆解、前後段驗證 |
+| **策略回測** | 6 種技術策略（雙均線、KD 低檔黃金交叉、均線多頭排列、量價突破、乖離率回歸、跳空缺口），訊號隔日開盤成交、含各市場手續費與法定稅；部位模型（資金比例／固定金額／ATR 風險定額）、單筆停損與移動停利、大盤均線濾網（統計擋下次數）、成交量 0 視同暫停交易；最大回撤以每日收盤市值計算；1／3／5／10 年、多空盤整環境拆解、前後段驗證 |
 | **組合風控** | 集中度、ETF 穿透曝險、Beta、相關係數、大盤下跌情境、歷史回落重演（2020 疫情、2022 升息） |
 | **交易檢討** | 分析交易紀錄的勝率、賺賠比、處置效應、報復性交易，產生 3 條個人規則，並成為下單前的勾選清單 |
 | **AI 解讀** | 每頁底部，研究主管／交易員口吻的報告格式（表格與段落），依你的持股給建議，回答中的數字自動與資料核對 |
@@ -99,7 +99,7 @@ cd AI-Stock-Trading-Analysis
 不設定任何東西也能完整使用（AI 部分改用內建規則引擎）。需要時到程式的 **設定** 頁：
 
 1. **金鑰與資料額度**：直接填寫，存檔後立即生效，會寫進專案根目錄的 `.env`（已在 `.gitignore`，不會被提交）。
-   - `FINMIND_TOKEN`：FinMind 額度由每小時 300 次提高到 600 次（[finmindtrade.com](https://finmindtrade.com) 免費註冊）。
+   - `FINMIND_TOKEN`：FinMind 額度由每小時 300 次提高到 600 次（[finmindtrade.com](https://finmindtrade.com) 免費註冊）。程式只用到上限的 80%（240／480 次，可用 `FINMIND_HOURLY_BUDGET` 改），到了就先暫停 FinMind 請求、滿 1 小時自動恢復；設定頁會顯示近 1 小時用量。
    - `GEMINI_API_KEY`／`OPENAI_API_KEY`／`ANTHROPIC_API_KEY`／`OPENROUTER_API_KEY`：AI 金鑰。
    - `SEC_USER_AGENT`：抓美股 SEC 公告用的聯絡資訊（SEC 要求，可填自己的 email）。
 2. **AI 連線**：選雲端模型，或讓程式自動掃描本機的 Ollama／LM Studio。OpenRouter 一把金鑰可用多家模型，並可篩選免費模型。
@@ -183,7 +183,8 @@ src/
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
 ├── news/        新聞：news_feed（多來源抓取與去重）、announcement_store（重大訊息每日存檔與歷史）、
 │                news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
-├── backtest/    策略回測：backtest_engine（Next Bar Open）、backtest_analysis（環境拆分、前後段驗證）
+├── backtest/    策略回測：strategies（6 種策略與參數定義）、backtest_engine（Next Bar Open、部位模型、停損停利、濾網）、
+│                backtest_analysis（大盤濾網、環境拆分、前後段驗證）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）
 ├── journal/     交易檢討：journal_coach
 ├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）

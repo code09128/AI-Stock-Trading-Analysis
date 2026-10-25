@@ -1,5 +1,5 @@
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
-const { NAV_ITEMS, NavIcon, NEWS_PRESETS, DEFAULT_HOLDINGS, DEFAULT_JOURNAL } = window.TA;
+const { NAV_ITEMS, NavIcon, NEWS_PRESETS, DEFAULT_HOLDINGS, DEFAULT_JOURNAL, DEFAULT_BACKTEST } = window.TA;
 function App() {
   const [activeTab, setActiveTab] = useState('watch');
   const aiCfg = window.TA.useAISettings();
@@ -37,14 +37,7 @@ function App() {
   const [m2Data, setM2Data] = useState(null);
 
   // 策略回測 狀態
-  const [m3Form, setM3Form] = useState({
-    target_asset: '2330.TW',
-    fast_ma: 5,
-    slow_ma: 20,
-    initial_capital: 1000000,
-    commission_discount: 0.6,
-    period_years: 1,
-  });
+  const [m3Form, setM3Form] = useState(DEFAULT_BACKTEST);
   const [m3Loading, setM3Loading] = useState(false);
   const [m3Data, setM3Data] = useState(null);
 
@@ -436,14 +429,7 @@ function App() {
     setM1Ticker('2330.TW');
     setM1BarCount(30);
     setM2Form(NEWS_PRESETS[0]);
-    setM3Form({
-      target_asset: '2330.TW',
-      fast_ma: 5,
-      slow_ma: 20,
-      initial_capital: 1000000,
-      commission_discount: 0.6,
-      period_years: 1,
-    });
+    setM3Form(DEFAULT_BACKTEST);
     setM4Holdings(DEFAULT_HOLDINGS);
     setM4CashPct(20.0);
     // 換回範例時來源也要改成範例：否則仍標成「我的紀錄」，下次診斷會把範例寫回蓋掉真正的交易紀錄
@@ -485,7 +471,9 @@ function App() {
         regime_breakdown: m3Data.regime_breakdown,
         walk_forward: m3Data.walk_forward,
         next_step_ideas: m3Data.next_step_ideas,
-        result: { ...bt, trades: undefined, trades_detail: undefined },
+        result: { ...bt, trades: undefined, trades_detail: undefined, daily_equity: undefined },
+        strategy: m3Data.strategy,
+        risk_settings: m3Data.risk_settings,
         trade_count: (bt.trades_detail || bt.trades || []).length,
       },
       portfolio_risk: m4Data && {
@@ -544,7 +532,7 @@ function App() {
       '',
       '## 策略回測',
       report.backtest
-        ? `- ${report.backtest.symbol}（${report.backtest.period}，本金幣別 ${report.backtest.currency}）：總報酬 ${report.backtest.result.total_return_pct}%、勝率 ${report.backtest.result.win_rate}、最大回落 ${report.backtest.result.max_drawdown}、交易 ${report.backtest.trade_count} 筆`
+        ? `- ${report.backtest.symbol}（${report.backtest.strategy?.label || '雙均線交叉'}，${report.backtest.period}，本金幣別 ${report.backtest.currency}）：總報酬 ${report.backtest.result.total_return_pct}%、勝率 ${report.backtest.result.win_rate}、最大回落 ${report.backtest.result.max_drawdown}、交易 ${report.backtest.trade_count} 筆`
         : '（尚未回測）',
       '',
       '## 組合風控',

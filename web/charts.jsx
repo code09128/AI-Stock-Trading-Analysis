@@ -568,7 +568,7 @@
       <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-300">
-            策略累積淨值曲線 (Equity Curve — 已扣除雙市場真實手續費與證交稅)
+            逐筆平倉淨值 (Equity Curve — 每個點是一筆交易平倉後的淨值，已扣手續費與證交稅)
           </span>
           <span className="text-[11px] font-mono text-slate-400">
             初始本金: {initialCapital.toLocaleString()}
@@ -606,16 +606,18 @@
                 stroke="#0f172a"
                 strokeWidth="1.5"
               />
-              <text
-                x={toX(idx)}
-                y={toY(c.equity) - 8}
-                textAnchor="middle"
-                fill="#e2e8f0"
-                fontSize="9"
-                fontFamily="monospace"
-              >
-                {Math.round(c.equity).toLocaleString()}
-              </text>
+              {curve.length <= 16 && (
+                <text
+                  x={toX(idx)}
+                  y={toY(c.equity) - 8}
+                  textAnchor="middle"
+                  fill="#e2e8f0"
+                  fontSize="9"
+                  fontFamily="monospace"
+                >
+                  {Math.round(c.equity).toLocaleString()}
+                </text>
+              )}
               <text
                 x={toX(idx)}
                 y={height - 8}
@@ -624,7 +626,7 @@
                 fontSize="9"
                 fontFamily="monospace"
               >
-                {c.step === 0 ? '起點' : `#${c.step}`}
+                {c.step === 0 ? '起點' : curve.length <= 16 || c.step % 5 === 0 ? `#${c.step}` : ''}
               </text>
             </g>
           ))}

@@ -6,7 +6,7 @@
 - 啟動伺服器（run_server）
 
 主要端點：
-- GET  /api/health、/api/indices、/api/etf、/api/fetchlog、/api/tests/run
+- GET  /api/health、/api/indices、/api/etf、/api/fetchlog、/api/tests/run、/api/mod3/strategies（回測策略清單）
 - POST /api/mod1/analyze（技術分析）、/api/mod2/news（新聞判斷）、/api/mod3/backtest（策略回測）、
        /api/mod4/risk（組合風控）、/api/mod5/coach（交易檢討）、/api/news/digest、/api/fundamentals、
        /api/quotes、/api/stockinfo、/api/ai/* …（完整清單見 ROUTES）
@@ -41,6 +41,7 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/userdata": user_data.load,
     "/api/autostart": lambda: {"enabled": autostart.is_autostart_enabled()},
     "/api/tests/run": D.handle_run_tests,
+    "/api/mod3/strategies": D.handle_mod3_strategies,
 }
 
 ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {

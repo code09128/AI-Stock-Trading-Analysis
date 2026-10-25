@@ -1,6 +1,6 @@
 # 股票交易分析系統 — 交接、待辦與開發紀錄 (Continue.md)
 
-> 最後更新：2026-10-24
+> 最後更新：2026-10-25
 
 ## 一、現況摘要
 - **啟動**：瀏覽器版 `python run.py` 或雙擊 `start.bat` → http://127.0.0.1:8088/ ；桌面視窗版 `python desktop.py`（需 `pip install -r requirements-desktop.txt`）。打包：雙擊 `package.bat`（產出桌面視窗版；有 Node.js 時先用 esbuild 編譯前端）。
@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 159 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 204 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -42,6 +42,16 @@
    - 導覽快速切換步驟時取消上一步還沒送出的分頁切換。
    - **增刪改查一律通知**：`window.TA.notifySaved(msg)` 等修改真的寫進 `data/userdata.json` 才顯示 ✅，失敗顯示 ⚠️＋原因並說明會自動重試，補存成功再通知一次；逐字修改的表格用 `notifySavedLater` 停手 1 秒才提示。涵蓋：自選股、暫存匣、模擬成交、我的持股（新增／更新／CSV 匯入／移除）、提醒、交易紀錄（修改／刪除／CSV 匯入／切換來源）、交易診斷寫回規則、AI 連線（新增／編輯／刪除／切換／作用範圍）、金鑰設定、清除資料、備份下載與還原、風控試算表；使用者主動的查詢（技術分析、新聞抓取與判斷、回測、風控、診斷）顯示完成或失敗，自動輪詢不提示。刪除持股、交易紀錄、AI 連線前先確認。
    - 修正：「從備份還原」原本 0.8 秒就重新載入，資料還沒存進檔案就被檔案裡的舊資料蓋回，現在等存檔完成才重新載入。
+
+10. ✅ **量化回測第一批（2026-10-25）**：
+   - 策略：`src/backtest/strategies.py` 集中定義 6 種策略（雙均線、KD 低檔黃金交叉 9/3/3、均線多頭排列、量價突破、乖離率回歸、跳空缺口），每支含參數範圍、說明與前後段驗證要掃的 `grid`；`GET /api/mod3/strategies` 給前端自動產生表單。舊的 `fast_ma`／`slow_ma` 參數照樣可用。
+   - 引擎：部位模型 `sizing`（percent／fixed／atr_risk）、`stop_loss_pct`、`trailing_pct`（盤中觸價，跳空以開盤價成交；回落時已低於進場價標成「移動停損」）、`entry_allowed`（大盤濾網，統計 `blocked_by_filter`）；成交量 0 視同暫停交易（訊號不採用、掛單順延，最後一根不算）；最大回撤改用每日收盤市值（含未實現損益），回傳 `daily_equity`、`open_position`、`exit_reasons`。
+   - 前後段驗證改為掃各策略的 `grid`，並沿用同一組部位、停損與濾網設定；「下一步建議」不再建議已開啟的規則。
+   - 前端：回測頁新增「這頁怎麼用」說明、策略選單與參數、部位與風控區；結果分成「績效總覽／交易明細／驗證與下一步」三個分頁；每日淨值圖標出最大回撤區間；匯出報告與 AI 解讀不送每日淨值（省 token）。
+   - FinMind：`finmind.py` 自我節流（近 1 小時請求數到官方上限 80% 就先停）；設定頁顯示用量。計數在各程式行程記憶體中，重開程式歸零，瀏覽器版與桌面版同時開時各算各的。
+   - 修正舊問題：回測 0 筆交易時伺服器回 500（`win_rate` 為數字無法 `.replace`）。
+   - 測試 `tests/test_backtest_strategies.py`（23 個）。
+11. **量化回測後續（未做）**：第二批（參數熱力圖與 ★ 穩定高原、多段滾動 Walk-forward＋WFE、蒙地卡羅）；第三批（今日訊號掃描自選股＋CSV、Pine v5 匯出（證交稅依股票 0.3%／ETF 0.1% 分開攤）、PDF 報告）；之後再考慮籌碼／月營收策略（月營收次月 10 日後才可用、FinMind 歷史資料需本地快取）、策略組合、自訂條件積木、K 線回放。
 
 ---
 

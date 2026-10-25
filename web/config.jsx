@@ -126,7 +126,7 @@
       group: '分析',
       short: '策略回測',
       title: '策略回測',
-      subtitle: '均線策略歷史回測、市場環境拆分與過度擬合檢查',
+      subtitle: '6 種技術策略、部位與停損停利、大盤濾網、市場環境拆分與過度擬合檢查',
       icon: 'backtest',
     },
     {
@@ -294,8 +294,26 @@
    * 互動式 SVG K線 + 十字準星 (Crosshair) + 懸停報價列 + 成交量副圖 (技術分析 專用)
    */
 
+  // 策略回測預設值：策略參數放在 params（依策略不同），風控設定一起送到後端
+  const DEFAULT_BACKTEST = {
+    target_asset: '2330.TW',
+    strategy: 'ma_cross',
+    params: { fast_ma: 5, slow_ma: 20 },
+    initial_capital: 1000000,
+    commission_discount: 0.6,
+    period_years: 1,
+    sizing_mode: 'percent',
+    sizing_value: 100,
+    atr_mult: 2,
+    stop_loss_pct: 0,
+    trailing_pct: 0,
+    market_filter: false,
+    filter_ma: 60,
+  };
+
   window.TA = Object.assign(window.TA || {}, {
     NAV_ITEMS,
+    DEFAULT_BACKTEST,
     NavIcon,
     NEWS_PRESETS,
     DEFAULT_HOLDINGS,

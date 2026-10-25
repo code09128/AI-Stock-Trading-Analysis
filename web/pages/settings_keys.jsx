@@ -2,6 +2,32 @@
 (() => {
   const { useState, useEffect } = React;
 
+  // FinMind 近 1 小時用量：程式自設上限＝官方上限的 80%，到了就先停，避免被暫停 30 分鐘
+  function FinMindUsage({ fm }) {
+    const u = fm.usage;
+    const pct = Math.min(100, Math.round((u.used_last_hour / u.budget) * 100));
+    const bar = pct >= 100 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-400' : 'bg-emerald-500';
+    return (
+      <div className="text-[11px] text-slate-400 space-y-1">
+        <div className="flex items-center gap-2">
+          <span>
+            近 1 小時已用 <b className="text-slate-200">{u.used_last_hour}</b> / {u.budget} 次（官方上限 {u.limit}）
+          </span>
+          <window.TA.Tip text="FinMind 以「每小時請求次數」計算，不是 AI token，也不收費。本程式只用到官方上限的 80%，到了就暫停 FinMind 請求，等最早那次滿 1 小時再自動恢復；其他資料來源（Yahoo、證交所）不受影響。" />
+        </div>
+        <div className="h-1.5 rounded bg-slate-800 overflow-hidden">
+          <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
+        </div>
+        {u.throttled_until && <div className="text-amber-300">已達自設上限，{u.throttled_until} 後恢復</div>}
+        {fm.paused && (
+          <div className="text-rose-300">
+            {fm.reason}，{fm.resume_at} 前暫停
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function KeysPanel() {
     const [st, setSt] = useState(null);
     const [draft, setDraft] = useState({});
@@ -111,6 +137,7 @@
                     </a>
                   )}
                 </div>
+                {f.key === 'FINMIND_TOKEN' && st.finmind?.usage && <FinMindUsage fm={st.finmind} />}
               </div>
             ))}
             <div className="flex flex-wrap items-center gap-3">
