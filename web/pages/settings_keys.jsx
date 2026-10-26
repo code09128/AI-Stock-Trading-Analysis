@@ -22,9 +22,8 @@
         setMsg({
           err: false,
           text: d.has_update
-            ? `發現新版本 ${d.remote?.tag}（目前 v${d.current?.version}）${
-                d.source_checkout ? '；原始碼版請用 git pull 更新' : '，可按右邊按鈕下載套用'
-              }`
+            ? `發現新版本 ${d.remote?.tag}（目前 v${d.current?.version}）${d.source_checkout ? '；原始碼版請用 git pull 更新' : '，可按右邊按鈕下載套用'
+            }`
             : `目前已是最新版本 v${d.current?.version}`,
         });
       } catch (e) {
@@ -69,7 +68,7 @@
           <div>
             <h3 className="font-bold text-white">
               版本與線上更新
-              <window.TA.Tip text="只會更新到 GitHub 上正式發布的版本（Release，例如 v1.0.1），開發中的修改不會被推給你。打包版（.exe）每次重新啟動時會自動檢查並下載新版本；也可以在這裡手動檢查、下載。更新只換程式本身，你的持股資料（data/）與金鑰（.env）不受影響。原始碼版不會自動覆蓋程式碼，有新版時請用 git pull。" />
+              <window.TA.Tip text="打包版（.exe）每次重新啟動時會自動檢查並下載新版本；也可以在這裡手動檢查、下載。更新只換程式本身，你的持股資料（data/）與金鑰（.env）不受影響。" />
             </h3>
             <p className="text-xs text-slate-400 mt-1">
               打包版重新啟動時會自動檢查並下載最新正式版本；也可隨時手動檢查與下載（保留所有個人資料與金鑰）。
@@ -146,13 +145,12 @@
           </label>
           <span className="text-slate-500 mono text-[11px]">{f.key}</span>
           <span
-            className={`ml-auto text-[11px] px-2 py-0.5 rounded ${
-              f.in_file
+            className={`ml-auto text-[11px] px-2 py-0.5 rounded ${f.in_file
                 ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
                 : f.set
                   ? 'bg-sky-500/15 border border-sky-500/40 text-sky-300'
                   : 'text-slate-500'
-            }`}
+              }`}
           >
             {f.in_file
               ? `✅ 已寫入 .env 檔案（${f.display}）`
