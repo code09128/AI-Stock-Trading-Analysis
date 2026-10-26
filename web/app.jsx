@@ -51,27 +51,27 @@ function App() {
   const [pendingRun4, setPendingRun4] = useState(false);
   const [pendingRun3, setPendingRun3] = useState(false);
   const [pendingRun5, setPendingRun5] = useState(false);
-  const [m5Source, setM5Source] = useState(() => {
-    const j = window.TA.loadPortfolio?.().journal || [];
-    return j.length ? 'mine' : 'sample';
-  }); // 'mine' | 'sample'
+  // 有已平倉交易或持股就用「我的」：還沒賣出過也能看持有中部位，不會退回範例
+  const hasMine = () => {
+    const pf = window.TA.loadPortfolio?.() || {};
+    return (pf.journal || []).length > 0 || (pf.holdings || []).length > 0;
+  };
+  const [m5Source, setM5Source] = useState(() => (hasMine() ? 'mine' : 'sample')); // 'mine' | 'sample'
   const [m4Loading, setM4Loading] = useState(false);
   const [m4Data, setM4Data] = useState(null);
 
   // 交易檢討 狀態
-  const [m5Entries, setM5Entries] = useState(() => {
-    const j = window.TA.loadPortfolio?.().journal || [];
-    return j.length ? j : DEFAULT_JOURNAL;
-  });
+  const [m5Entries, setM5Entries] = useState(() =>
+    hasMine() ? window.TA.loadPortfolio().journal : DEFAULT_JOURNAL,
+  );
   const [m5Loading, setM5Loading] = useState(false);
   const [m5Data, setM5Data] = useState(null);
 
   useEffect(() => {
     const onPortfolioChange = () => {
-      const j = window.TA.loadPortfolio?.().journal || [];
-      if (j.length) {
+      if (hasMine()) {
         setM5Source('mine');
-        setM5Entries(j);
+        setM5Entries(window.TA.loadPortfolio().journal);
       }
     };
     window.addEventListener('portfolio-changed', onPortfolioChange);
@@ -279,6 +279,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             entries: usedEntries,
+            mine: usedSource === 'mine', // 我的紀錄：沒有已平倉交易時也不要改用範例
             // 持有中的部位（只顯示帳面損益，不算進勝率等統計）
             holdings: usedSource === 'mine' ? window.TA.loadPortfolio().holdings : [],
             ai: (() => {
@@ -293,7 +294,9 @@ function App() {
         if (data.error) throw new Error(data.error);
         setM5Data(data);
         if (data.entries_used) setM5Entries(data.entries_used);
-        if (usedSource === 'mine') {
+        if (usedSource === 'mine' && !data.closed_trades_used) {
+          showToast(`✅ 已更新持有中部位（${(data.open_positions || []).length} 檔）；賣出成交後才會有勝率與個人規則`);
+        } else if (usedSource === 'mine') {
           window.TA.setJournal(data.entries_used || usedEntries);
           window.TA.saveRules(data.personalized_3_rules, data.rules_source);
           window.TA.notifySaved('交易診斷完成，已更新交易紀錄與 3 條個人規則（下單面板會顯示）');
@@ -585,8 +588,8 @@ function App() {
     }
     if (tabId === 'mod5') {
       // 交易檢討預設使用「我的交易紀錄」（模擬成交賣出或匯入的已平倉交易），沒有才用範例；持股另外顯示為持有中部位
-      const { journal } = window.TA.loadPortfolio();
-      if (journal.length) {
+      const { journal, holdings } = window.TA.loadPortfolio();
+      if (journal.length || holdings.length) {
         const stale = m5Source !== 'mine' || JSON.stringify(journal) !== JSON.stringify(m5Entries);
         setM5Source('mine');
         setM5Entries(journal);

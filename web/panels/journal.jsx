@@ -4,7 +4,7 @@
 
   // 交易紀錄來源：我的（模擬成交／匯入）或 範例；可貼 CSV 匯入真實券商對帳單
   function JournalSource({ m5Source, setM5Source, setM5Entries, runMod5 }) {
-    const { journal } = window.TA.usePortfolio();
+    const { journal, holdings } = window.TA.usePortfolio();
     const [csv, setCsv] = useState('');
     const [msg, setMsg] = useState('');
     const importCsv = () => {
@@ -45,7 +45,7 @@
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-slate-400">交易紀錄來源：</span>
           {[
-            ['mine', `我的交易紀錄（${journal.length} 筆）`],
+            ['mine', `我的交易紀錄（已平倉 ${journal.length} 筆、持股 ${holdings.length} 檔）`],
             ['sample', '內建範例'],
           ].map(([k, label]) => (
             <button
@@ -56,7 +56,8 @@
                 const nextList = k === 'mine' ? journal : window.TA.DEFAULT_JOURNAL;
                 setM5Source(k);
                 setM5Entries(nextList);
-                if (nextList.length) setTimeout(() => runMod5(nextList, k), 50);
+                if (nextList.length || (k === 'mine' && holdings.length))
+                  setTimeout(() => runMod5(nextList, k), 50);
                 window.TA.toast?.(
                   k === 'mine'
                     ? `ℹ️ 已改用我的交易紀錄（${journal.length} 筆）`
@@ -127,6 +128,81 @@
     );
   }
 
+  // 這頁的功能說明（預設收合）
+  function JournalHelp() {
+    const H = ({ children }) => <b className="text-white">{children}</b>;
+    return (
+      <details className="bg-slate-900/70 border border-slate-800 rounded-2xl px-5 py-3 text-xs text-slate-300">
+        <summary className="cursor-pointer font-semibold text-slate-200 select-none">📘 這頁怎麼用（功能說明）</summary>
+        <div className="mt-3 space-y-3 leading-relaxed">
+          <p>
+            <H>這頁在做什麼</H>：把你過去的交易拿來「檢討」：算出勝率、賺賠比等成績，找出常見的壞習慣（例如虧損不停損、賠了就加碼），
+            再產生 3 條可以直接照做的個人交易規則，貼到看盤頁的下單面板，每次下單前提醒你。
+          </p>
+          <div>
+            <H>資料從哪來</H>
+            <ul className="list-disc pl-5 mt-1 space-y-0.5">
+              <li>
+                <b>已平倉交易</b>（上方表格）：看盤頁模擬下單「賣出」成交時自動寫入，或展開「貼上 CSV 匯入真實交易」貼券商對帳單。
+                只有買進又賣出的完整交易才算進成績。
+              </li>
+              <li>
+                <b>持有中部位</b>：你「我的持股」裡還沒賣的股票，用最新收盤價算帳面損益與持有天數，<b>只顯示、不算進成績</b>
+                （還沒賣，賺賠還沒確定）。買進成交只會加到持股，等賣出才會變成一筆交易。
+              </li>
+              <li>
+                <b>內建範例</b>：沒有自己的紀錄時可切換來看功能長什麼樣子，不會存檔、也不會改到你的資料。
+              </li>
+            </ul>
+          </div>
+          <div>
+            <H>使用步驟</H>
+            <ol className="list-decimal pl-5 mt-1 space-y-0.5">
+              <li>在看盤頁模擬下單（或匯入 CSV），累積幾筆已賣出的交易，筆數越多結果越可信（建議 10 筆以上）。</li>
+              <li>需要時可在表格修改「情緒(1-10)」：那筆交易讓你多煎熬，8 分以上代表抱得很痛苦。</li>
+              <li>按「執行交易診斷」，看成績、偏誤與 3 條規則。</li>
+              <li>規則會自動帶到下單面板的「規則確認下單」，每次下單前要逐條勾選確認。</li>
+            </ol>
+          </div>
+          <div>
+            <H>成績怎麼看</H>
+            <ul className="list-disc pl-5 mt-1 space-y-0.5">
+              <li><b>勝率</b>：賺錢的筆數 ÷ 總筆數。勝率高不一定賺錢，要和賺賠比一起看。</li>
+              <li><b>賺賠比</b>：平均每筆賺的金額 ÷ 平均每筆賠的金額。大於 1 代表賺的時候比賠的時候多。</li>
+              <li><b>期望值</b>：平均每筆交易的淨損益（元）。長期為正才是會賺錢的做法。</li>
+              <li>
+                <b>賣飛率</b>：賺錢賣出後 5 個交易日內又漲超過 5% 的比例，用真實日 K 計算（表格的「出場後5日高點」）。
+                太高代表常常抱不住贏家。
+              </li>
+            </ul>
+          </div>
+          <div>
+            <H>會抓哪些壞習慣</H>
+            <ul className="list-disc pl-5 mt-1 space-y-0.5">
+              <li><b>處置效應（凹單）</b>：虧損超過 10% 還抱著（持有 5 天以上，或情緒分數 8 分以上）。</li>
+              <li><b>報復性交易</b>：上一筆賠錢後，下一筆的股數直接放大到 2 倍以上。</li>
+            </ul>
+            <p className="mt-1">每個偏誤都會標出是哪幾筆交易（例如 #03、#08），方便你回頭看當時的情況。</p>
+          </div>
+          <p>
+            <H>3 條個人規則怎麼來</H>：有設定 AI 時由 AI 依你的成績與偏誤撰寫，每條都會檢查有沒有具體數字門檻，
+            不合格的會請 AI 重寫；AI 沒開或寫不出來時，改用<b>依你的交易紀錄計算</b>的規則
+            （例如停損線取你的平均獲利幅度），每條都附「算法」與「依據」。每條規則旁標示來源（AI／依資料計算）。
+            還沒有已賣出的交易時不會產生規則，也不會改動下單面板原本的規則。
+          </p>
+          <p>
+            <H>CSV 格式</H>：每行一筆「代號,買進日期,買進價,賣出日期,賣出價,股數」，例如
+            <span className="font-mono text-slate-200"> 2330,2026-08-01,2200,2026-08-20,2250,1000</span>。
+            損益、報酬率、持有天數會自動計算。
+          </p>
+          <p className="text-slate-400">
+            所有紀錄只存在你這台電腦（data/userdata.json）。有設定 AI 時：產生規則只送成績與偏誤摘要（含相關交易編號與代號）；按頁面最下方「AI 解讀」會把這頁的成績、交易明細與持有中部位送給你設定的 AI 服務（本機模型則不離開電腦）。
+          </p>
+        </div>
+      </details>
+    );
+  }
+
   function Mod5Panel({ ctx }) {
     const { m5Data, m5Entries, m5Loading, m5Source, runMod5, setM5Entries, setM5Source } = ctx;
     // 「我的交易紀錄」模式：表格就是交易紀錄本身，改動立刻存回（否則回看盤頁成交後再診斷，會用舊表格蓋掉新紀錄）
@@ -145,6 +221,7 @@
     };
     return (
       <div className="space-y-5">
+        <JournalHelp />
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -379,11 +456,13 @@
 
         {m5Data && (
           <div className="space-y-4">
-            {m5Data.closed_trades_used === 0 && (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
-                ⚠️ 還沒有已平倉的交易，勝率與行為偏誤無法計算；下方規則是用保守預設值。賣出成交或匯入交易後再診斷一次。
+            {m5Data.closed_trades_used === 0 ? (
+              <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-xs text-sky-100 leading-relaxed">
+                ℹ️ 還沒有已賣出（平倉）的交易，所以勝率、賺賠比、行為偏誤與個人規則先不計算。
+                上方「持有中部位」是你目前持股的帳面損益；在看盤頁模擬「賣出」成交，或貼上券商對帳單 CSV 後，這裡就會開始分析。
               </div>
-            )}
+            ) : (
+            <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                 <div className="text-xs text-slate-400">
@@ -505,9 +584,11 @@
                 ))}
               </div>
             </div>
+            </>
+            )}
           </div>
         )}
-        {m5Data && (
+        {m5Data && m5Data.closed_trades_used !== 0 && (
           <window.TA.AiExplain
             module="mod5"
             provenance={[

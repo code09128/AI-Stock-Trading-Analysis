@@ -107,8 +107,10 @@ class JournalHandlers:
 
     def handle_mod5_coach(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         raw_entries = payload.get("entries")
+        mine = bool(payload.get("mine"))  # 使用者自己的紀錄：沒有已平倉交易時也不要改用範例
         open_entries: List[Dict[str, Any]] = []
-        if raw_entries:
+        if raw_entries or mine:
+            raw_entries = raw_entries or []
             open_entries = [e for e in raw_entries if is_open_entry(e)]
             raw_entries = self._enrich_journal([e for e in raw_entries if not is_open_entry(e)]) + open_entries
             entries = [self._to_journal_entry(e) for e in raw_entries if not is_open_entry(e)]
@@ -127,7 +129,9 @@ class JournalHandlers:
         biases = coach.detect_behavioral_biases()
         rules = coach.formulate_personalized_rules(biases)
         rules_source = "依你的交易紀錄計算門檻的規則（未使用 AI；每條附計算方式）"
-        if ai_client.is_enabled(payload.get("ai")):
+        if not entries:
+            rules_source = "還沒有已平倉交易，先不產生個人規則"
+        elif ai_client.is_enabled(payload.get("ai")):
             try:
                 ai_rules = ai_client.personal_rules(payload["ai"], stats, biases, fallback=rules)
                 n_ai = sum(1 for r in ai_rules if r.get("source") == "AI")
@@ -144,7 +148,7 @@ class JournalHandlers:
             "detected_biases": biases,
             "personalized_3_rules": rules,
             "rules_source": rules_source,
-            "entries_used": raw_entries if raw_entries else None,
+            "entries_used": raw_entries if (raw_entries or mine) else None,
             "closed_trades_used": len(entries),
-            "open_positions": self._open_positions(payload, open_entries) if (raw_entries or payload.get("holdings")) else [],
+            "open_positions": self._open_positions(payload, open_entries) if (mine or raw_entries or payload.get("holdings")) else [],
         }

@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 267 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 268 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -81,7 +81,7 @@
    - 測試：`test_chip_strategies.py`、`test_custom_rules.py`、組合與 JSON 解析測試。
 15. ✅ **檢查另一個 agent 的修改並修正（2026-10-26）**：
    - 🔴 commit `9920dde` 把 40 MB 的 `TradingAnalysis.zip` 推上公開 repo，裡面有打包資料夾的 `.env`（FinMind token）；已從 repo 移除並在 `.gitignore` 加 `*.zip`。舊版本歷史裡仍看得到，**token 要到 finmindtrade.com 重新產生**。AI 金鑰不在壓縮檔裡。
-   - 交易檢討：交易紀錄只放已平倉交易；買進成交只加到持股；持有中的部位（交易紀錄裡標持有中的＋「我的持股」）由後端另外回傳 `open_positions`，用最新收盤價算帳面損益，不算進勝率、賺賠比、賣飛統計（原本會把持股當成交易、用過去 5 天高點誤判賣飛、賣出後同一筆被算兩次）。前端讀取時會自動移除舊版自動寫入的「持有中」紀錄（來源「目前持股」「模擬下單買進」）。移除「同步持股與成交紀錄」按鈕。
+   - 交易檢討：交易紀錄只放已平倉交易；買進成交只加到持股；持有中的部位（交易紀錄裡標持有中的＋「我的持股」）由後端另外回傳 `open_positions`，用最新收盤價算帳面損益，不算進勝率、賺賠比、賣飛統計（原本會把持股當成交易、用過去 5 天高點誤判賣飛、賣出後同一筆被算兩次）。前端讀取時會自動移除舊版自動寫入的「持有中」紀錄（來源「目前持股」「模擬下單買進」）。移除「同步持股與成交紀錄」按鈕。還沒賣出過（只有持股）時也用「我的交易紀錄」模式（前端送 `mine: true`，後端不改用範例），只顯示持有中部位與說明，不計算統計、不呼叫 AI、不覆蓋下單面板的規則。
    - 線上更新改讀 GitHub Release（`src/server/updater.py` 重寫）：版本號 `src/version.py`；打包版啟動自動檢查下載、設定頁手動檢查下載；下載後核對版本號；原始碼版不覆蓋程式碼；`build_app.py` 把版本號寫進打包的 `version.json`。
    - 還原 `config.get_web_dir` 讓打包版讀原始碼前端的改動（前後端版本不一致）、`build_web.py` 不再把前端複製進 dist。
    - 設定頁移除「進階：改用 .env 提供 AI 金鑰」（與 AI 連線重複），`env_settings.FIELDS` 只留 FinMind 與 SEC；`.env` 裡已有的 AI 金鑰仍可被讀取。

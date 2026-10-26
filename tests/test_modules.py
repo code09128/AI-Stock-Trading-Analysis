@@ -221,5 +221,20 @@ class TestAdvancedModules(unittest.TestCase):
         self.assertEqual(res["open_positions"][0]["net_pnl"], 20000.0)
 
 
+    def test_mine_with_only_holdings_does_not_fall_back_to_sample(self):
+        """還沒賣出過（只有持股）：不用範例資料、不產生規則，只回持有中部位。"""
+        from unittest.mock import patch
+        from src.market.bar import Bar
+        from src.server.dispatcher import DISPATCHER
+        bars = [Bar("2026-10-21", 100, 101, 99, 105, 1)]
+        with patch.object(DISPATCHER.adapter, "fetch_bars", return_value={"bars": bars}):
+            res = DISPATCHER.handle_mod5_coach({"entries": [], "mine": True, "ai": {"type": "gemini", "model": "x"},
+                                                "holdings": [{"symbol": "0055", "shares": 1000, "cost": 100}]})
+        self.assertEqual(res["closed_trades_used"], 0)
+        self.assertEqual(res["statistics"]["total_trades"], 0)
+        self.assertIn("還沒有已平倉", res["rules_source"])
+        self.assertEqual(res["open_positions"][0]["net_pnl"], 5000.0)
+
+
 if __name__ == "__main__":
     unittest.main()
