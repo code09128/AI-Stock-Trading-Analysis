@@ -19,3 +19,6 @@ data/
 
 # build_app.py 打包時自動產生
 installer_main.py
+
+# 打包壓縮檔（可能夾帶 .env 等機敏資料），不要提交
+*.zip

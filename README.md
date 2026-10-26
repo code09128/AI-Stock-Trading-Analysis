@@ -94,6 +94,17 @@ cd AI-Stock-Trading-Analysis
 
 > `git pull` 更新程式碼後，同樣要重開 `start.bat`／`desktop.py`。
 
+### 版本與線上更新（GitHub Release）
+
+- 版本號在 `src/version.py`（`APP_VERSION`，格式 主.次.修）。打包版只會更新到 GitHub 上**正式發布的 Release**，推到 `main` 的開發中修改不會被推給使用者。
+- 打包版每次重新啟動時自動檢查最新 Release，有新版就下載該版本的 `src/`、`web/` 到程式資料夾的 `update/` 並套用；設定頁「版本與線上更新」也能手動檢查與下載。下載後會核對壓縮檔裡的版本號和 Release 一致才套用，`data/` 與 `.env` 不受影響。
+- 原始碼版（有 `.git`）不會被自動覆蓋，有新版時設定頁會提示，請自己 `git pull`。
+- 發布新版：改 `src/version.py` 的版本號 → commit、push → 建立同名 Release，例如：
+
+  ```bash
+  gh release create v1.0.1 --title "v1.0.1" --notes "這一版的更新內容"
+  ```
+
 ## 設定（全部選填）
 
 不設定任何東西也能完整使用（AI 部分改用內建規則引擎）。需要時到程式的 **設定** 頁：

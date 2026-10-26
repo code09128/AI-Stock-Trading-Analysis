@@ -20,11 +20,6 @@ FIELDS: List[Dict[str, Any]] = [
      "link": "https://finmindtrade.com/"},
     {"key": "SEC_USER_AGENT", "label": "SEC 識別字串", "secret": False, "group": "data",
      "help": "抓美股 SEC 8-K 公告時，SEC 要求附上聯絡方式，例如「王小明 you@example.com」。不填用預設值。"},
-    {"key": "GEMINI_API_KEY", "label": "Google Gemini 金鑰", "secret": True, "group": "ai",
-     "help": "選填。填在這裡後，在「AI 連線」新增 Gemini 時金鑰欄可以留空，金鑰就不會存進瀏覽器。"},
-    {"key": "OPENAI_API_KEY", "label": "OpenAI 金鑰", "secret": True, "group": "ai", "help": "選填，用法同上。"},
-    {"key": "ANTHROPIC_API_KEY", "label": "Anthropic（Claude）金鑰", "secret": True, "group": "ai", "help": "選填，用法同上。"},
-    {"key": "OPENROUTER_API_KEY", "label": "OpenRouter 金鑰", "secret": True, "group": "ai", "help": "選填，用法同上。"},
 ]
 ALLOWED = {f["key"] for f in FIELDS}
 _LOCK = threading.Lock()
@@ -125,28 +120,26 @@ def _save_locked(updates: Dict[str, str]) -> Dict[str, Any]:
 
 
 def test_finmind(token: Optional[str] = None) -> Dict[str, Any]:
-    """實際向 FinMind 查詢一筆資料，驗證 Token 是否有效，並回報 .env 寫入狀態。"""
+    """實際向 FinMind 查詢一筆資料驗證 Token；有貼新的 Token 時，驗證成功才寫進 .env（錯的不會被存起來）。"""
     from datetime import datetime, timedelta
     from src.market import finmind
 
     draft = (token or "").strip()
-    if draft:
-        save({"FINMIND_TOKEN": draft})
     path = env_path()
-    in_file = _read_file(path)
-    tok = (draft or os.environ.get("FINMIND_TOKEN") or in_file.get("FINMIND_TOKEN") or "").strip()
+    tok = (draft or os.environ.get("FINMIND_TOKEN") or _read_file(path).get("FINMIND_TOKEN") or "").strip()
     if not tok:
         return {"ok": False, "error": "尚未填入 FinMind Token，請先貼上 Token 後再按測試"}
     start_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
     try:
         rows = finmind.get_data("TaiwanStockPrice", "2330", start_date, token=tok, timeout=10)
     except Exception as e:
-        return {"ok": False, "error": f"Token 驗證失敗：{e}", "status": status()}
-    st = status()
-    written = bool(in_file.get("FINMIND_TOKEN"))
+        return {"ok": False, "error": f"Token 驗證失敗，未儲存：{e}", "status": status()}
+    if draft:
+        save({"FINMIND_TOKEN": draft})
+    written = bool(_read_file(path).get("FINMIND_TOKEN"))
     return {
         "ok": True,
         "msg": (f"Token 驗證有效（取得 2330 測試日 K {len(rows)} 筆），"
-                f"{'已確認寫入 ' + str(path) if written else '來自系統環境變數'}，每小時上限 600 次"),
-        "status": st,
+                f"{'已寫入 ' + str(path) if written else '來自系統環境變數'}，每小時上限 600 次"),
+        "status": status(),
     }

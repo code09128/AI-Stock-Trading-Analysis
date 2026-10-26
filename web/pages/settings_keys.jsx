@@ -3,17 +3,9 @@
   const { useState, useEffect } = React;
 
   function UpdatePanel() {
-    const [cur, setCur] = useState(null);
     const [chk, setChk] = useState(null);
     const [busy, setBusy] = useState('');
     const [msg, setMsg] = useState(null);
-
-    useEffect(() => {
-      fetch('/api/update/status')
-        .then((r) => r.json())
-        .then(setCur)
-        .catch(() => {});
-    }, []);
 
     const runCheck = async () => {
       setBusy('check');
@@ -27,12 +19,13 @@
         const d = await r.json();
         if (!d.ok || d.error) throw new Error(d.error || '檢查更新失敗');
         setChk(d);
-        if (d.current) setCur(d.current);
         setMsg({
           err: false,
           text: d.has_update
-            ? `發現新版本 ${d.remote?.short_sha || ''}：${d.remote?.message || ''}（${d.remote?.date || ''}）`
-            : `目前已經是最新版本（${d.current?.short_sha || ''}）`,
+            ? `發現新版本 ${d.remote?.tag}（目前 v${d.current?.version}）${
+                d.source_checkout ? '；原始碼版請用 git pull 更新' : '，可按右邊按鈕下載套用'
+              }`
+            : `目前已是最新版本 v${d.current?.version}`,
         });
       } catch (e) {
         setMsg({ err: true, text: e.message });
@@ -43,7 +36,7 @@
 
     const runApply = async () => {
       setBusy('apply');
-      setMsg({ err: false, text: '正在從 GitHub 下載並套用最新更新，請稍候…' });
+      setMsg({ err: false, text: '正在檢查並下載 GitHub 最新正式版本（Release），請稍候…' });
       try {
         const r = await fetch('/api/update/apply', {
           method: 'POST',
@@ -52,7 +45,13 @@
         });
         const d = await r.json();
         if (!d.ok || d.error) throw new Error(d.error || '更新失敗');
-        if (d.current) setCur(d.current);
+        if (d.already_latest || d.updated === false) {
+          setChk({ ok: true, has_update: !d.already_latest, current: d.current, remote: d.remote });
+          const text = d.msg || '目前已是最新版本';
+          setMsg({ err: false, text });
+          window.TA.toast?.(`✅ ${text}`);
+          return;
+        }
         setMsg({ err: false, text: `${d.msg}，正在重新載入畫面…` });
         window.TA.toast?.(`✅ ${d.msg}，正在重新載入`);
         setTimeout(() => window.location.reload(), 900);
@@ -70,25 +69,13 @@
           <div>
             <h3 className="font-bold text-white">
               版本與線上更新
-              <window.TA.Tip text="打包版（.exe）每次重新啟動時會自動檢查 GitHub 最新版本並直接下載套用；也可以隨時點這裡手動一鍵更新，不必重新下載安裝包，你的持股資料（data/）與金鑰（.env）完全不會被影響。" />
+              <window.TA.Tip text="只會更新到 GitHub 上正式發布的版本（Release，例如 v1.0.1），開發中的修改不會被推給你。打包版（.exe）每次重新啟動時會自動檢查並下載新版本；也可以在這裡手動檢查、下載。更新只換程式本身，你的持股資料（data/）與金鑰（.env）不受影響。原始碼版不會自動覆蓋程式碼，有新版時請用 git pull。" />
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              打包版重新啟動時會自動檢查並套用最新更新；也可隨時按下方按鈕線上更新（保留所有個人資料與金鑰）。
+              打包版重新啟動時會自動檢查並下載最新正式版本；也可隨時手動檢查與下載（保留所有個人資料與金鑰）。
             </p>
           </div>
-          {cur && (
-            <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 mono">
-              目前版本：<b className="text-sky-300">{cur.short_sha || '未知'}</b>
-              {cur.source ? `（${cur.source}）` : ''}
-            </span>
-          )}
         </div>
-        {cur?.message && (
-          <div className="text-xs text-slate-400 bg-slate-950/50 border border-slate-800 rounded-xl px-3 py-2">
-            最新變更：<span className="text-slate-200">{cur.message}</span>
-            {cur.date && <span className="ml-2 text-slate-500 mono">({cur.date})</span>}
-          </div>
-        )}
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <button
             type="button"
@@ -107,8 +94,8 @@
             {busy === 'apply'
               ? '下載更新中…'
               : chk?.has_update
-                ? `⚡ 立即更新至 ${chk.remote?.short_sha || '新版'}`
-                : '⚡ 立即線上更新'}
+                ? `⚡ 下載並套用 ${chk.remote?.tag || '新版'}`
+                : '⚡ 檢查並下載更新'}
           </button>
           {msg && (
             <span className={`text-xs ${msg.err ? 'text-rose-300' : 'text-emerald-300'}`}>
@@ -300,9 +287,7 @@
     };
 
     const changed = Object.keys(draft).filter((k) => draft[k] !== undefined && draft[k] !== '');
-    const dataFields = st ? st.fields.filter((f) => f.group !== 'ai') : [];
-    const aiFields = st ? st.fields.filter((f) => f.group === 'ai') : [];
-    const aiSetCount = aiFields.filter((f) => f.set).length;
+    const dataFields = st ? st.fields : [];
 
     return (
       <div
@@ -339,31 +324,6 @@
                 testMsg={testMsg}
               />
             ))}
-
-            {aiFields.length > 0 && (
-              <details className="rounded-xl border border-slate-800 bg-slate-950/30 p-3 space-y-2">
-                <summary className="cursor-pointer text-xs text-slate-300 select-none">
-                  進階：改用 .env 環境變數提供 AI 金鑰
-                  <span className="ml-2 text-slate-500">
-                    （一般請直接在上方「AI 連線」設定即可，不需重複填這裡
-                    {aiSetCount > 0 ? `；目前 .env 已設定 ${aiSetCount} 項` : ''}）
-                  </span>
-                </summary>
-                <div className="space-y-2 pt-2">
-                  {aiFields.map((f) => (
-                    <FieldCard
-                      key={f.key}
-                      f={f}
-                      st={st}
-                      draft={draft}
-                      setDraft={setDraft}
-                      busy={busy}
-                      send={send}
-                    />
-                  ))}
-                </div>
-              </details>
-            )}
 
             <div className="flex flex-wrap items-center gap-3">
               <button

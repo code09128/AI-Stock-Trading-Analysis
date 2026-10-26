@@ -55,7 +55,7 @@ def build() -> Path:
     shutil.rmtree(tmp)
 
     # 3. 複製其他靜態檔（不含 .jsx 與 Babel），改寫 index.html
-    shutil.copytree(WEB_DIR, OUT_DIR, ignore=shutil.ignore_patterns("*.jsx", "babel.min.js"))
+    shutil.copytree(WEB_DIR, OUT_DIR, ignore=shutil.ignore_patterns("*.jsx", "babel.min.js"), dirs_exist_ok=True)
     (OUT_DIR / "app.bundle.js").write_text("\n".join(parts) + "\n", encoding="utf-8")
     for d in sorted(OUT_DIR.rglob("*"), reverse=True):  # 移除只放 .jsx 的空資料夾
         if d.is_dir() and not any(d.iterdir()):

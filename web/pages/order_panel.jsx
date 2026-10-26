@@ -107,7 +107,7 @@
             onClick={() => window.TA.goTab?.('mod5')}
             className="px-2.5 py-0.5 rounded bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 font-semibold cursor-pointer"
           >
-            ③ 交易檢討（已平倉 {journal.length} 筆）→
+            ③ 交易檢討（{journal.length} 筆）→
           </button>
         </div>
 
@@ -279,12 +279,13 @@
             title={allChecked ? '確認規則並立即執行模擬成交' : '請先勾選上方所有交易規則'}
             className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            ⚡ 規則確認並直接成交（{order.side === 'BUY' ? '買進加入持股' : '賣出寫入檢討'}）
+            ⚡ 規則確認並直接成交（
+            {order.side === 'BUY' ? '買進加入持股' : '賣出平倉寫入檢討'}）
           </button>
           <button
             type="button"
             onClick={() => {
-              if (addToCart()) setChecked({});
+              addToCart();
             }}
             disabled={!allChecked}
             title={allChecked ? '先放入下方暫存匣，稍後再按成交' : '請先勾選上方所有交易規則'}
@@ -307,15 +308,15 @@
             <span>
               ✅ {lastFill.msg}
               {lastFill.side === 'SELL'
-                ? '（已平倉寫入交易紀錄，可立即前往交易檢討分析勝率與行為偏誤）'
-                : '（買進部位已同步至「我的持股」與「技術分析／組合風控」）'}
+                ? '（已平倉寫入交易紀錄，可前往交易檢討分析勝率與行為偏誤）'
+                : '（已加入我的持股；交易檢討的「持有中部位」會顯示帳面損益）'}
             </span>
             <button
               type="button"
               onClick={() => window.TA.goTab?.('mod5')}
               className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold cursor-pointer"
             >
-              ③ 前往交易檢討 →
+              ③ 前往交易檢討（{journal.length} 筆）→
             </button>
           </div>
         )}

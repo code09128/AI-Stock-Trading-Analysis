@@ -238,16 +238,20 @@
             <span className="flex items-center gap-1 text-yellow-400">
               <span className="w-3 h-0.5 bg-yellow-400 inline-block" /> MA5
             </span>
-            <span className="flex items-center gap-1 text-purple-400">
-              <span className="w-3 h-0.5 bg-purple-400 inline-block" /> MA20
+            <span className="flex items-center gap-1" style={{ color: '#38bdf8' }}>
+              <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: '#38bdf8' }} />{' '}
+              MA20
             </span>
             {hasMa60 && (
               <span className="flex items-center gap-1 text-emerald-400">
                 <span className="w-3 h-0.5 bg-emerald-400 inline-block" /> MA60
               </span>
             )}
-            <span className="flex items-center gap-1 text-cyan-400">
-              <span className="w-3 h-0.5 border-b border-dashed border-cyan-400 inline-block" />{' '}
+            <span className="flex items-center gap-1" style={{ color: '#22d3ee' }}>
+              <span
+                className="w-3 h-0.5 border-b border-dashed inline-block"
+                style={{ borderColor: '#22d3ee' }}
+              />{' '}
               支撐
             </span>
             <span className="flex items-center gap-1 text-rose-400">
@@ -286,7 +290,7 @@
             量: <strong>{(activeBar.volume || 0).toLocaleString()}</strong>
           </span>
           <span className="text-yellow-400">MA5: {activeBar.ma5 ?? '-'}</span>
-          <span className="text-purple-400">MA20: {activeBar.ma20 ?? '-'}</span>
+          <span style={{ color: '#38bdf8' }}>MA20: {activeBar.ma20 ?? '-'}</span>
           {activeBar.ma60 != null && (
             <span className="text-emerald-400">MA60: {activeBar.ma60}</span>
           )}
@@ -488,7 +492,7 @@
           {ma20Points && (
             <polyline
               fill="none"
-              stroke="#c084fc"
+              stroke="#38bdf8"
               strokeWidth="1.8"
               points={ma20Points}
               opacity="0.9"

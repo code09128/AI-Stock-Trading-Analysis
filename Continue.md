@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 249 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 267 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -79,7 +79,15 @@
    - 自訂條件積木：`src/backtest/custom_rules.py`（20 種運算元 × 大於／小於／向上穿越／向下穿越，進出場各最多 6 條、全部或任一成立、5 個範本）；條件裡的天數與門檻變成參數（同指標同天數合併），`register()` 依內容產生固定代號放進策略表，回測、熱力圖、前後段、今日訊號、組合、Pine 都通用；`GET /api/mod3/custom/templates`、`POST /api/mod3/custom/describe`；前端 `backtest_custom.jsx`，存 `tw_us_bt_custom_v1`。
    - 其他：看盤頁移除「看資料怎麼抓的」按鈕與面板；AI 回 JSON 時多寫文字或附 `<think>` 造成「Extra data」→ `ai_text.extract_json` 依序嘗試每個 `{` 解析、`_json_call` 失敗自動再問一次（交易檢討規則、新聞情緒、技術分析 AI 都適用）。
    - 測試：`test_chip_strategies.py`、`test_custom_rules.py`、組合與 JSON 解析測試。
-15. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
+15. ✅ **檢查另一個 agent 的修改並修正（2026-10-26）**：
+   - 🔴 commit `9920dde` 把 40 MB 的 `TradingAnalysis.zip` 推上公開 repo，裡面有打包資料夾的 `.env`（FinMind token）；已從 repo 移除並在 `.gitignore` 加 `*.zip`。舊版本歷史裡仍看得到，**token 要到 finmindtrade.com 重新產生**。AI 金鑰不在壓縮檔裡。
+   - 交易檢討：交易紀錄只放已平倉交易；買進成交只加到持股；持有中的部位（交易紀錄裡標持有中的＋「我的持股」）由後端另外回傳 `open_positions`，用最新收盤價算帳面損益，不算進勝率、賺賠比、賣飛統計（原本會把持股當成交易、用過去 5 天高點誤判賣飛、賣出後同一筆被算兩次）。前端讀取時會自動移除舊版自動寫入的「持有中」紀錄（來源「目前持股」「模擬下單買進」）。移除「同步持股與成交紀錄」按鈕。
+   - 線上更新改讀 GitHub Release（`src/server/updater.py` 重寫）：版本號 `src/version.py`；打包版啟動自動檢查下載、設定頁手動檢查下載；下載後核對版本號；原始碼版不覆蓋程式碼；`build_app.py` 把版本號寫進打包的 `version.json`。
+   - 還原 `config.get_web_dir` 讓打包版讀原始碼前端的改動（前後端版本不一致）、`build_web.py` 不再把前端複製進 dist。
+   - 設定頁移除「進階：改用 .env 提供 AI 金鑰」（與 AI 連線重複），`env_settings.FIELDS` 只留 FinMind 與 SEC；`.env` 裡已有的 AI 金鑰仍可被讀取。
+   - FinMind「測試」按鈕改成驗證成功才寫入 `.env`；走勢預測卡基準價改用最新收盤；暫存匣「成交」按鈕未勾規則時停用。
+   - 注意：該 agent 直接修改過 `data/userdata.json`（移除 0050、寫入 15 筆持有中紀錄），違反專案規則；持有中紀錄會由上面的清理移除。
+16. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
 
 ---
 

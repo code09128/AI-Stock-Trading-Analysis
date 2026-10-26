@@ -110,10 +110,11 @@ def make_splash_image():
 
 
 def make_version_file() -> Path:
-    """把打包當下的 Git commit 寫入 build/version.json，讓打包版知道自己的基底版本。"""
+    """把 src/version.py 的版本號寫入 build/version.json，打包版靠它判斷線上更新是否比自己新。"""
     import json
-    from src.server import updater
-    ver = updater._git_current_version(ROOT) or {"sha": "", "short_sha": "packaged", "date": "", "message": "打包版"}
+    from datetime import datetime
+    from src.version import APP_VERSION
+    ver = {"version": APP_VERSION, "built_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
     out = BUILD_DIR / "version.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(ver, ensure_ascii=False, indent=2), encoding="utf-8")

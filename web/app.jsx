@@ -51,14 +51,36 @@ function App() {
   const [pendingRun4, setPendingRun4] = useState(false);
   const [pendingRun3, setPendingRun3] = useState(false);
   const [pendingRun5, setPendingRun5] = useState(false);
-  const [m5Source, setM5Source] = useState('sample'); // 'mine' | 'sample'
+  const [m5Source, setM5Source] = useState(() => {
+    const j = window.TA.loadPortfolio?.().journal || [];
+    return j.length ? 'mine' : 'sample';
+  }); // 'mine' | 'sample'
   const [m4Loading, setM4Loading] = useState(false);
   const [m4Data, setM4Data] = useState(null);
 
   // 交易檢討 狀態
-  const [m5Entries, setM5Entries] = useState(DEFAULT_JOURNAL);
+  const [m5Entries, setM5Entries] = useState(() => {
+    const j = window.TA.loadPortfolio?.().journal || [];
+    return j.length ? j : DEFAULT_JOURNAL;
+  });
   const [m5Loading, setM5Loading] = useState(false);
   const [m5Data, setM5Data] = useState(null);
+
+  useEffect(() => {
+    const onPortfolioChange = () => {
+      const j = window.TA.loadPortfolio?.().journal || [];
+      if (j.length) {
+        setM5Source('mine');
+        setM5Entries(j);
+      }
+    };
+    window.addEventListener('portfolio-changed', onPortfolioChange);
+    window.addEventListener('storage', onPortfolioChange);
+    return () => {
+      window.removeEventListener('portfolio-changed', onPortfolioChange);
+      window.removeEventListener('storage', onPortfolioChange);
+    };
+  }, []);
 
   // 系統 12 項自檢狀態
   const [testSuiteRunning, setTestSuiteRunning] = useState(false);
@@ -257,6 +279,8 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             entries: usedEntries,
+            // 持有中的部位（只顯示帳面損益，不算進勝率等統計）
+            holdings: usedSource === 'mine' ? window.TA.loadPortfolio().holdings : [],
             ai: (() => {
               const cfg = window.TA.loadAI();
               return cfg.scope.mod5 === false
@@ -560,15 +584,16 @@ function App() {
       if (!m4Data) runMod4();
     }
     if (tabId === 'mod5') {
-      // 交易檢討預設使用「我的交易紀錄」（模擬成交或匯入），沒有才用範例
-      const journal = window.TA.loadPortfolio().journal;
-      // 我的交易紀錄若在別頁有變動（例如看盤頁成交賣出），重新讀取並診斷
-      const stale = m5Source === 'mine' && JSON.stringify(journal) !== JSON.stringify(m5Entries);
-      if (journal.length && (m5Source !== 'mine' || stale)) {
+      // 交易檢討預設使用「我的交易紀錄」（模擬成交賣出或匯入的已平倉交易），沒有才用範例；持股另外顯示為持有中部位
+      const { journal } = window.TA.loadPortfolio();
+      if (journal.length) {
+        const stale = m5Source !== 'mine' || JSON.stringify(journal) !== JSON.stringify(m5Entries);
         setM5Source('mine');
         setM5Entries(journal);
-        setM5Data(null);
-        setPendingRun5(true);
+        if (stale || !m5Data) {
+          setM5Data(null);
+          runMod5(journal, 'mine');
+        }
         return;
       }
       if (!m5Data) runMod5();

@@ -181,7 +181,9 @@
     const op = r.open_position;
     const lastEq = (r.daily_equity || [])[(r.daily_equity || []).length - 1];
     const lastTrade = (r.trades || [])[(r.trades || []).length - 1];
-    const refPrice = op?.last_close || snap?.latest_close || lastTrade?.exit_price || 0;
+    // 基準價一律用最新收盤（策略空手時不要拿最後一筆交易的出場價，那可能是好幾個月前）
+    const lastBar = (m3Data.chart_bars || [])[(m3Data.chart_bars || []).length - 1];
+    const refPrice = op?.last_close || lastBar?.[4] || snap?.latest_close || lastTrade?.exit_price || 0;
     const ccy = m3Data.currency || snap?.currency || '';
     const avgWinPct = Number(r.avg_win_pct || 0);
     const avgLossPct = Math.abs(Number(r.avg_loss_pct || 0));

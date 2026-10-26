@@ -5,7 +5,6 @@ from pathlib import Path
 import sys
 
 
-
 def _find_project_root() -> Path:
     cur = Path(__file__).resolve().parent
     for p in [cur, cur.parent, cur.parent.parent, cur.parent.parent.parent]:
@@ -92,4 +91,3 @@ def load_env_file(path: Path = None) -> List[str]:
             os.environ[key] = value
             loaded.append(key)
     return loaded
-

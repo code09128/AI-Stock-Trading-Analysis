@@ -74,7 +74,7 @@
           ))}
           <span className={m5Source === 'mine' ? 'text-emerald-300' : 'text-amber-300'}>
             {m5Source === 'mine'
-              ? '✅ 分析你的真實／模擬成交紀錄；損益、持有天數、出場後 5 日最高價由系統用真實日 K 計算'
+              ? '✅ 分析你的已平倉交易（模擬成交賣出或匯入）；持股另外列在「持有中部位」，不算進勝率'
               : '⚠️ 範例資料，不是你的交易'}
           </span>
           <button
@@ -90,7 +90,8 @@
           <span className="hidden"></span>
         </div>
         <div className="text-slate-500">
-          我的交易紀錄來自：看盤頁模擬下單「成交」賣出時自動寫入，或下方貼上券商對帳單 CSV。
+          我的交易紀錄來自：看盤頁模擬下單「賣出成交」自動寫入，或下方貼上券商對帳單 CSV。
+          買進成交會加入「我的持股」，在下方「持有中部位」看帳面損益；賣出後才算一筆完整交易。
         </div>
         <details>
           <summary className="cursor-pointer text-slate-300">貼上 CSV 匯入真實交易</summary>
@@ -209,6 +210,8 @@
                   <th className="py-2 px-1.5">編號</th>
                   <th className="py-2 px-1.5">標的</th>
                   <th className="py-2 px-1.5">進場時間</th>
+                  <th className="py-2 px-1.5">進場價</th>
+                  <th className="py-2 px-1.5">出場/現價</th>
                   <th className="py-2 px-1.5">股數</th>
                   <th className="py-2 px-1.5">淨損益</th>
                   <th className="py-2 px-1.5">報酬率%</th>
@@ -220,7 +223,14 @@
               <tbody className="divide-y divide-slate-800/60">
                 {m5Entries.map((en, idx) => (
                   <tr key={en.trade_id}>
-                    <td className="py-1.5 px-1.5 font-bold text-amber-300">{en.trade_id}</td>
+                    <td className="py-1.5 px-1.5 font-bold text-amber-300">
+                      {en.trade_id}
+                      {en.source && (
+                        <span className="ml-1 text-[10px] font-normal text-slate-400">
+                          ({en.source})
+                        </span>
+                      )}
+                    </td>
                     <td className="py-1.5 px-1.5">
                       <input
                         type="text"
@@ -245,9 +255,11 @@
                           };
                           edit(next, `已儲存交易紀錄 ${en.trade_id} 的修改`);
                         }}
-                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-16 text-white"
+                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-24 text-white"
                       />
                     </td>
+                    <td className="py-1.5 px-1.5 text-slate-300">{en.entry_price ?? '-'}</td>
+                    <td className="py-1.5 px-1.5 text-slate-300">{en.exit_price ?? '-'}</td>
                     <td className="py-1.5 px-1.5">{en.shares}</td>
                     <td
                       className={`py-1.5 px-1.5 font-bold ${
@@ -321,8 +333,57 @@
           </div>
         </div>
 
+        {(m5Data?.open_positions || []).length > 0 && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 text-xs space-y-2 overflow-x-auto">
+            <div className="font-semibold text-slate-200">
+              持有中部位（{m5Data.open_positions.length} 檔，帳面損益）
+              <window.TA.Tip text="還沒賣出的部位，用最新收盤價計算帳面損益與持有天數。不算進勝率、賺賠比與賣飛統計，賣出成交後才會變成一筆完整交易。" />
+            </div>
+            <table className="w-full text-left font-mono whitespace-nowrap">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-sans">
+                  <th className="py-1.5 px-2">標的</th>
+                  <th className="py-1.5 px-2">股數</th>
+                  <th className="py-1.5 px-2">成本</th>
+                  <th className="py-1.5 px-2">現價</th>
+                  <th className="py-1.5 px-2">帳面損益</th>
+                  <th className="py-1.5 px-2">報酬率</th>
+                  <th className="py-1.5 px-2">持有天數</th>
+                  <th className="py-1.5 px-2 font-sans">來源</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {m5Data.open_positions.map((o) => (
+                  <tr key={`${o.symbol}-${o.trade_id}`}>
+                    <td className="py-1.5 px-2 text-slate-200">{o.symbol}</td>
+                    <td className="py-1.5 px-2">{Number(o.shares || 0).toLocaleString()}</td>
+                    <td className="py-1.5 px-2">{o.entry_price}</td>
+                    <td className="py-1.5 px-2">
+                      {o.current_price ?? '--'}
+                      {o.price_date && <span className="text-slate-500">（{o.price_date}）</span>}
+                    </td>
+                    <td className={`py-1.5 px-2 ${window.TA.colorOf(o.net_pnl)}`}>
+                      {o.net_pnl != null ? Number(o.net_pnl).toLocaleString() : '--'}
+                    </td>
+                    <td className={`py-1.5 px-2 ${window.TA.colorOf(o.return_pct)}`}>
+                      {o.return_pct != null ? `${o.return_pct}%` : '--'}
+                    </td>
+                    <td className="py-1.5 px-2">{o.holding_days ?? '--'}</td>
+                    <td className="py-1.5 px-2 font-sans text-slate-400">{o.source || '交易紀錄'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {m5Data && (
           <div className="space-y-4">
+            {m5Data.closed_trades_used === 0 && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
+                ⚠️ 還沒有已平倉的交易，勝率與行為偏誤無法計算；下方規則是用保守預設值。賣出成交或匯入交易後再診斷一次。
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                 <div className="text-xs text-slate-400">

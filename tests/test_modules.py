@@ -11,6 +11,7 @@ from src.news.news_strategy import NewsStrategyAnalyzer
 from src.portfolio.portfolio_risk import PortfolioRiskManager
 from src.journal.journal_coach import JournalCoach, JournalEntry
 
+
 class TestAdvancedModules(unittest.TestCase):
 
     # ==================== 模組 2: 新聞轉交易策略驗證 ====================
@@ -165,6 +166,60 @@ class TestAdvancedModules(unittest.TestCase):
         })
         self.assertAlmostEqual(res["entries_used"][0]["shares"], 1.09826, places=5)
         self.assertAlmostEqual(res["entries_used"][0]["net_pnl"], round((280.50 - 266.22) * 1.09826 - 1.0, 2), places=2)
+
+    def test_journal_open_buy_entry_enriched_with_latest_close(self):
+        """模擬下單買進（持有中）寫入交易檢討時，應自動帶入最新收盤價計算未實現損益與近5日高點。"""
+        from unittest.mock import patch
+        from src.market.bar import Bar
+        from src.server.dispatcher import DISPATCHER
+
+        fake_bars = [
+            Bar("2026-10-20", 50.0, 52.0, 49.5, 51.0, 1000),
+            Bar("2026-10-21", 51.0, 53.5, 50.8, 53.0, 1200),
+        ]
+        with patch.object(DISPATCHER.adapter, "fetch_bars", return_value={"bars": fake_bars}):
+            res = DISPATCHER.handle_mod5_coach({
+                "entries": [
+                    {
+                        "trade_id": "#01",
+                        "symbol": "0055",
+                        "side": "BUY",
+                        "entry_time": "2026-10-20",
+                        "exit_time": "持有中",
+                        "entry_price": 51.0,
+                        "exit_price": 51.0,
+                        "shares": 1000,
+                        "fees": 73,
+                        "emotion_score": 5,
+                        "source": "模擬下單買進",
+                    }
+                ]
+            })
+        # 持有中的部位：另外列在 open_positions（用最新收盤價算帳面損益），不算進已平倉統計、也沒有「出場後 5 日高點」
+        self.assertEqual(res["closed_trades_used"], 0)
+        self.assertEqual(res["statistics"]["total_trades"], 0)
+        pos = res["open_positions"][0]
+        self.assertEqual(pos["current_price"], 53.0)
+        self.assertEqual(pos["net_pnl"], round((53.0 - 51.0) * 1000 - 73, 2))
+        self.assertNotIn("high_5d_after_exit", pos)
+        self.assertGreaterEqual(pos["holding_days"], 1)
+        self.assertEqual(res["entries_used"][0]["exit_price"], 51.0)  # 存回去的紀錄不被現價蓋掉
+
+    def test_holdings_shown_as_open_positions_not_trades(self):
+        from unittest.mock import patch
+        from src.market.bar import Bar
+        from src.server.dispatcher import DISPATCHER
+        bars = [Bar("2026-10-20", 100, 101, 99, 100, 1), Bar("2026-10-21", 100, 111, 99, 110, 1)]
+        closed = {"trade_id": "#01", "symbol": "2330", "entry_time": "2026-10-01", "exit_time": "2026-10-10",
+                  "entry_price": 100, "exit_price": 90, "shares": 1000}
+        with patch.object(DISPATCHER.adapter, "fetch_bars", return_value={"bars": bars}):
+            res = DISPATCHER.handle_mod5_coach({"entries": [closed], "holdings": [
+                {"symbol": "0050", "shares": 2000, "cost": 100, "opened": "2026-10-01"},
+                {"symbol": "2330", "shares": 0, "cost": 100}]})
+        self.assertEqual(res["statistics"]["total_trades"], 1)
+        self.assertEqual([p["symbol"] for p in res["open_positions"]], ["0050"])
+        self.assertEqual(res["open_positions"][0]["net_pnl"], 20000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

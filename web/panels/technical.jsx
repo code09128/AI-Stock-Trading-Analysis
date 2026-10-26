@@ -127,7 +127,8 @@
     if (!t) return null;
     return (
       <span>
-        <b className="text-slate-200">{t.frame}</b>：{t.text}・RSI {t.RSI14 ?? '--'}・MACD 柱 {t.MACD_HIST ?? '--'}
+        <b className="text-slate-200">{t.frame}</b>：{t.text}・RSI {t.RSI14 ?? '--'}・MACD 柱{' '}
+        {t.MACD_HIST ?? '--'}
         {t.macd_turn ? `（${t.macd_turn}）` : ''}
       </span>
     );
@@ -138,7 +139,10 @@
     if (data.error) return <div className="text-xs text-amber-300">⚠️ {data.error}</div>;
     const { levels: lv, volume: vol } = data;
     return (
-      <div data-tour="mod1-scenarios" className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
+      <div
+        data-tour="mod1-scenarios"
+        className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3"
+      >
         <div className="text-xs font-semibold text-slate-300">
           多頭／中性／空頭三情境（日線＋週線＋成交量）
           <window.TA.Tip text="用同一組關鍵價位推演三種「如果…就…」的劇本：每種情境都有成立條件與失效條件。價位取自系統算出的支撐壓力，並用 ATR 拉開間距；下面列的是目前支持各情境的訊號，數量多不代表一定發生。" />
@@ -149,20 +153,31 @@
           <span className="md:col-span-2">
             <b className="text-slate-200">成交量</b>
             <window.TA.Tip text="上漲日/下跌日量比＝近 20 日上漲那幾天的平均量 ÷ 下跌那幾天的平均量；大於 1.2 代表買盤較積極，小於 0.8 代表賣壓較重。近 5 日／20 日均量比大於 1 代表最近量能放大。" />
-            ：{vol.note}・上漲日/下跌日量比 {vol.up_down_volume_ratio ?? '--'}・近 5 日/20 日均量 {vol.avg5_vs_avg20 ?? '--'} 倍・最後一天 {vol.last_vs_avg20 ?? '--'} 倍
+            ：{vol.note}・上漲日/下跌日量比 {vol.up_down_volume_ratio ?? '--'}・近 5 日/20 日均量{' '}
+            {vol.avg5_vs_avg20 ?? '--'} 倍・最後一天 {vol.last_vs_avg20 ?? '--'} 倍
           </span>
           <span className="md:col-span-2 font-mono">
             <span className="font-sans">關鍵價位</span>
-            <window.TA.Tip text={`${lv.source}。S＝支撐、R＝壓力；ATR14＝${lv.ATR14}（近 14 日平均真實波動）。`} />
-            ：S2 {lv.S2}｜S1 {lv.S1}｜現價 <b className="text-amber-300">{data.price}</b>｜R1 {lv.R1}｜R2 {lv.R2}
+            <window.TA.Tip
+              text={`${lv.source}。S＝支撐、R＝壓力；ATR14＝${lv.ATR14}（近 14 日平均真實波動）。`}
+            />
+            ：S2 {lv.S2}｜S1 {lv.S1}｜現價 <b className="text-amber-300">{data.price}</b>｜R1{' '}
+            {lv.R1}｜R2 {lv.R2}
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {data.scenarios.map((s) => (
-            <div key={s.key} className={`rounded-xl border p-3 text-xs space-y-1.5 ${SCEN_STYLE[s.key]}`}>
+            <div
+              key={s.key}
+              className={`rounded-xl border p-3 text-xs space-y-1.5 ${SCEN_STYLE[s.key]}`}
+            >
               <div className="font-bold text-sm">
                 {s.name}
-                {data.lean === s.key && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">訊號最多</span>}
+                {data.lean === s.key && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                    訊號最多
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-slate-400">成立條件：</span>
@@ -244,9 +259,7 @@
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
-              <h2 className="text-base font-semibold text-white">
-                查詢標的
-              </h2>
+              <h2 className="text-base font-semibold text-white">查詢標的</h2>
               <p className="text-xs text-slate-400">
                 輸入代號查看 K 線、指標與多空情境；盤中可每 5 秒以即時報價更新最後一根 K 棒
               </p>
@@ -315,9 +328,7 @@
             <div className="md:col-span-6 text-[11px] text-slate-400 leading-relaxed">
               分析方式：
               <b className="text-slate-200">
-                {m1Data?.llm_result?.execution_mode?.startsWith('LIVE')
-                  ? 'AI 模型'
-                  : '內建規則'}
+                {m1Data?.llm_result?.execution_mode?.startsWith('LIVE') ? 'AI 模型' : '內建規則'}
               </b>
               。想改用雲端 AI 或本地模型，到
               <button
@@ -339,11 +350,7 @@
                 disabled={m1Loading}
                 className="w-full py-2 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold text-sm shadow-lg shadow-sky-600/25 transition cursor-pointer"
               >
-                {m1Loading
-                  ? aiDecisionOn
-                    ? 'AI 推論中（可能數十秒）…'
-                    : '分析中...'
-                  : '查詢標的'}
+                {m1Loading ? (aiDecisionOn ? 'AI 推論中（可能數十秒）…' : '分析中...') : '查詢標的'}
               </button>
             </div>
           </div>
@@ -498,8 +505,10 @@
               </button>
               {m1Data.weekly_snapshot && (
                 <span className="font-mono text-slate-300">
-                  <span className="text-yellow-400">週 MA5 {fmt2(m1Data.weekly_snapshot.MA5)}</span> ・{' '}
-                  <span className="text-purple-400">MA20 {fmt2(m1Data.weekly_snapshot.MA20)}</span> ・{' '}
+                  <span className="text-yellow-400">週 MA5 {fmt2(m1Data.weekly_snapshot.MA5)}</span>{' '}
+                  ・{' '}
+                  <span style={{ color: '#38bdf8' }}>MA20 {fmt2(m1Data.weekly_snapshot.MA20)}</span>{' '}
+                  ・{' '}
                   <span className="text-emerald-400">
                     MA60{' '}
                     {m1Data.weekly_snapshot.MA60 == null
@@ -552,10 +561,19 @@
                 <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono">
                   <span className="font-sans">均線排列</span>
                   <window.TA.Tip text="MA＝移動平均線：最近 N 個交易日收盤價的平均。MA5≈一週（短線）、MA20≈一個月（中期）、MA60≈一季（較長期）。股價 > MA5 > MA20 > MA60 叫多頭排列（偏強），順序相反叫空頭排列（偏弱）。" />
-                  ：<span className="text-yellow-400">MA5={fmt2(m1Data.snapshot.indicators.MA5)}</span> ｜{' '}
-                  <span className="text-purple-400">MA20={fmt2(m1Data.snapshot.indicators.MA20)}</span> ｜{' '}
-                  <span className="text-emerald-400">MA60={fmt2(m1Data.snapshot.indicators.MA60)}</span> ｜{' '}
-                  MA200={fmt2(m1Data.snapshot.indicators.MA200)}
+                  ：
+                  <span className="text-yellow-400">
+                    MA5={fmt2(m1Data.snapshot.indicators.MA5)}
+                  </span>{' '}
+                  ｜{' '}
+                  <span style={{ color: '#38bdf8' }}>
+                    MA20={fmt2(m1Data.snapshot.indicators.MA20)}
+                  </span>{' '}
+                  ｜{' '}
+                  <span className="text-emerald-400">
+                    MA60={fmt2(m1Data.snapshot.indicators.MA60)}
+                  </span>{' '}
+                  ｜ MA200={fmt2(m1Data.snapshot.indicators.MA200)}
                   <span className="font-sans ml-2 text-slate-300">
                     {maOrderText(m1Data.snapshot)}
                   </span>

@@ -268,8 +268,7 @@
         </li>
         <li>
           <b className="text-yellow-400">MA5（黃線）</b>＝近 5 日收盤均價，反應短線；
-          <b className="text-purple-400"> MA20（紫線）</b>＝近 20
-          日（約一個月），反應中期趨勢；
+          <b style={{ color: '#38bdf8' }}> MA20（藍線）</b>＝近 20 日（約一個月），反應中期趨勢；
           <b className="text-emerald-400"> MA60（綠線）</b>＝近 60
           日（約一季），被稱為季線或生命線。股價站上 MA20 且短中長均線多頭排列時，通常表示偏強。
         </li>

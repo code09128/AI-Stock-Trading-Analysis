@@ -61,82 +61,113 @@ class EnvSettingsTests(unittest.TestCase):
         with patch("src.market.finmind.get_data", return_value=[{"date": "2026-10-20", "close": 1000}]):
             res = env_settings.test_finmind("my_valid_token_9999")
         self.assertTrue(res["ok"])
-        self.assertIn("已確認寫入", res["msg"])
+        self.assertIn("已寫入", res["msg"])
         self.assertEqual(os.environ.get("FINMIND_TOKEN"), "my_valid_token_9999")
         self.assertIn("FINMIND_TOKEN=my_valid_token_9999", self.path.read_text(encoding="utf-8"))
 
+    def test_finmind_bad_token_is_not_saved(self):
+        with patch("src.market.finmind.get_data", side_effect=RuntimeError("FinMind 402")):
+            res = env_settings.test_finmind("bad_token_0000")
+        self.assertFalse(res["ok"])
+        self.assertIn("未儲存", res["error"])
+        self.assertNotIn("bad_token_0000", self.path.read_text(encoding="utf-8") if self.path.exists() else "")
+
 
 class UpdaterTests(unittest.TestCase):
+    """線上更新只讀 GitHub Release：版本比較、下載只解 src/ 與 web/、版本不一致不套用、原始碼版不覆蓋。"""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.app_dir = Path(self.tmp.name)
-        self.p_app = patch.object(updater, "get_app_dir", return_value=self.app_dir)
-        self.p_res = patch.object(updater, "get_resource_dir", return_value=self.app_dir / "bundled")
-        self.p_app.start()
-        self.p_res.start()
+        bundled = self.app_dir / "bundled"
+        bundled.mkdir()
+        (bundled / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        self.patches = [patch.object(updater, "get_app_dir", return_value=self.app_dir),
+                        patch.object(updater, "get_resource_dir", return_value=bundled),
+                        patch.object(updater, "_reload_runtime")]
+        for p in self.patches:
+            p.start()
 
     def tearDown(self):
-        self.p_app.stop()
-        self.p_res.stop()
+        for p in self.patches:
+            p.stop()
         self.tmp.cleanup()
 
-    def _make_fake_repo_zip(self) -> bytes:
+    @staticmethod
+    def _zip(version: str) -> bytes:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("repo-main/src/__init__.py", "# updated src\n")
-            zf.writestr("repo-main/web/index.html", "<html>updated web</html>\n")
-            zf.writestr("repo-main/README.md", "ignored\n")
+            zf.writestr(f"repo-{version}/src/__init__.py", "")
+            zf.writestr(f"repo-{version}/src/version.py", f'APP_VERSION = "{version}"\n')
+            zf.writestr(f"repo-{version}/web/index.html", "<html></html>")
+            zf.writestr(f"repo-{version}/README.md", "ignored")
+            zf.writestr(f"repo-{version}/TradingAnalysis.zip", "ignored")
         return buf.getvalue()
 
-    def test_apply_zip_extracts_src_and_web_without_touching_user_data(self):
-        (self.app_dir / ".env").write_text("FINMIND_TOKEN=keep_me\n", encoding="utf-8")
-        (self.app_dir / "data").mkdir(parents=True, exist_ok=True)
-        (self.app_dir / "data" / "userdata.json").write_text('{"ok":true}', encoding="utf-8")
-
-        fake_zip = self._make_fake_repo_zip()
-
-        class FakeResp:
+    @staticmethod
+    def _resp(raw: bytes):
+        class R:
             def __enter__(self):
                 return self
 
-            def __exit__(self, *args):
+            def __exit__(self, *a):
                 pass
 
             def read(self):
-                return fake_zip
+                return raw
+        return R()
 
-        rem = {"sha": "abc1234567890", "short_sha": "abc1234", "date": "2026-10-26 18:00:00", "message": "feat: update"}
-        with patch("urllib.request.urlopen", return_value=FakeResp()), \
-             patch.object(updater, "_reload_runtime"):
-            res = updater._apply_via_zip(rem)
+    def test_parse_version(self):
+        self.assertEqual(updater.parse_version("v1.2.10"), (1, 2, 10))
+        self.assertGreater(updater.parse_version("1.10.0"), updater.parse_version("1.9.9"))
+        self.assertEqual(updater.parse_version("main"), (0, 0, 0))
 
-        self.assertTrue(res["ok"])
-        self.assertTrue((self.app_dir / "update" / "src" / "__init__.py").is_file())
-        self.assertTrue((self.app_dir / "update" / "web" / "index.html").is_file())
-        self.assertFalse((self.app_dir / "update" / "README.md").exists())
-        # 確保 .env 與 data/ 完全不受影響
+    def test_download_extracts_only_src_web_and_keeps_user_data(self):
+        (self.app_dir / ".env").write_text("FINMIND_TOKEN=keep_me\n", encoding="utf-8")
+        (self.app_dir / "data").mkdir()
+        (self.app_dir / "data" / "userdata.json").write_text('{"ok":true}', encoding="utf-8")
+        rel = {"version": "1.0.1", "tag": "v1.0.1", "name": "v1.0.1"}
+        with patch("urllib.request.urlopen", return_value=self._resp(self._zip("1.0.1"))):
+            res = updater._download_release(rel)
+        self.assertTrue(res["updated"])
+        up = self.app_dir / "update"
+        self.assertTrue((up / "src" / "version.py").is_file())
+        self.assertFalse((up / "README.md").exists())
+        self.assertFalse((up / "TradingAnalysis.zip").exists())
         self.assertEqual((self.app_dir / ".env").read_text(encoding="utf-8"), "FINMIND_TOKEN=keep_me\n")
-        self.assertEqual((self.app_dir / "data" / "userdata.json").read_text(encoding="utf-8"), '{"ok":true}')
-        cur = updater.current_version()
-        self.assertEqual(cur["sha"], "abc1234567890")
+        self.assertEqual(updater.current_version()["version"], "1.0.1")
 
-    def test_stale_update_cleaned_when_bundled_is_newer(self):
+    def test_version_mismatch_is_rejected(self):
+        rel = {"version": "1.0.2", "tag": "v1.0.2"}
+        with patch("urllib.request.urlopen", return_value=self._resp(self._zip("1.0.1"))):
+            with self.assertRaises(RuntimeError):
+                updater._download_release(rel)
+        self.assertFalse((self.app_dir / "update").exists())
+
+    def test_stale_update_cleaned_when_bundled_is_same_or_newer(self):
         up = self.app_dir / "update"
         (up / "src").mkdir(parents=True)
         (up / "web").mkdir(parents=True)
         (up / "web" / "index.html").write_text("old", encoding="utf-8")
-        (up / "version.json").write_text(
-            json.dumps({"sha": "old111", "date": "2026-10-01 10:00:00"}), encoding="utf-8"
-        )
-        bundled = self.app_dir / "bundled"
-        bundled.mkdir(parents=True)
-        (bundled / "version.json").write_text(
-            json.dumps({"sha": "new222", "date": "2026-10-26 10:00:00"}), encoding="utf-8"
-        )
-        active = updater.activate_update_if_present()
-        self.assertFalse(active)
+        (up / "version.json").write_text(json.dumps({"version": "1.0.0"}), encoding="utf-8")
+        self.assertFalse(updater.activate_update_if_present())
         self.assertFalse(up.exists())
 
+    def test_noop_when_latest_and_source_checkout_not_overwritten(self):
+        with patch.object(updater, "fetch_latest_release", return_value={"version": "1.0.0", "tag": "v1.0.0"}),              patch.object(updater, "_download_release") as dl:
+            res = updater.apply_update()
+        self.assertTrue(res["already_latest"])
+        dl.assert_not_called()
+        (self.app_dir / ".git").mkdir()
+        with patch.object(updater, "fetch_latest_release", return_value={"version": "1.1.0", "tag": "v1.1.0"}),              patch.object(updater, "_download_release") as dl:
+            res = updater.apply_update()
+        self.assertEqual(res["mode"], "source")
+        dl.assert_not_called()
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_no_release_yet(self):
+        import urllib.error
+        err = urllib.error.HTTPError(updater.RELEASES_API, 404, "Not Found", {}, None)
+        with patch("urllib.request.urlopen", side_effect=err):
+            res = updater.check_update()
+        self.assertFalse(res["ok"])
+        self.assertIn("Release", res["error"])

@@ -37,8 +37,12 @@
 
   const load = () => {
     const raw = readLS(KEYS.journal, []);
-    const { out: journal, changed } = dedupeIds(Array.isArray(raw) ? raw : []);
-    if (changed) writeLS(KEYS.journal, journal);
+    // 舊版曾把「持有中」的持股與買進寫進交易紀錄：交易紀錄只放已平倉交易，持有中的部位由「我的持股」提供
+    const base = (Array.isArray(raw) ? raw : []).filter(
+      (e) => !(e && e.exit_time === '持有中' && ['目前持股', '模擬下單買進'].includes(e.source)),
+    );
+    let { out: journal, changed } = dedupeIds(base);
+    if (base.length !== (Array.isArray(raw) ? raw.length : 0)) changed = true;
     const rawHoldings = readLS(KEYS.holdings, []);
     let holdingsChanged = false;
     const holdings = (Array.isArray(rawHoldings) ? rawHoldings : []).map((h, idx) => {
@@ -49,6 +53,7 @@
       return h;
     });
     if (holdingsChanged) writeLS(KEYS.holdings, holdings);
+    if (changed) writeLS(KEYS.journal, journal);
     return {
       holdings,
       journal,
@@ -83,7 +88,8 @@
       savedAt: new Date().toLocaleString('zh-TW', { hour12: false }),
     });
 
-  // 模擬下單「成交」：買進 → 加到持股（加權平均成本）；賣出 → 從持股扣除並寫一筆已平倉交易到交易紀錄
+  // 模擬下單「成交」：買進 → 加到持股（加權平均成本，交易檢討的「持有中部位」會顯示）；
+  // 賣出 → 從持股扣除並寫一筆已平倉交易到交易紀錄（交易檢討只用已平倉交易算勝率與偏誤）
   const fillOrder = ({ symbol, side, price, shares, fees = 0 }) => {
     const { holdings, journal } = load();
     // 代號寫法可能不同（2330 / 2330.TW，CSV 匯入或舊資料）：跟其他頁一樣用 baseCode(normSym()) 比對
@@ -116,7 +122,10 @@
             },
           ];
       setHoldings(next);
-      return { ok: true, msg: `已成交買進 ${symbol} ${shares} 股，持股已更新` };
+      return {
+        ok: true,
+        msg: `已成交買進 ${symbol} ${shares} 股，已加入我的持股（交易檢討的「持有中部位」可看帳面損益）`,
+      };
     }
     const EPS = 1e-6; // 碎股小數運算的誤差：差不到百萬分之一股就當作全部賣完
     const totalAvail = matching.reduce((sum, x) => sum + x.shares, 0);
