@@ -143,6 +143,15 @@ def intraday(symbol: str) -> Optional[Dict[str, Any]]:
         if not pts and not res:
             continue
 
+        # 開盤前（例如美股台灣白天）：Yahoo「1 天」回的仍是上一個交易日的點，交易時段卻已是今天，
+        # 前端依時段算位置會把點全部畫在圖外 → 把時段整天往前移到這些點的那一天，並標成上一個交易日
+        if len(pts) >= 2 and session_start and pts[-1]["ts"] < session_start:
+            days = -(-(session_start - pts[0]["ts"]) // 86400)  # 無條件進位
+            session_start -= days * 86400
+            if session_end:
+                session_end -= days * 86400
+            is_fallback = True
+
         data = {
             "symbol": symbol,
             "yahoo_symbol": ysym,

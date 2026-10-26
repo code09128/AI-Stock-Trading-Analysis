@@ -8,7 +8,7 @@
 - **前端 `web/`**：React 18 + Tailwind（`web/vendor/` 可離線）；`panels/`（technical、news、backtest、portfolio、journal、selftest）、`pages/`、`sync_store.jsx`（資料同步）、`markdown.jsx`（AI 回答格式化與 LaTeX 數學符號轉換）。
 - **資料存放**：持股、交易紀錄、規則、自選股、提醒、AI 設定 → `data/userdata.json`（每日備份 `data/backups/`，保留 14 天）；金鑰 → `.env`（設定頁「金鑰與資料額度」可直接填）；操作紀錄 → `logs/`。
 - **AI**：研究主管／交易員口吻的報告格式＋關鍵數字卡＋數字核對（含中文單位換算與指數名稱識別）＋即時串流顯示（Streaming，含推理思考階段進度提示）＋LaTeX 數學符號自動轉可讀符號；Ollama 自動加大上下文；雲端 503／429 自動重試。
-- **測試**：`python -m unittest discover tests`（目前 268 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
+- **測試**：`python -m unittest discover tests`（目前 269 個全過）；前端 `npx @biomejs/biome lint web`（0 警告）；`python -m pyflakes src`（只剩 `api_server.py` 為了測試刻意保留的 re-export）。
 - **約定**：畫面文字用繁體中文、專業術語以「白話（術語）」並附「?」說明；不填假資料，取不到就顯示原因。
 
 ---
@@ -87,7 +87,8 @@
    - 設定頁移除「進階：改用 .env 提供 AI 金鑰」（與 AI 連線重複），`env_settings.FIELDS` 只留 FinMind 與 SEC；`.env` 裡已有的 AI 金鑰仍可被讀取。
    - FinMind「測試」按鈕改成驗證成功才寫入 `.env`；走勢預測卡基準價改用最新收盤；暫存匣「成交」按鈕未勾規則時停用。
    - 注意：該 agent 直接修改過 `data/userdata.json`（移除 0050、寫入 15 筆持有中紀錄），違反專案規則；持有中紀錄會由上面的清理移除。
-16. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
+16. ✅ **v1.0.1（2026-10-26）**：美股開盤前分時圖空白（Yahoo「1 天」回上一個交易日的點，交易時段卻是今天 → `chart_data.intraday` 把時段整天往前移到資料點那天並標 `is_fallback`）；分時圖「最後成交」改用最後一個分時點的實際時間，同時列交易所當地時間與台灣時間（例如「2026-10-23 16:00（美東）／台灣 2026-10-24 04:00」）；報價（台灣時間）比分時圖新時註明分時資料來源尚未更新。交易檢討沒有賣出也顯示持有中部位、功能說明卡。
+17. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
 
 ---
 

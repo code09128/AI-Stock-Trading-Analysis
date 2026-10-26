@@ -45,6 +45,21 @@
     );
   };
 
+  // 交易所時區 → 顯示名稱（最後成交時間同時列當地與台灣時間用）
+  const TZ_LABEL = {
+    'America/New_York': '美東',
+    'America/Toronto': '多倫多',
+    'Asia/Hong_Kong': '香港',
+    'Asia/Tokyo': '東京',
+    'Asia/Seoul': '首爾',
+    'Asia/Shanghai': '上海',
+    'Asia/Singapore': '新加坡',
+    'Europe/London': '倫敦',
+    'Europe/Berlin': '法蘭克福',
+    'Australia/Sydney': '雪梨',
+    'Asia/Taipei': '台灣',
+  };
+
   // ---------- 當日分時圖 (TradingView / Yahoo 風格)：折線 + 昨收虛線 + 成交量 + 十字游標 ----------
   const IntradayChart = ({ data, lastTrade, tz }) => {
     const [hover, setHover] = useState(null);
@@ -58,16 +73,41 @@
     } catch {
       today = new Date().toLocaleDateString('sv-SE');
     }
-    const lastDay = d ? `${d[1]}-${d[2]}-${d[3]}` : (data?.trade_date || null);
-    const lastTime = d?.[4] ? ` ${d[4]}` : '';
+    // 最後成交時間：用最後一個分時點的實際時間，同時列出交易所當地時間與台灣時間（美股收盤是台灣隔天清晨，避免看錯日期）
+    const lastTs = pts.length ? pts[pts.length - 1].ts : null;
+    const fmtAt = (ts, zone) =>
+      new Date(ts * 1000).toLocaleString('sv-SE', { timeZone: zone, hour12: false }).slice(0, 16);
+    const exchTz = tz || 'Asia/Taipei';
+    const exchLabel = TZ_LABEL[exchTz] || '當地';
+    let lastDay = d ? `${d[1]}-${d[2]}-${d[3]}` : data?.trade_date || null;
+    let lastText = lastDay ? `${lastDay}${d?.[4] ? ` ${d[4]}` : ''}` : '--';
+    if (lastTs) {
+      try {
+        const exch = fmtAt(lastTs, exchTz);
+        lastDay = exch.slice(0, 10);
+        lastText =
+          exchTz === 'Asia/Taipei' ? exch : `${exch}（${exchLabel}）／台灣 ${fmtAt(lastTs, 'Asia/Taipei')}`;
+      } catch {
+        // 瀏覽器不支援該時區：沿用報價時間
+      }
+    }
     const isClosedOrNoTrade = Boolean(
       (lastDay && lastDay < today) ||
       (data?.trade_date && data.trade_date < today) ||
       data?.is_fallback,
     );
-    const noTradeNotice = isClosedOrNoTrade
-      ? `最後成交：${lastDay || '--'}${lastTime}`
-      : null;
+    // 報價時間（一律是台灣時間）比分時圖最後一點新：分時資料來源還沒更新最新交易日（Yahoo 台股偶爾落後），要講清楚
+    let staleNote = '';
+    if (lastTs && d) {
+      try {
+        const quoteDayTw = `${d[1]}-${d[2]}-${d[3]}`;
+        if (quoteDayTw > fmtAt(lastTs, 'Asia/Taipei').slice(0, 10))
+          staleNote = `；分時圖只到 ${lastDay}，資料來源尚未更新 ${quoteDayTw} 的走勢（報價已是最新）`;
+      } catch {
+        // 時區不支援：不比對
+      }
+    }
+    const noTradeNotice = isClosedOrNoTrade || staleNote ? `最後成交：${lastText}${staleNote}` : null;
 
     if (pts.length < 2) {
       const msg = data?.error

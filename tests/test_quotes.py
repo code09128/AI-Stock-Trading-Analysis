@@ -114,6 +114,25 @@ class ChartDataTests(unittest.TestCase):
         self.assertEqual(d["prev_close"], 51.0)
 
 
+    def test_premarket_points_from_previous_session_align_with_session(self):
+        """美股開盤前：1 天資料是上週五的點、交易時段卻是今天（週一）→ 時段要移回週五，標成上一個交易日。"""
+        from src.market import chart_data
+        chart_data._CACHE.clear()
+        fri_open, fri_close = 1792762200, 1792785600   # 2026-10-23 09:30／16:00 美東
+        mon_open, mon_close = 1793021400, 1793044800   # 2026-10-26 09:30／16:00 美東
+        fake = {
+            "meta": {"chartPreviousClose": 212.21, "gmtoffset": -14400,
+                     "currentTradingPeriod": {"regular": {"start": mon_open, "end": mon_close}}},
+            "timestamp": [fri_open, fri_open + 300, fri_close],
+            "indicators": {"quote": [{"close": [211.5, 211.0, 210.96], "volume": [1, 1, 1]}]},
+        }
+        with patch.object(chart_data, "_chart", return_value=fake):
+            d = chart_data.intraday("NVDA")
+        self.assertEqual((d["session_start"], d["session_end"]), (fri_open, fri_close))
+        self.assertTrue(d["is_fallback"])
+        self.assertEqual(len(d["points"]), 3)
+
+
 class WeeklyNewsStressTests(unittest.TestCase):
     def test_weekly_aggregation(self):
         from src.server.api_server import to_weekly_bars
