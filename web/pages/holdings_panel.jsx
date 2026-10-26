@@ -1,6 +1,6 @@
 (() => {
   // 我的持股：市值／成本／損益總覽（可切即時價或昨收、填帳戶現金／投資金額／已領配息以便和銀行對帳）、
-  // 持股清單（分析、帶入賣出委託、移除）、新增與 CSV 匯入、送去組合風控
+  // 持股清單（分析、回測、帶入賣出委託、移除）、新增與 CSV 匯入、送去組合風控
   const { useState, useEffect, useMemo } = React;
   const { readLS, writeLS, currencyOf, normSym, baseCode, fmt, colorOf, Tip } = window.TA;
 
@@ -21,11 +21,11 @@
   }) {
     const { Row } = window.TA;
     const setHoldings = window.TA.setHoldings;
-    const [holdForm, setHoldForm] = useState({ symbol: '', shares: '', cost: '' });
+    const [holdForm, setHoldForm] = useState({ symbol: '', shares: '', cost: '', broker: '' });
     // 看盤頁按「加入我的持股」：帶入代號與現價，用過就清掉，下次切回這個分頁不會再蓋掉表單
     useEffect(() => {
       if (!prefill) return;
-      setHoldForm(prefill);
+      setHoldForm((f) => ({ ...f, ...prefill, broker: prefill.broker || '' }));
       onPrefillUsed?.();
     }, [prefill, onPrefillUsed]);
     const [csvText, setCsvText] = useState('');
@@ -41,7 +41,7 @@
     useEffect(() => writeLS('tw_us_invested_v1', invested), [invested]);
     const holdRows = useMemo(
       () =>
-        holdings.map((h) => {
+        holdings.map((h, idx) => {
           const hq = quotes[baseCode(h.symbol)];
           const price = holdBasis === 'prev' ? (hq?.prev_close ?? hq?.price) : hq?.price;
           const currency = hq?.currency || currencyOf(h.symbol);
@@ -51,6 +51,8 @@
           const cost = h.cost * h.shares;
           return {
             ...h,
+            rowIndex: idx,
+            id: h.id || `${h.symbol}_${h.broker || ''}_${idx}`,
             quote: hq,
             price,
             currency,
@@ -76,42 +78,159 @@
       };
     }, [holdRows]);
     const addHolding = () => {
-      const sym = normSym(holdForm.symbol);
-      const shares = Number(holdForm.shares);
-      const cost = Number(holdForm.cost);
+      const sym = normSym((holdForm.symbol || '').trim());
+      const shares = Number(
+        String(holdForm.shares || '')
+          .replace(/,/g, '')
+          .trim(),
+      );
+      const cost = Number(
+        String(holdForm.cost || '')
+          .replace(/,/g, '')
+          .trim(),
+      );
+      const broker = (holdForm.broker || '').trim();
       if (!sym || !(shares > 0) || !(cost >= 0)) {
         say('⚠️ 沒有新增：請填代號、股數（正數）與成本價');
         return;
       }
-      const old = holdings.find((h) => h.symbol === sym);
-      setHoldings([
-        ...holdings.filter((h) => h.symbol !== sym),
-        { symbol: sym, shares, cost, opened: old?.opened || new Date().toISOString().slice(0, 10) },
-      ]);
-      setHoldForm({ symbol: '', shares: '', cost: '' });
-      window.TA.notifySaved(
-        old ? `已更新持股 ${sym}：${shares} 股、成本 ${cost}` : `已新增持股 ${sym}：${shares} 股、成本 ${cost}`,
-      );
+      const sameEntry = (h) => h.symbol === sym && (h.broker || '').trim() === broker;
+      const old = holdings.find(sameEntry);
+      let next;
+      if (old) {
+        const totalShares = old.shares + shares;
+        const weightedCost =
+          Math.round(((old.cost * old.shares + cost * shares) / totalShares) * 10000) / 10000;
+        next = holdings.map((h) =>
+          sameEntry(h) ? { ...h, shares: totalShares, cost: weightedCost } : h,
+        );
+        window.TA.notifySaved(
+          `已累加持股 ${sym}${broker ? `（${broker}）` : ''}：原 ${old.shares} 股 + 新增 ${shares} 股 ＝ 共 ${totalShares} 股、成本 ${weightedCost}`,
+        );
+      } else {
+        const newEntry = {
+          id: `${sym}_${broker || 'main'}_${Date.now()}`,
+          symbol: sym,
+          shares,
+          cost,
+          broker: broker || undefined,
+          opened: new Date().toISOString().slice(0, 10),
+        };
+        next = [...holdings, newEntry];
+        window.TA.notifySaved(
+          `已新增持股 ${sym}${broker ? `（${broker}）` : ''}：${shares} 股、成本 ${cost}`,
+        );
+      }
+      setHoldings(next);
+      setHoldForm({ symbol: '', shares: '', cost: '', broker: '' });
     };
     const importCsv = () => {
-      const rows = csvText
+      // 1. 去除首尾空格，切分行，並過濾掉純空格或空行（末行空格自動清除）
+      const lines = csvText
         .split(/\r?\n/)
-        .map((l) => l.split(/[,\t]/).map((x) => x.trim()))
-        .map(([a, b, c]) => ({ symbol: normSym(a || ''), shares: Number(b), cost: Number(c) }))
-        .filter((r) => r.symbol && r.shares > 0 && r.cost >= 0);
-      if (!rows.length) {
-        say('⚠️ 沒有匯入：沒有讀到有效列。格式：代號,股數,成本價（每行一檔）');
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+      const parsedRows = [];
+      for (const line of lines) {
+        if (/^(代號|symbol|ticker|股票代號|商品代碼)/i.test(line)) continue;
+        const rawParts = line.split(/[\t,;]/).map((x) => x.replace(/^["']|["']$/g, '').trim());
+
+        // 拿掉末端因多餘逗號或空格產生的空欄位
+        while (rawParts.length > 3 && rawParts[rawParts.length - 1] === '') {
+          rawParts.pop();
+        }
+        if (rawParts.length < 3) continue;
+
+        const a = rawParts[0];
+        let bStr = rawParts[1];
+        let cStr = rawParts[2];
+        let broker = rawParts[3] ? rawParts[3].trim() : '';
+
+        // 如果股數因千分位被逗號拆散（例如 0050, 1, 130, 41.7, 富邦）
+        if (
+          rawParts.length >= 4 &&
+          !Number.isNaN(Number(rawParts[1])) &&
+          !Number.isNaN(Number(rawParts[2])) &&
+          !Number.isNaN(Number(rawParts[3]))
+        ) {
+          const combinedShares = Number(`${rawParts[1]}${rawParts[2]}`);
+          const possibleCost = Number(rawParts[3]);
+          if (combinedShares > 0 && possibleCost >= 0) {
+            bStr = String(combinedShares);
+            cStr = String(possibleCost);
+            broker = rawParts[4] ? rawParts[4].trim() : '';
+          }
+        }
+
+        const sym = normSym((a || '').trim());
+        const shares = Number(
+          String(bStr || '')
+            .replace(/,/g, '')
+            .trim(),
+        );
+        const cost = Number(
+          String(cStr || '')
+            .replace(/,/g, '')
+            .trim(),
+        );
+
+        if (sym && shares > 0 && cost >= 0) {
+          parsedRows.push({
+            symbol: sym,
+            shares,
+            cost,
+            broker: broker || undefined,
+          });
+        }
+      }
+
+      if (!parsedRows.length) {
+        say('⚠️ 沒有匯入：沒有讀到有效列。格式：代號,股數,成本價[,券商]（每行一檔）');
         return;
       }
-      const map = new Map(holdings.map((h) => [h.symbol, h]));
-      for (const r of rows)
-        map.set(r.symbol, {
-          ...r,
-          opened: map.get(r.symbol)?.opened || new Date().toISOString().slice(0, 10),
-        });
-      setHoldings([...map.values()]);
+
+      // 根據情境增加持股：在既有持股基礎上「累加/新增」，不抹除其他持股
+      // 同標的且同券商：加權平均累加股數與成本
+      // 同標的但不同券商（或新標的）：新增為獨立持股項目
+      const currentHoldings = [...holdings];
+      let addedCount = 0;
+      let mergedCount = 0;
+
+      for (const r of parsedRows) {
+        const brokerKey = (r.broker || '').trim();
+        const existingIdx = currentHoldings.findIndex(
+          (h) => h.symbol === r.symbol && (h.broker || '').trim() === brokerKey,
+        );
+
+        if (existingIdx >= 0) {
+          const old = currentHoldings[existingIdx];
+          const totalShares = old.shares + r.shares;
+          const weightedCost =
+            Math.round(((old.cost * old.shares + r.cost * r.shares) / totalShares) * 10000) / 10000;
+          currentHoldings[existingIdx] = {
+            ...old,
+            shares: totalShares,
+            cost: weightedCost,
+          };
+          mergedCount++;
+        } else {
+          currentHoldings.push({
+            id: `${r.symbol}_${brokerKey || 'main'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            ...r,
+            opened: new Date().toISOString().slice(0, 10),
+          });
+          addedCount++;
+        }
+      }
+
+      setHoldings(currentHoldings);
       setCsvText('');
-      window.TA.notifySaved(`已匯入 ${rows.length} 檔持股`);
+      const msg =
+        mergedCount > 0
+          ? `已成功匯入持股：新增 ${addedCount} 筆、累加合併 ${mergedCount} 筆`
+          : `已成功匯入 ${addedCount} 檔持股`;
+      window.TA.notifySaved(msg);
     };
 
     return (
@@ -252,15 +371,23 @@
             </div>
           </div>
         )}
-        {holdRows.map((r) => (
+        {holdRows.map((r, idx) => (
           <Row
-            key={r.symbol}
+            key={r.id || `${r.symbol}_${r.broker || ''}_${idx}`}
             sym={r.symbol}
             quote={r.quote}
+            tag={
+              r.broker
+                ? {
+                    label: r.broker,
+                    className: 'text-cyan-300 border-cyan-500/40 bg-cyan-950/40',
+                  }
+                : undefined
+            }
             spark={sparks[r.symbol]}
             active={baseCode(selected) === baseCode(r.symbol)}
             onClick={() => onSelect(r.symbol)}
-            sub={`${Number.isInteger(r.shares) ? fmt(r.shares, 0) : fmt(r.shares, 4)} 股・成本 ${fmt(r.cost)}・${
+            sub={`${r.broker ? `【${r.broker}】` : ''}${Number.isInteger(r.shares) ? fmt(r.shares, 0) : fmt(r.shares, 4)} 股・成本 ${fmt(r.cost)}・${
               r.pnlPct == null ? '--' : `${r.pnlPct > 0 ? '+' : ''}${fmt(r.pnlPct)}%`
             }`}
             action={
@@ -275,6 +402,17 @@
                   className="text-[11px] px-1.5 py-0.5 rounded bg-sky-700/40 text-sky-200 hover:bg-sky-700/70 cursor-pointer"
                 >
                   分析
+                </button>
+                <button
+                  type="button"
+                  title="到策略回測跑這檔，並帶入你的持股金額"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.TA.backtestSymbol?.(r.symbol);
+                  }}
+                  className="text-[11px] px-1.5 py-0.5 rounded bg-violet-700/40 text-violet-200 hover:bg-violet-700/70 cursor-pointer"
+                >
+                  回測
                 </button>
                 <button
                   type="button"
@@ -293,12 +431,18 @@
                   onClick={(e) => {
                     e.stopPropagation();
                     // 刪除沒辦法復原：先確認（要記錄賣出請改按「賣出」）
-                    if (!window.confirm(`確定移除持股 ${r.symbol}（${fmt(r.shares, 4)} 股）？\n不會寫入交易紀錄；要記錄賣出請改按「賣出」。`)) {
+                    if (
+                      !window.confirm(
+                        `確定移除持股 ${r.symbol}${r.broker ? `（${r.broker}）` : ''}（${fmt(r.shares, 4)} 股）？\n不會寫入交易紀錄；要記錄賣出請改按「賣出」。`,
+                      )
+                    ) {
                       say('ℹ️ 已取消，持股沒有變動');
                       return;
                     }
-                    setHoldings(holdings.filter((h) => h.symbol !== r.symbol));
-                    window.TA.notifySaved(`已移除持股 ${r.symbol}`);
+                    setHoldings(holdings.filter((_, i) => i !== r.rowIndex));
+                    window.TA.notifySaved(
+                      `已移除持股 ${r.symbol}${r.broker ? `（${r.broker}）` : ''}`,
+                    );
                   }}
                   aria-label={`移除持股 ${r.symbol}`}
                   className="text-slate-600 hover:text-rose-400 text-xs px-1 cursor-pointer"
@@ -309,34 +453,63 @@
             }
           />
         ))}
-        <div className="rounded-xl border border-slate-800 p-2 space-y-1.5">
-          <div className="text-[11px] text-slate-400">
-            新增 / 更新一檔持股
-            <window.TA.Tip text="成本價＝你的「買進價格」（每股），不是收盤價。分批買進請填平均成本：總花費（含手續費）÷ 總股數。用模擬下單買進時，系統會自動用成交價加手續費算加權平均成本。" />
+        <div className="rounded-xl border border-slate-800 p-3 space-y-2.5 bg-slate-900/50">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+            <span>新增 / 累加持股部位</span>
+            <window.TA.Tip text="成本價＝每股買進價格。若在不同券商持有同一標的，可填寫「券商」獨立分開管理；若未填或同券商，系統會自動加權平均累加股數與成本。" />
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              ['symbol', '代號'],
-              ['shares', '股數'],
-              ['cost', '成本價'],
-            ].map(([k, label]) => (
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <label className="block text-[11px] text-slate-400">
+              <span className="block mb-1">標的代號</span>
               <input
-                key={k}
-                value={holdForm[k]}
-                onChange={(e) => setHoldForm({ ...holdForm, [k]: e.target.value })}
+                value={holdForm.symbol || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, symbol: e.target.value })}
                 onKeyDown={(e) => e.key === 'Enter' && addHolding()}
-                placeholder={label}
-                aria-label={`持股${label}`}
-                className="min-w-0 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs mono text-white"
+                placeholder="如 2330 / 0050"
+                aria-label="持股代號"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
               />
-            ))}
+            </label>
+            <label className="block text-[11px] text-sky-400 font-medium">
+              <span className="block mb-1">券商 / 帳戶 (選填)</span>
+              <input
+                value={holdForm.broker || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, broker: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 元大 / 富邦"
+                aria-label="持股券商"
+                className="w-full bg-slate-950 border border-sky-600/50 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <label className="block text-[11px] text-slate-400">
+              <span className="block mb-1">持有股數</span>
+              <input
+                value={holdForm.shares || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, shares: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 1000"
+                aria-label="持股股數"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
+              />
+            </label>
+            <label className="block text-[11px] text-slate-400">
+              <span className="block mb-1">買進每股成本</span>
+              <input
+                value={holdForm.cost || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, cost: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 100 或 41.7"
+                aria-label="持股成本價"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
+              />
+            </label>
           </div>
           <button
             type="button"
             onClick={addHolding}
-            className="w-full py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer"
+            className="w-full py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer shadow-sm"
           >
-            ＋ 加入持股
+            ＋ 加入 / 累加持股
           </button>
         </div>
         <details className="rounded-xl border border-slate-800 p-2 text-xs">
@@ -345,17 +518,24 @@
             value={csvText}
             onChange={(e) => setCsvText(e.target.value)}
             rows={4}
-            placeholder={'每行一檔：代號,股數,成本價\n2330,1000,980\nNVDA,10,120.5'}
+            placeholder={
+              '每行一檔：代號,股數,成本價[,券商]\n0050,1000,100,元大\n0050,130,41.7,富邦\nNVDA,10,120.5'
+            }
             aria-label="持股 CSV"
             className="w-full mt-2 bg-slate-950 border border-slate-700 rounded p-2 mono text-xs text-white"
           />
-          <button
-            type="button"
-            onClick={importCsv}
-            className="mt-1 px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 cursor-pointer"
-          >
-            匯入
-          </button>
+          <div className="flex items-center justify-between mt-1">
+            <button
+              type="button"
+              onClick={importCsv}
+              className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 cursor-pointer"
+            >
+              匯入持股
+            </button>
+            <span className="text-[10px] text-slate-500">
+              末行空格自動清除・支援分券商或同券商自動累加
+            </span>
+          </div>
         </details>
         {holdRows.length > 0 && (
           <button

@@ -19,7 +19,7 @@ class JournalEntry:
     exit_time: str
     entry_price: float
     exit_price: float
-    shares: int
+    shares: float
     pnl_amount: float
     pnl_pct: float
     holding_days: int

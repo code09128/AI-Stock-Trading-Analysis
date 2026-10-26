@@ -53,17 +53,21 @@
               key={k}
               onClick={() => {
                 setM5Source(k);
-                setM5Entries(k === 'mine' ? journal : window.TA.DEFAULT_JOURNAL);
+                const nextList = k === 'mine' ? journal : window.TA.DEFAULT_JOURNAL;
+                setM5Source(k);
+                setM5Entries(nextList);
+                if (nextList.length) setTimeout(() => runMod5(nextList, k), 50);
                 window.TA.toast?.(
                   k === 'mine'
                     ? `ℹ️ 已改用我的交易紀錄（${journal.length} 筆）`
                     : 'ℹ️ 已改用內建範例（不會動到你的交易紀錄）',
                 );
               }}
-              className={`px-3 py-1 rounded-lg border cursor-pointer ${m5Source === k
+              className={`px-3 py-1 rounded-lg border cursor-pointer ${
+                m5Source === k
                   ? 'bg-sky-500/20 border-sky-400 text-white'
                   : 'border-slate-700 text-slate-400'
-                }`}
+              }`}
             >
               {label}
             </button>
@@ -73,6 +77,17 @@
               ? '✅ 分析你的真實／模擬成交紀錄；損益、持有天數、出場後 5 日最高價由系統用真實日 K 計算'
               : '⚠️ 範例資料，不是你的交易'}
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              window.TA._pendingWatch = { listTab: 'hold', rightTab: 'quote' };
+              window.TA.goTab?.('watch');
+            }}
+            className="ml-auto px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer"
+          >
+            ← 回到看盤模擬下單
+          </button>
+          <span className="hidden"></span>
         </div>
         <div className="text-slate-500">
           我的交易紀錄來自：看盤頁模擬下單「成交」賣出時自動寫入，或下方貼上券商對帳單 CSV。
@@ -99,7 +114,7 @@
             </button>
             <button
               type="button"
-              onClick={runMod5}
+              onClick={() => runMod5()}
               className="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
             >
               匯入後診斷
@@ -119,7 +134,10 @@
       setM5Entries(next);
       if (m5Source === 'mine') {
         window.TA.setJournal(next);
-        if (msg) (immediate ? window.TA.notifySaved : (m) => window.TA.notifySavedLater('m5-edit', m))(msg);
+        if (msg)
+          (immediate ? window.TA.notifySaved : (m) => window.TA.notifySavedLater('m5-edit', m))(
+            msg,
+          );
       } else if (msg) {
         window.TA.toast?.(`ℹ️ ${msg}（目前是內建範例，只在這次畫面有效，不會存檔）`);
       }
@@ -168,7 +186,7 @@
               )}
               <button
                 type="button"
-                onClick={runMod5}
+                onClick={() => runMod5()}
                 disabled={m5Loading}
                 className="text-xs px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-lg shadow-sky-600/25 cursor-pointer"
               >
@@ -232,8 +250,9 @@
                     </td>
                     <td className="py-1.5 px-1.5">{en.shares}</td>
                     <td
-                      className={`py-1.5 px-1.5 font-bold ${en.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
+                      className={`py-1.5 px-1.5 font-bold ${
+                        en.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
                     >
                       {en.net_pnl}
                     </td>
@@ -277,7 +296,9 @@
                         onClick={() => {
                           if (
                             m5Source === 'mine' &&
-                            !window.confirm(`確定刪除交易紀錄 ${en.trade_id}（${en.symbol}）？刪除後沒辦法復原。`)
+                            !window.confirm(
+                              `確定刪除交易紀錄 ${en.trade_id}（${en.symbol}）？刪除後沒辦法復原。`,
+                            )
                           ) {
                             window.TA.toast?.('ℹ️ 已取消，交易紀錄沒有變動');
                             return;
@@ -327,8 +348,9 @@
                   <window.TA.Tip text="平均每筆交易的淨損益（元）。大於 0 代表長期平均下來每筆是賺的。" />
                 </div>
                 <div
-                  className={`text-lg font-bold font-mono mt-1 ${m5Data.statistics?.expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
+                  className={`text-lg font-bold font-mono mt-1 ${
+                    m5Data.statistics?.expectancy >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
                 >
                   {m5Data.statistics?.expectancy}
                 </div>
@@ -374,8 +396,9 @@
                   <window.TA.Tip text="每條規則都要有明確數字門檻與動作，才能真的執行。用你的交易紀錄產生後，會同步成下單前必須勾選的清單。" />
                 </div>
                 <div
-                  className={`text-[11px] ${m5Data.rules_source?.startsWith('AI（') ? 'text-violet-300' : 'text-amber-300'
-                    }`}
+                  className={`text-[11px] ${
+                    m5Data.rules_source?.startsWith('AI（') ? 'text-violet-300' : 'text-amber-300'
+                  }`}
                 >
                   {/* {m5Data.rules_source?.startsWith('AI（') ? '' : '⚠️'} 來源：{m5Data.rules_source} */}
                 </div>
@@ -388,8 +411,11 @@
                       規則 {rule.rule_number}：{rule.rule_name}
                       {rule.source && (
                         <span
-                          className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-normal ${rule.source === 'AI' ? 'bg-sky-500/20 text-sky-200' : 'bg-slate-700/60 text-slate-300'
-                            }`}
+                          className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-normal ${
+                            rule.source === 'AI'
+                              ? 'bg-sky-500/20 text-sky-200'
+                              : 'bg-slate-700/60 text-slate-300'
+                          }`}
                         >
                           {rule.source}
                         </span>
@@ -403,7 +429,9 @@
                         </span>
                       )}
                       {rule.formula && (
-                        <span className="block text-[10px] font-normal text-sky-300/80">算法：{rule.formula}</span>
+                        <span className="block text-[10px] font-normal text-sky-300/80">
+                          算法：{rule.formula}
+                        </span>
                       )}
                     </div>
                     <div>

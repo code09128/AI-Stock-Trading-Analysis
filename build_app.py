@@ -109,6 +109,17 @@ def make_splash_image():
     return out
 
 
+def make_version_file() -> Path:
+    """把打包當下的 Git commit 寫入 build/version.json，讓打包版知道自己的基底版本。"""
+    import json
+    from src.server import updater
+    ver = updater._git_current_version(ROOT) or {"sha": "", "short_sha": "packaged", "date": "", "message": "打包版"}
+    out = BUILD_DIR / "version.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(ver, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
 def pyinstaller_base(web_dir: Path, name: str, mode: str) -> list:
     """桌面版共用參數：desktop.py 為入口、無主控台（--windowed）。"""
     return get_pyinstaller_cmd() + [
@@ -121,6 +132,7 @@ def pyinstaller_base(web_dir: Path, name: str, mode: str) -> list:
         f"--add-data={web_dir};web",
         f"--add-data={ROOT / '.env.example'};.",
         f"--add-data={ICON_PATH};.",  # 系統匣圖示
+        f"--add-data={make_version_file()};.",
         "--collect-submodules=src",
         f"--workpath={BUILD_DIR / mode.strip('-')}",
         f"--specpath={BUILD_DIR}",

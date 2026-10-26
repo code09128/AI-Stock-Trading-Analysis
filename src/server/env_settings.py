@@ -15,16 +15,16 @@ from typing import Any, Dict, List, Optional
 from src.server.config import get_app_dir
 
 FIELDS: List[Dict[str, Any]] = [
-    {"key": "FINMIND_TOKEN", "label": "FinMind Token", "secret": True,
+    {"key": "FINMIND_TOKEN", "label": "FinMind Token", "secret": True, "group": "data",
      "help": "台股日 K 備援、籌碼、配息、月營收、季財報的資料額度。不填每小時 300 次；到 finmindtrade.com 免費註冊後填入可提高到 600 次。程式只用到上限的 80%（保留餘量），各功能也都有快取。",
      "link": "https://finmindtrade.com/"},
-    {"key": "GEMINI_API_KEY", "label": "Google Gemini 金鑰", "secret": True,
-     "help": "選填。填在這裡後，在「AI 連線」新增 Gemini 時金鑰欄可以留空，金鑰就不會存進瀏覽器。"},
-    {"key": "OPENAI_API_KEY", "label": "OpenAI 金鑰", "secret": True, "help": "選填，用法同上。"},
-    {"key": "ANTHROPIC_API_KEY", "label": "Anthropic（Claude）金鑰", "secret": True, "help": "選填，用法同上。"},
-    {"key": "OPENROUTER_API_KEY", "label": "OpenRouter 金鑰", "secret": True, "help": "選填，用法同上。"},
-    {"key": "SEC_USER_AGENT", "label": "SEC 識別字串", "secret": False,
+    {"key": "SEC_USER_AGENT", "label": "SEC 識別字串", "secret": False, "group": "data",
      "help": "抓美股 SEC 8-K 公告時，SEC 要求附上聯絡方式，例如「王小明 you@example.com」。不填用預設值。"},
+    {"key": "GEMINI_API_KEY", "label": "Google Gemini 金鑰", "secret": True, "group": "ai",
+     "help": "選填。填在這裡後，在「AI 連線」新增 Gemini 時金鑰欄可以留空，金鑰就不會存進瀏覽器。"},
+    {"key": "OPENAI_API_KEY", "label": "OpenAI 金鑰", "secret": True, "group": "ai", "help": "選填，用法同上。"},
+    {"key": "ANTHROPIC_API_KEY", "label": "Anthropic（Claude）金鑰", "secret": True, "group": "ai", "help": "選填，用法同上。"},
+    {"key": "OPENROUTER_API_KEY", "label": "OpenRouter 金鑰", "secret": True, "group": "ai", "help": "選填，用法同上。"},
 ]
 ALLOWED = {f["key"] for f in FIELDS}
 _LOCK = threading.Lock()
@@ -64,7 +64,8 @@ def status() -> Dict[str, Any]:
             src = "設定檔"
         elif v:
             src = "系統環境變數"
-        fields.append({**f, "set": bool(v), "display": _mask(v, f["secret"]) if v else "", "source": src})
+        in_f = bool(in_file.get(f["key"]))
+        fields.append({**f, "set": bool(v), "in_file": in_f, "display": _mask(v, f["secret"]) if v else "", "source": src})
     from src.market import finmind  # 延遲匯入：只有設定頁讀狀態時才需要
     return {"path": str(path), "exists": path.exists(), "fields": fields, "finmind": finmind.pause_status()}
 
@@ -121,3 +122,31 @@ def _save_locked(updates: Dict[str, str]) -> Dict[str, Any]:
         else:
             os.environ.pop(k, None)
     return status()
+
+
+def test_finmind(token: Optional[str] = None) -> Dict[str, Any]:
+    """實際向 FinMind 查詢一筆資料，驗證 Token 是否有效，並回報 .env 寫入狀態。"""
+    from datetime import datetime, timedelta
+    from src.market import finmind
+
+    draft = (token or "").strip()
+    if draft:
+        save({"FINMIND_TOKEN": draft})
+    path = env_path()
+    in_file = _read_file(path)
+    tok = (draft or os.environ.get("FINMIND_TOKEN") or in_file.get("FINMIND_TOKEN") or "").strip()
+    if not tok:
+        return {"ok": False, "error": "尚未填入 FinMind Token，請先貼上 Token 後再按測試"}
+    start_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+    try:
+        rows = finmind.get_data("TaiwanStockPrice", "2330", start_date, token=tok, timeout=10)
+    except Exception as e:
+        return {"ok": False, "error": f"Token 驗證失敗：{e}", "status": status()}
+    st = status()
+    written = bool(in_file.get("FINMIND_TOKEN"))
+    return {
+        "ok": True,
+        "msg": (f"Token 驗證有效（取得 2330 測試日 K {len(rows)} 筆），"
+                f"{'已確認寫入 ' + str(path) if written else '來自系統環境變數'}，每小時上限 600 次"),
+        "status": st,
+    }

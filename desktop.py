@@ -144,6 +144,8 @@ def _run_with_timeout(fn, timeout: float, name: str):
 
 def _boot(window, state: dict, port: int) -> None:
     try:
+        from src.server import updater
+        updater.auto_update_on_boot(on_status=lambda msg: not state.get("hidden") and window.load_html(_splash_html(msg)))
         server, p = _start_server(port)
         state["server"] = server
         if server:

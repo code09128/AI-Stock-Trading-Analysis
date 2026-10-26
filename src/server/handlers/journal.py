@@ -18,7 +18,7 @@ class JournalHandlers:
         for e in entries:
             e = dict(e)
             try:
-                ep, xp, sh = float(e.get("entry_price") or 0), float(e.get("exit_price") or 0), int(float(e.get("shares") or 0))
+                ep, xp, sh = float(e.get("entry_price") or 0), float(e.get("exit_price") or 0), float(e.get("shares") or 0)
             except (TypeError, ValueError):
                 out.append(e)
                 continue
@@ -55,7 +55,7 @@ class JournalHandlers:
             exit_time=str(g("exit_time", default="")),
             entry_price=float(g("entry_price")),
             exit_price=float(g("exit_price")),
-            shares=int(g("shares")),
+            shares=float(g("shares")),
             pnl_amount=float(g("pnl_amount", "net_pnl")),
             pnl_pct=float(g("pnl_pct", "return_pct")),
             holding_days=int(g("holding_days")),

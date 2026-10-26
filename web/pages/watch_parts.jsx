@@ -40,11 +40,12 @@
             {tag && (
               <span
                 className={`text-[9px] px-1 rounded border ${
-                  {
+                  tag.className ||
+                  ({
                     STOCK: 'text-sky-300 border-sky-500/40',
                     ETF: 'text-amber-300 border-amber-500/40',
                     BOND: 'text-emerald-300 border-emerald-500/40',
-                  }[tag.category]
+                  }[tag.category] || 'text-cyan-300 border-cyan-500/40')
                 }`}
               >
                 {tag.label}

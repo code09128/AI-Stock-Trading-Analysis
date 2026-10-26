@@ -126,7 +126,7 @@
       allPrices.push(b.high, b.low);
       if (b.ma5) allPrices.push(b.ma5);
       if (b.ma20) allPrices.push(b.ma20);
-      if (b.ma60 && cur.count > 40) allPrices.push(b.ma60);
+      if (b.ma60) allPrices.push(b.ma60);
       if (b.volume > maxVol) maxVol = b.volume;
     }
     const minRaw = Math.min(...allPrices);
@@ -149,7 +149,8 @@
         .join(' ');
     const ma5Points = line('ma5');
     const ma20Points = line('ma20');
-    const ma60Points = cur.count > 40 ? line('ma60') : '';
+    const ma60Points = line('ma60');
+    const hasMa60 = ma60Points.length > 0 || bars.some((b) => b.ma60 != null);
     const decimals = maxP < 50 ? 2 : 1;
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => ({
       val: (minP + range * t).toFixed(decimals),
@@ -234,19 +235,19 @@
           </div>
 
           <div className="flex items-center gap-3 text-[11px] font-mono">
-            <span className="flex items-center gap-1 text-amber-300">
-              <span className="w-3 h-0.5 bg-amber-400 inline-block" /> MA5
+            <span className="flex items-center gap-1 text-yellow-400">
+              <span className="w-3 h-0.5 bg-yellow-400 inline-block" /> MA5
             </span>
-            <span className="flex items-center gap-1 text-sky-300">
-              <span className="w-3 h-0.5 bg-sky-400 inline-block" /> MA20
+            <span className="flex items-center gap-1 text-purple-400">
+              <span className="w-3 h-0.5 bg-purple-400 inline-block" /> MA20
             </span>
-            {ma60Points && (
-              <span className="flex items-center gap-1 text-violet-300">
-                <span className="w-3 h-0.5 bg-violet-400 inline-block" /> MA60
+            {hasMa60 && (
+              <span className="flex items-center gap-1 text-emerald-400">
+                <span className="w-3 h-0.5 bg-emerald-400 inline-block" /> MA60
               </span>
             )}
-            <span className="flex items-center gap-1 text-emerald-400">
-              <span className="w-3 h-0.5 border-b border-dashed border-emerald-400 inline-block" />{' '}
+            <span className="flex items-center gap-1 text-cyan-400">
+              <span className="w-3 h-0.5 border-b border-dashed border-cyan-400 inline-block" />{' '}
               支撐
             </span>
             <span className="flex items-center gap-1 text-rose-400">
@@ -284,10 +285,10 @@
           <span className="text-slate-300">
             量: <strong>{(activeBar.volume || 0).toLocaleString()}</strong>
           </span>
-          <span className="text-amber-300">MA5: {activeBar.ma5 ?? '-'}</span>
-          <span className="text-sky-300">MA20: {activeBar.ma20 ?? '-'}</span>
+          <span className="text-yellow-400">MA5: {activeBar.ma5 ?? '-'}</span>
+          <span className="text-purple-400">MA20: {activeBar.ma20 ?? '-'}</span>
           {activeBar.ma60 != null && (
-            <span className="text-violet-300">MA60: {activeBar.ma60}</span>
+            <span className="text-emerald-400">MA60: {activeBar.ma60}</span>
           )}
         </div>
 
@@ -353,19 +354,19 @@
                 y1={toY(v)}
                 x2={width - padRight}
                 y2={toY(v)}
-                stroke="#10b981"
+                stroke="#06b6d4"
                 strokeWidth="1"
                 strokeDasharray="4 4"
-                opacity="0.7"
+                opacity="0.8"
               />
               <text
                 x={width - padRight + 4}
                 y={toY(v) + 3}
-                fill="#34d399"
+                fill="#22d3ee"
                 fontSize="9.5"
                 fontFamily="monospace"
               >
-                S:{v}
+                支撐:{v}
               </text>
             </g>
           ))}
@@ -379,7 +380,7 @@
                 stroke="#f43f5e"
                 strokeWidth="1"
                 strokeDasharray="4 4"
-                opacity="0.7"
+                opacity="0.8"
               />
               <text
                 x={width - padRight + 4}
@@ -388,7 +389,7 @@
                 fontSize="9.5"
                 fontFamily="monospace"
               >
-                R:{v}
+                壓力:{v}
               </text>
             </g>
           ))}
@@ -477,17 +478,17 @@
           {ma60Points && (
             <polyline
               fill="none"
-              stroke="#a78bfa"
+              stroke="#10b981"
               strokeWidth="1.5"
               points={ma60Points}
-              opacity="0.85"
+              opacity="0.9"
               pointerEvents="none"
             />
           )}
           {ma20Points && (
             <polyline
               fill="none"
-              stroke="#38bdf8"
+              stroke="#c084fc"
               strokeWidth="1.8"
               points={ma20Points}
               opacity="0.9"
@@ -497,7 +498,7 @@
           {ma5Points && (
             <polyline
               fill="none"
-              stroke="#fbbf24"
+              stroke="#facc15"
               strokeWidth="1.8"
               points={ma5Points}
               opacity="0.95"

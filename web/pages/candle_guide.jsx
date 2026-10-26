@@ -267,12 +267,14 @@
           ：紅＝收盤高於開盤（上漲），綠＝收盤低於開盤（下跌），與台股看盤習慣一致。
         </li>
         <li>
-          <b className="text-amber-300">MA5（橘線）</b>＝近 5 日收盤均價，反應短線；
-          <b className="text-sky-300"> MA20（藍線）</b>＝近 20
-          日（約一個月），反應中期趨勢。股價站上 MA20 且 MA5 在上方，通常表示偏強。
+          <b className="text-yellow-400">MA5（黃線）</b>＝近 5 日收盤均價，反應短線；
+          <b className="text-purple-400"> MA20（紫線）</b>＝近 20
+          日（約一個月），反應中期趨勢；
+          <b className="text-emerald-400"> MA60（綠線）</b>＝近 60
+          日（約一季），被稱為季線或生命線。股價站上 MA20 且短中長均線多頭排列時，通常表示偏強。
         </li>
         <li>
-          <b className="text-emerald-400">綠色虛線＝支撐位</b>（過去反彈過的低點區）、
+          <b className="text-cyan-400">青藍色虛線＝支撐位</b>（過去反彈過的低點區）、
           <b className="text-rose-400"> 紅色虛線＝壓力位</b>
           （過去遇到賣壓的高點區）。價位由程式從波段高低點算出，台股會對齊合法跳動檔位。
         </li>
@@ -282,7 +284,7 @@
         </li>
         <li>
           <b className="text-white">十字游標</b>
-          ：滑鼠移到圖上，會顯示該根的開、高、低、收、漲跌幅、成交量與當時的 MA5／MA20。
+          ：滑鼠移到圖上，會顯示該根的開、高、低、收、漲跌幅、成交量與當時的 MA5／MA20／MA60。
         </li>
         <li>
           <b className="text-white">20／30／45／60 日</b>

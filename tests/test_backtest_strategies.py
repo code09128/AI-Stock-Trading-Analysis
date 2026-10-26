@@ -248,6 +248,11 @@ if __name__ == "__main__":
 
 class TestTwSellTax(unittest.TestCase):
     def test_rates_by_type(self):
+        from src.server.handlers.backtest import BacktestHandlers
+        st = BacktestHandlers._settings({"initial_capital": 5000})
+        self.assertEqual(st["initial_capital"], 5000.0)
+        with self.assertRaises(ValueError):
+            BacktestHandlers._settings({"initial_capital": 0})
         from datetime import date as d
         from src.market.market_rules import tw_sell_tax_rate
         self.assertEqual(tw_sell_tax_rate("2330.TW"), 0.003)

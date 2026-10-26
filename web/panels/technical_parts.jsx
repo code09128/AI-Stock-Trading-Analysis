@@ -230,13 +230,32 @@
           data-tour="mod1-holding"
           className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2 text-xs text-slate-400"
         >
-          
           還沒有持股。到看盤頁「我的持股」輸入或用模擬下單成交後，這裡會顯示你持有部位在這次分析下的停損／目標損益。
         </div>
       );
     }
     const sym = m1Data?.snapshot?.symbol ? baseCode(m1Data.snapshot.symbol) : null;
-    const h = sym ? holdings.find((x) => baseCode(normSym(x.symbol)) === sym) : null;
+    const grouped = [];
+    for (const item of holdings) {
+      const k = baseCode(normSym(item.symbol));
+      const ex = grouped.find((g) => g.code === k);
+      if (ex) {
+        const total = ex.shares + Number(item.shares || 0);
+        ex.cost =
+          total > 0
+            ? (ex.cost * ex.shares + Number(item.cost || 0) * Number(item.shares || 0)) / total
+            : ex.cost;
+        ex.shares = total;
+      } else {
+        grouped.push({
+          code: k,
+          symbol: item.symbol,
+          shares: Number(item.shares || 0),
+          cost: Number(item.cost || 0),
+        });
+      }
+    }
+    const h = sym ? grouped.find((x) => x.code === sym) : null;
     const d = m1Data?.llm_result?.decision_payload || {};
     const isSell = d.action === 'SELL';
     const price = m1Data?.snapshot?.latest_close;
@@ -250,7 +269,7 @@
       >
         <div className="flex flex-wrap items-center gap-2">
           <b className="text-amber-200">我的持股</b>
-          {holdings.map((x) => (
+          {grouped.map((x) => (
             <button
               type="button"
               key={x.symbol}
@@ -272,7 +291,8 @@
             <div>
               <div className="text-slate-400 font-sans">持有 / 成本</div>
               <div className="text-white">
-                {fmt(h.shares, 0)} 股 @ {fmt(h.cost)}
+                {Number.isInteger(h.shares) ? fmt(h.shares, 0) : fmt(h.shares, 4)} 股 @{' '}
+                {fmt(h.cost)}
               </div>
             </div>
             <div>
@@ -326,6 +346,13 @@
                 className="ml-auto px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 cursor-pointer"
               >
                 到看盤頁處理這檔持股（賣出／加碼）
+              </button>
+              <button
+                type="button"
+                onClick={() => window.TA.backtestSymbol?.(m1Data?.snapshot?.symbol || h.symbol)}
+                className="px-3 py-1 rounded-lg bg-sky-600/30 border border-sky-500/50 text-sky-200 hover:bg-sky-600/50 cursor-pointer"
+              >
+                回測這檔持股 →
               </button>
             </div>
           </div>

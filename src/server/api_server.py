@@ -23,8 +23,9 @@ from typing import Any, Callable, Dict
 from src.ai import ai_client
 from src.company import fundamentals
 from src.market import quote_provider, trade_rules
-from src.server import activity_log, alert_engine, autostart, env_settings, user_data
-from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
+from src.server import activity_log, alert_engine, autostart, env_settings, updater, user_data
+from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, get_web_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
+
 from src.server.dispatcher import DISPATCHER, TradingEngineDispatcher  # noqa: F401
 from src.server.handlers.technical import mark_bond_snapshot  # noqa: F401
 from src.server.params import arg_num, arg_ticker  # noqa: F401
@@ -43,6 +44,8 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/tests/run": D.handle_run_tests,
     "/api/mod3/strategies": D.handle_mod3_strategies,
     "/api/mod3/custom/templates": D.handle_mod3_custom_templates,
+    "/api/update/status": updater.current_version,
+    "/api/update/check": updater.check_update,
 }
 
 ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
@@ -81,6 +84,9 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/ai/detect": lambda p: D.handle_ai("detect", p),
     # 金鑰與資料額度（寫入 .env）
     "/api/env/save": lambda p: env_settings.save(p.get("values") or {}),
+    "/api/env/test_finmind": lambda p: env_settings.test_finmind(p.get("token")),
+    "/api/update/check": lambda p: updater.check_update(),
+    "/api/update/apply": lambda p: updater.apply_update(),
     # 使用者資料（持股、交易紀錄、規則…）存到 data/userdata.json
     "/api/userdata/save": lambda p: user_data.save(p.get("values") or {}),
     # 操作紀錄與自檢
@@ -96,11 +102,23 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
 }
 
 
+def refresh_routes() -> None:
+    """熱更新後重新綁定 D 的方法到路由表。"""
+    for k, v in list(GET_ROUTES.items()):
+        name = getattr(v, "__name__", "")
+        if name.startswith("handle_") and hasattr(D, name):
+            GET_ROUTES[k] = getattr(D, name)
+    for k, v in list(ROUTES.items()):
+        name = getattr(v, "__name__", "")
+        if name.startswith("handle_") and hasattr(D, name):
+            ROUTES[k] = getattr(D, name)
+
+
 class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
     """結合靜態資源與 /api/* 路由的 HTTP Handler"""
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(WEB_DIR), **kwargs)
+        super().__init__(*args, directory=str(get_web_dir()), **kwargs)
 
     def handle(self) -> None:
         # 頁面關掉、程式結束時連線被中斷（BrokenPipe／Reset／Aborted）：不是錯誤，不印一堆 Traceback
@@ -249,6 +267,7 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
 
 def make_server(port: int = 8088) -> ThreadingHTTPServer:
     """載入 .env 並綁定埠號（綁定失敗會丟 OSError）；呼叫端自己決定在哪個執行緒 serve_forever。"""
+    updater.activate_update_if_present()
     loaded = load_env_file()
     if loaded:
         print(f"已從 .env 載入：{', '.join(loaded)}")  # 只印鍵名，不印值

@@ -46,7 +46,9 @@ def _yahoo_symbols(symbol: str) -> List[str]:
     n = DualMarketDataAdapter.normalize_symbol(symbol)
     if n["market"] != "TW":  # 台股以外：Yahoo 代號就是正規化後的 symbol（含後綴）
         return [n["symbol"]]
-    return [f"{n['raw_code']}.TW", f"{n['raw_code']}.TWO"]
+    primary = n["symbol"] if n["symbol"].endswith((".TW", ".TWO")) else f"{n['raw_code']}.TW"
+    alt = f"{n['raw_code']}.TWO" if primary.endswith(".TW") else f"{n['raw_code']}.TW"
+    return [primary, alt]
 
 
 def _chart(ysym: str, interval: str, rng: str) -> Dict[str, Any]:
@@ -117,12 +119,13 @@ def intraday(symbol: str) -> Optional[Dict[str, Any]]:
         if len(pts) < 2:
             try:
                 res_5d = _chart(ysym, "5m", "5d")
+                res = res or res_5d
                 pts_5d, meta_5d, gmt_5d = _extract_intraday_points(res_5d)
                 distinct_dates = sorted(set(p["date"] for p in pts_5d))
                 if distinct_dates:
-                    candidate_date = distinct_dates[-1]
+                    candidate_date = next((d for d in reversed(distinct_dates) if sum(1 for p in pts_5d if p["date"] == d) >= 2), distinct_dates[-1])
                     candidate_pts = [p for p in pts_5d if p["date"] == candidate_date]
-                    if len(candidate_pts) >= 2:
+                    if candidate_pts:
                         pts = [{"t": p["t"], "ts": p["ts"], "close": p["close"], "volume": p["volume"]} for p in candidate_pts]
                         meta = meta_5d
                         is_fallback = True

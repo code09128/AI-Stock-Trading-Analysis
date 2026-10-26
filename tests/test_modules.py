@@ -144,5 +144,27 @@ class TestAdvancedModules(unittest.TestCase):
         self.assertIn("1.5", r_small[2]["formula"])  # 沒有賣飛 → 賺賠比規則
         self.assertIn("#2", r_small[0]["evidence"])
 
+    def test_journal_coach_fractional_shares_preserved(self):
+        """美股／定期定額碎股（如 1.09826 股 VTI）平倉送入交易檢討時，不可截斷為整數股。"""
+        from src.server.dispatcher import DISPATCHER
+        res = DISPATCHER.handle_mod5_coach({
+            "entries": [
+                {
+                    "trade_id": "#01",
+                    "symbol": "VTI",
+                    "entry_time": "2026-01-15",
+                    "exit_time": "2026-02-20",
+                    "entry_price": 266.22,
+                    "exit_price": 280.50,
+                    "shares": 1.09826,
+                    "fees": 1.0,
+                    "emotion_score": 0,
+                    "high_5d_after_exit": 282.0,
+                }
+            ]
+        })
+        self.assertAlmostEqual(res["entries_used"][0]["shares"], 1.09826, places=5)
+        self.assertAlmostEqual(res["entries_used"][0]["net_pnl"], round((280.50 - 266.22) * 1.09826 - 1.0, 2), places=2)
+
 if __name__ == "__main__":
     unittest.main()

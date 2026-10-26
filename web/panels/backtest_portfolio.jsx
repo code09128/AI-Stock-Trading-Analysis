@@ -50,12 +50,17 @@
       ...window.TA.BT.customStrategies(),
     ];
     const labelOf = (k) => catalog.find((s) => s.key === k)?.label || k;
-    const [legs, setLegsRaw] = useState(() =>
-      readLS(LS_KEY, [
-        { target_asset: '2330', strategy: 'ma_cross', params: {} },
-        { target_asset: '0050', strategy: 'bias_revert', params: {} },
-      ]),
-    );
+    const heldSyms = [
+      ...new Set((window.TA.loadPortfolio?.().holdings || []).map((h) => h.symbol)),
+    ];
+    const defaultLegs =
+      heldSyms.length >= 2
+        ? heldSyms.slice(0, 4).map((s) => ({ target_asset: s, strategy: 'ma_cross', params: {} }))
+        : [
+            { target_asset: '2330', strategy: 'ma_cross', params: {} },
+            { target_asset: '0056', strategy: 'bias_revert', params: {} },
+          ];
+    const [legs, setLegsRaw] = useState(() => readLS(LS_KEY, defaultLegs));
     const setLegs = (v) => {
       setLegsRaw(v);
       writeLS(LS_KEY, v);
@@ -102,7 +107,8 @@
       <div className="space-y-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 space-y-3">
           <div>
-            把 2～8 支「標的 × 策略」放在一起，用上方表單的<b>期間、本金、部位、停損停利與大盤濾網</b>各自回測，
+            把 2～8 支「標的 × 策略」放在一起，用上方表單的
+            <b>期間、本金、部位、停損停利與大盤濾網</b>各自回測，
             再用三種方法分配資金，看組合是否比單一策略更穩。
             <window.TA.Tip text="等權重：每支分一樣多。波動率倒數：近期波動小的分多一點，讓每支的風險貢獻差不多。夏普值加權：近期「報酬÷波動」好的分多一點（容易追逐過去的贏家）。權重每月第一個交易日只用之前 120 天的資料重算，不偷看未來。相關係數越低（甚至負的），組合越能互相抵消波動。" />
           </div>
@@ -174,11 +180,30 @@
             <button
               type="button"
               disabled={legs.length >= 8}
-              onClick={() => setLegs([...legs, { target_asset: '', strategy: 'ma_cross', params: {} }])}
+              onClick={() =>
+                setLegs([...legs, { target_asset: '', strategy: 'ma_cross', params: {} }])
+              }
               className="px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white cursor-pointer disabled:opacity-40"
             >
               ＋ 新增空白一支
             </button>
+            {heldSyms.length >= 2 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setLegs(
+                    heldSyms.slice(0, 8).map((s) => ({
+                      target_asset: s,
+                      strategy: m3Form.strategy || 'ma_cross',
+                      params: m3Form.params || {},
+                    })),
+                  )
+                }
+                className="px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 cursor-pointer"
+              >
+                帶入我的持股（前 {Math.min(8, heldSyms.length)} 檔）
+              </button>
+            )}
             <button
               type="button"
               onClick={run}
@@ -193,11 +218,16 @@
 
         {data && (
           <div className="space-y-4">
-            {data.leg_info.flatMap((l) => l.warnings.map((w) => `${l.label}：${w}`)).map((w) => (
-              <div key={w} className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
-                ⚠️ {w}
-              </div>
-            ))}
+            {data.leg_info
+              .flatMap((l) => l.warnings.map((w) => `${l.label}：${w}`))
+              .map((w) => (
+                <div
+                  key={w}
+                  className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100"
+                >
+                  ⚠️ {w}
+                </div>
+              ))}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs space-y-3 overflow-x-auto">
               <div className="font-semibold text-slate-200">
                 三種權重法比較（{data.period}）
@@ -218,7 +248,10 @@
                 <tbody className="divide-y divide-slate-800/60">
                   {data.results.map((r) => (
                     <tr key={r.method}>
-                      <td className="py-1.5 px-2 font-sans" style={{ color: METHOD_COLORS[r.method] }}>
+                      <td
+                        className="py-1.5 px-2 font-sans"
+                        style={{ color: METHOD_COLORS[r.method] }}
+                      >
                         {r.label}
                         {best?.method === r.method ? ' ★' : ''}
                       </td>
@@ -227,15 +260,17 @@
                       <td className="py-1.5 px-2">{r.annual_vol_pct}%</td>
                       <td className="py-1.5 px-2">{r.sharpe ?? '--'}</td>
                       <td className="py-1.5 px-2 text-rose-300">-{r.max_dd_pct}%</td>
-                      <td className="py-1.5 px-2 text-slate-400">{r.avg_weights.map((w) => `${w}%`).join(' / ')}</td>
+                      <td className="py-1.5 px-2 text-slate-400">
+                        {r.avg_weights.map((w) => `${w}%`).join(' / ')}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <Curves results={data.results} />
               <div className="text-slate-400">
-                ★＝夏普值最高的方法。組合的年化波動和「波動最低的單一策略」（{data.lowest_single_vol_pct}%）比，
-                更低代表分散真的有效。
+                ★＝夏普值最高的方法。組合的年化波動和「波動最低的單一策略」（
+                {data.lowest_single_vol_pct}%）比， 更低代表分散真的有效。
               </div>
             </div>
 
@@ -274,7 +309,10 @@
                   相關係數矩陣（平均 {data.avg_correlation ?? '--'}）
                   <window.TA.Tip text="兩支策略日報酬的相關係數，-1～1。接近 1＝常常同漲同跌，放在一起分散效果差；接近 0 或負數＝走勢互補，能降低組合波動。紅色正相關、藍色負相關。" />
                 </div>
-                <table className="font-mono text-center" style={{ borderSpacing: 2, borderCollapse: 'separate' }}>
+                <table
+                  className="font-mono text-center"
+                  style={{ borderSpacing: 2, borderCollapse: 'separate' }}
+                >
                   <thead>
                     <tr>
                       <th />
@@ -315,7 +353,11 @@
                   <tr className="text-slate-400 font-sans border-b border-slate-800">
                     <th className="py-1 px-2 font-sans">標的・策略</th>
                     {data.results.map((r) => (
-                      <th key={r.method} className="py-1 px-2 font-sans" style={{ color: METHOD_COLORS[r.method] }}>
+                      <th
+                        key={r.method}
+                        className="py-1 px-2 font-sans"
+                        style={{ color: METHOD_COLORS[r.method] }}
+                      >
                         {r.label}（目前權重）
                       </th>
                     ))}

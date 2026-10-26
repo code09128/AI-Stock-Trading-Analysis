@@ -38,7 +38,15 @@ def get_app_dir() -> Path:
     return _find_project_root()
 
 
-WEB_DIR = get_resource_dir() / "web"
+def get_web_dir() -> Path:
+    """若程式資料夾下有線上更新的 update/web，優先使用；否則使用內建或原始碼的 web/。"""
+    up_web = get_app_dir() / "update" / "web"
+    if (up_web / "index.html").is_file():
+        return up_web
+    return get_resource_dir() / "web"
+
+
+WEB_DIR = get_web_dir()
 
 
 WATCHLIST_NAMES = {

@@ -498,11 +498,14 @@
               </button>
               {m1Data.weekly_snapshot && (
                 <span className="font-mono text-slate-300">
-                  週 MA5 {fmt2(m1Data.weekly_snapshot.MA5)} ・ MA20{' '}
-                  {fmt2(m1Data.weekly_snapshot.MA20)} ・ MA60{' '}
-                  {m1Data.weekly_snapshot.MA60 == null
-                    ? '資料不足'
-                    : fmt2(m1Data.weekly_snapshot.MA60)}{' '}
+                  <span className="text-yellow-400">週 MA5 {fmt2(m1Data.weekly_snapshot.MA5)}</span> ・{' '}
+                  <span className="text-purple-400">MA20 {fmt2(m1Data.weekly_snapshot.MA20)}</span> ・{' '}
+                  <span className="text-emerald-400">
+                    MA60{' '}
+                    {m1Data.weekly_snapshot.MA60 == null
+                      ? '資料不足'
+                      : fmt2(m1Data.weekly_snapshot.MA60)}
+                  </span>{' '}
                   ・ 週 RSI {fmt2(m1Data.weekly_snapshot.RSI14)} ・{' '}
                   {m1Data.weekly_snapshot.trend_note}
                 </span>
@@ -527,9 +530,9 @@
                   {m1Data.snapshot.market === 'TW' ? '台股六級跳動單位' : '0.01 精度'}）
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                  <div className="bg-emerald-950/30 border border-emerald-700/40 rounded-lg p-2.5">
-                    <div className="text-[11px] text-emerald-400">第一/二支撐位</div>
-                    <div className="text-sm font-bold text-emerald-300 mt-1">
+                  <div className="bg-cyan-950/30 border border-cyan-700/40 rounded-lg p-2.5">
+                    <div className="text-[11px] text-cyan-400">第一/二支撐位</div>
+                    <div className="text-sm font-bold text-cyan-300 mt-1">
                       {m1Data.snapshot.support_levels.join(' / ')}
                     </div>
                   </div>
@@ -549,10 +552,10 @@
                 <div className="text-xs text-slate-400 bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono">
                   <span className="font-sans">均線排列</span>
                   <window.TA.Tip text="MA＝移動平均線：最近 N 個交易日收盤價的平均。MA5≈一週（短線）、MA20≈一個月（中期）、MA60≈一季（較長期）。股價 > MA5 > MA20 > MA60 叫多頭排列（偏強），順序相反叫空頭排列（偏弱）。" />
-                  ：MA5={fmt2(m1Data.snapshot.indicators.MA5)} ｜ MA20=
-                  {fmt2(m1Data.snapshot.indicators.MA20)} ｜ MA60=
-                  {fmt2(m1Data.snapshot.indicators.MA60)} ｜ MA200=
-                  {fmt2(m1Data.snapshot.indicators.MA200)}
+                  ：<span className="text-yellow-400">MA5={fmt2(m1Data.snapshot.indicators.MA5)}</span> ｜{' '}
+                  <span className="text-purple-400">MA20={fmt2(m1Data.snapshot.indicators.MA20)}</span> ｜{' '}
+                  <span className="text-emerald-400">MA60={fmt2(m1Data.snapshot.indicators.MA60)}</span> ｜{' '}
+                  MA200={fmt2(m1Data.snapshot.indicators.MA200)}
                   <span className="font-sans ml-2 text-slate-300">
                     {maOrderText(m1Data.snapshot)}
                   </span>

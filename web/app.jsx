@@ -1,5 +1,6 @@
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
-const { NAV_ITEMS, NavIcon, NEWS_PRESETS, DEFAULT_HOLDINGS, DEFAULT_JOURNAL, DEFAULT_BACKTEST } = window.TA;
+const { NAV_ITEMS, NavIcon, NEWS_PRESETS, DEFAULT_HOLDINGS, DEFAULT_JOURNAL, DEFAULT_BACKTEST } =
+  window.TA;
 const { buildExportReport, downloadText, stamp } = window.TA;
 function App() {
   const [activeTab, setActiveTab] = useState('watch');
@@ -116,7 +117,8 @@ function App() {
         }
         if (newClose !== undefined) prevPriceRef.current = newClose;
         setM1Data(data);
-        if (!quiet) showToast(`✅ 技術分析完成：${targetTicker}（${targetTf === 'W' ? '週線' : '日線'}）`);
+        if (!quiet)
+          showToast(`✅ 技術分析完成：${targetTicker}（${targetTf === 'W' ? '週線' : '日線'}）`);
       } catch (err) {
         if (reqId === m1ReqRef.current) showToast(`⚠️ 技術分析 分析失敗: ${err.message}`);
       } finally {
@@ -196,7 +198,9 @@ function App() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setM3Data(data);
-      showToast(`✅ 回測完成：${m3Form.target_asset}，共 ${data.backtest_result?.total_trades ?? 0} 筆交易`);
+      showToast(
+        `✅ 回測完成：${m3Form.target_asset}，共 ${data.backtest_result?.total_trades ?? 0} 筆交易`,
+      );
     } catch (err) {
       showToast(`⚠️ 策略回測 回測失敗: ${err.message}`);
     } finally {
@@ -242,39 +246,44 @@ function App() {
     }
   }, [m4Holdings, m4CashPct, m4Beta, m4Live, showToast]);
 
-  const runMod5 = useCallback(async () => {
-    setM5Loading(true);
-    try {
-      const res = await fetch('/api/mod5/coach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          entries: m5Entries,
-          ai: (() => {
-            const cfg = window.TA.loadAI();
-            return cfg.scope.mod5 === false
-              ? null
-              : window.TA.cleanProfile(window.TA.activeProfile(cfg));
-          })(),
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setM5Data(data);
-      if (data.entries_used) setM5Entries(data.entries_used);
-      if (m5Source === 'mine') {
-        window.TA.setJournal(data.entries_used || m5Entries);
-        window.TA.saveRules(data.personalized_3_rules, data.rules_source);
-        window.TA.notifySaved('交易診斷完成，已更新交易紀錄與 3 條個人規則（下單面板會顯示）');
-      } else {
-        showToast('✅ 交易診斷完成（範例資料，不會更新你的交易紀錄與規則）');
+  const runMod5 = useCallback(
+    async (overrideEntries, overrideSource) => {
+      const usedEntries = Array.isArray(overrideEntries) ? overrideEntries : m5Entries;
+      const usedSource = typeof overrideSource === 'string' ? overrideSource : m5Source;
+      setM5Loading(true);
+      try {
+        const res = await fetch('/api/mod5/coach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entries: usedEntries,
+            ai: (() => {
+              const cfg = window.TA.loadAI();
+              return cfg.scope.mod5 === false
+                ? null
+                : window.TA.cleanProfile(window.TA.activeProfile(cfg));
+            })(),
+          }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        setM5Data(data);
+        if (data.entries_used) setM5Entries(data.entries_used);
+        if (usedSource === 'mine') {
+          window.TA.setJournal(data.entries_used || usedEntries);
+          window.TA.saveRules(data.personalized_3_rules, data.rules_source);
+          window.TA.notifySaved('交易診斷完成，已更新交易紀錄與 3 條個人規則（下單面板會顯示）');
+        } else {
+          showToast('✅ 交易診斷完成（範例資料，不會更新你的交易紀錄與規則）');
+        }
+      } catch (err) {
+        showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`);
+      } finally {
+        setM5Loading(false);
       }
-    } catch (err) {
-      showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`);
-    } finally {
-      setM5Loading(false);
-    }
-  }, [m5Entries, m5Source, showToast]);
+    },
+    [m5Entries, m5Source, showToast],
+  );
 
   const runVisualTestSuite = useCallback(async () => {
     setTestSuiteRunning(true);
@@ -318,16 +327,51 @@ function App() {
     showToast(`已帶入 ${symbol} ${name || ''} 到新聞判斷，正在抓最新新聞`);
   };
 
+  // 合併同代號（例如不同券商持有同一檔），並確保目標權重總和 + 現金 = 100%
+  const normalizeHoldingsForMod4 = useCallback(
+    (rawList, cashPct = m4CashPct) => {
+      const mergedMap = new Map();
+      for (const h of rawList || []) {
+        const sym = String(h.symbol || '')
+          .trim()
+          .toUpperCase();
+        if (!sym || !(Number(h.shares) > 0)) continue;
+        const sh = Number(h.shares);
+        const pr = Number(h.price ?? h.cost ?? 0);
+        const prev = mergedMap.get(sym);
+        if (prev) {
+          const totalSh = prev.shares + sh;
+          prev.price = totalSh > 0 ? (prev.shares * prev.price + sh * pr) / totalSh : pr;
+          prev.shares = Number(totalSh.toFixed(6));
+        } else {
+          mergedMap.set(sym, {
+            symbol: sym,
+            market: h.market || window.TA.marketOf(sym),
+            shares: sh,
+            price: pr,
+          });
+        }
+      }
+      const list = Array.from(mergedMap.values());
+      const investable = Math.max(0, Math.round((100 - Number(cashPct || 0)) * 10) / 10);
+      const baseEach = list.length ? Math.floor((investable / list.length) * 10) / 10 : 0;
+      const remUnits = list.length ? Math.round((investable - baseEach * list.length) * 10) : 0;
+      return list.map((h, idx) => ({
+        ...h,
+        target_pct: Number((baseEach + (idx < remUnits ? 0.1 : 0)).toFixed(1)),
+      }));
+    },
+    [m4CashPct],
+  );
+
   // 看盤頁「我的持股」→ 組合風控：帶入持股並自動平均配置目標權重（現金沿用目前設定）
   const sendHoldings = (list) => {
-    const each = list.length
-      ? Math.round(((100 - Number(m4CashPct || 0)) / list.length) * 10) / 10
-      : 0;
-    setM4Holdings(list.map((h) => ({ ...h, target_pct: each })));
+    const normalized = normalizeHoldingsForMod4(list, m4CashPct);
+    setM4Holdings(normalized);
     setM4Data(null);
     setActiveTab('mod4');
     setPendingRun4(true);
-    showToast(`已帶入 ${list.length} 檔持股到組合風控`);
+    showToast(`已帶入 ${normalized.length} 檔持股到組合風控`);
   };
 
   const loadMyHoldings = (mine) => {
@@ -355,11 +399,74 @@ function App() {
     }
   }, [pendingRun3, runMod3]);
 
-  // 技術分析 → 策略回測：帶入同一檔
+  // 根據代號整理回測連動參數（帶入技術分析停損 %、持股成本／市值、美股自動換非台股限定策略）
+  const buildBacktestFormPatch = useCallback(
+    (symbol, prevForm) => {
+      const bare = String(symbol || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\.(TW|TWO)$/i, '');
+      if (!bare) return prevForm;
+      const snap = m1Data?.snapshot;
+      const snapBare = String(snap?.symbol || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\.(TW|TWO)$/i, '');
+      const sameAsM1 = snap && snapBare === bare;
+      const slPrice = m1Data?.llm_result?.decision_payload?.stop_loss_price ?? snap?.recent_low_20d;
+      const m1SlPct =
+        sameAsM1 && snap.latest_close > 0 && slPrice > 0 && slPrice < snap.latest_close
+          ? Number((((snap.latest_close - slPrice) / snap.latest_close) * 100).toFixed(1))
+          : null;
+
+      const mine = (window.TA.loadPortfolio?.().holdings || []).filter(
+        (h) =>
+          String(h.symbol || '')
+            .trim()
+            .toUpperCase()
+            .replace(/\.(TW|TWO)$/i, '') === bare,
+      );
+      const heldShares = mine.reduce((s, h) => s + Number(h.shares || 0), 0);
+      const heldCost = mine.reduce((s, h) => s + Number(h.shares || 0) * Number(h.cost || 0), 0);
+      const refPrice = sameAsM1 && snap.latest_close > 0 ? snap.latest_close : 0;
+      const heldVal = Math.round(refPrice > 0 && heldShares > 0 ? heldShares * refPrice : heldCost);
+
+      const isUS = window.TA.marketOf?.(bare) === 'US';
+      const catalog = (window.TA._btCatalog || window.TA.BT?.FALLBACK_CATALOG)?.strategies || [];
+      const curStratMeta = catalog.find((s) => s.key === prevForm.strategy);
+      const nextStrategy = isUS && curStratMeta?.tw_only ? 'ma_cross' : prevForm.strategy;
+
+      let nextCap = prevForm.initial_capital;
+      if (heldVal >= 1000) {
+        nextCap = heldVal;
+      } else if (isUS && prevForm.initial_capital === 1000000) {
+        nextCap = 10000;
+      } else if (!isUS && prevForm.initial_capital === 10000) {
+        nextCap = 1000000;
+      }
+
+      return {
+        ...prevForm,
+        target_asset: bare,
+        strategy: nextStrategy,
+        initial_capital: nextCap,
+        stop_loss_pct:
+          m1SlPct != null && m1SlPct > 0 && m1SlPct < 50 ? m1SlPct : prevForm.stop_loss_pct,
+      };
+    },
+    [m1Data],
+  );
+
+  // 技術分析 / 我的持股 → 策略回測：帶入同一檔、停損參考與持股本金
   const backtestThis = (symbol) => {
-    setM3Form((f) => ({ ...f, target_asset: symbol }));
+    const bare = String(symbol || '')
+      .trim()
+      .toUpperCase()
+      .replace(/\.(TW|TWO)$/i, '');
+    setM3Form((f) => buildBacktestFormPatch(bare, f));
     setActiveTab('mod3');
     setPendingRun3(true);
+    showToast(`已帶入 ${bare} 到策略回測（同步技術停損與部位設定）`);
   };
 
   useEffect(() => {
@@ -398,14 +505,57 @@ function App() {
 
   const handleSwitchTab = (tabId) => {
     setActiveTab(tabId);
-    if (tabId === 'mod2' && !m2Data) runMod2();
-    if (tabId === 'mod3' && !m3Data) runMod3();
-    if (tabId === 'mod4') {
-      // 組合風控預設使用「我的持股」（看盤頁輸入或模擬成交），沒有才用範例
-      const mine = window.TA.loadPortfolio().holdings;
-      if (mine.length && JSON.stringify(m4Holdings) === JSON.stringify(DEFAULT_HOLDINGS)) {
-        loadMyHoldings(mine);
+    if (tabId === 'mod1') {
+      const watchQuote = window.TA._watchSelected;
+      if (watchQuote?.symbol && m1Ticker === '2330.TW' && watchQuote.symbol !== '2330') {
+        setM1Ticker(watchQuote.symbol);
+        setM1Context(watchQuote);
+        prevPriceRef.current = null;
+        runMod1({ overrideTicker: watchQuote.symbol, simulateTick: false });
         return;
+      }
+      if (!m1Data) runMod1({ simulateTick: false });
+    }
+    if (tabId === 'mod2') {
+      if (!m2Data) runMod2();
+    }
+    if (tabId === 'mod3') {
+      const activeSym = String(m1Data?.snapshot?.symbol || m1Ticker || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\.(TW|TWO)$/i, '');
+      const curAsset = String(m3Form.target_asset || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\.(TW|TWO)$/i, '');
+      if (activeSym && (curAsset === '2330' || !m3Data) && activeSym !== curAsset) {
+        setM3Form((f) => buildBacktestFormPatch(activeSym, f));
+        setPendingRun3(true);
+        return;
+      }
+      if (!m3Data) runMod3();
+    }
+    if (tabId === 'mod4') {
+      // 組合風控預設同步「我的持股」（看盤頁新增／移除持股或模擬成交後自動同步）
+      const mine = window.TA.loadPortfolio().holdings;
+      if (mine.length) {
+        const normalizedMine = normalizeHoldingsForMod4(
+          mine.map((h) => ({
+            symbol: h.symbol,
+            market: window.TA.marketOf(h.symbol),
+            shares: h.shares,
+            price: h.cost,
+          })),
+          m4CashPct,
+        );
+        const curSig = m4Holdings.map((h) => `${h.symbol}:${Number(h.shares)}`).join('|');
+        const mineSig = normalizedMine.map((h) => `${h.symbol}:${Number(h.shares)}`).join('|');
+        if (curSig !== mineSig) {
+          setM4Holdings(normalizedMine);
+          setM4Data(null);
+          setPendingRun4(true);
+          return;
+        }
       }
       if (!m4Data) runMod4();
     }
@@ -445,7 +595,9 @@ function App() {
   // 匯出報告：只在開啟匯出視窗時才組資料（避免每 5 秒更新都重算一次大 JSON）；內容在 export_report.jsx
   const exportReport = useMemo(
     () =>
-      isExportModalOpen ? buildExportReport({ health, m1Data, m2Data, m3Data, m4Data, m5Data, m5Source }) : null,
+      isExportModalOpen
+        ? buildExportReport({ health, m1Data, m2Data, m3Data, m4Data, m5Data, m5Source })
+        : null,
     [isExportModalOpen, health, m1Data, m2Data, m3Data, m4Data, m5Data, m5Source],
   );
 
@@ -463,6 +615,7 @@ function App() {
     setActiveTab('mod1');
     runMod1({ overrideTicker: sym });
   };
+  window.TA.backtestSymbol = backtestThis;
   window.TA.startTour = (step = 0) => {
     setTourStart(step);
     setTourOpen(true);

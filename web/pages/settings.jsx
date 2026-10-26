@@ -3,8 +3,13 @@
   const { useState, useEffect } = React;
   const { useAISettings, saveAI, SCOPE_LABELS } = window.TA;
   // 以下元件在 settings_ai.jsx、settings_background.jsx（index.html 先載入）
-  const { AI_TYPES: TYPES, newAIProfile: newProfile, ProfileEditor, LocalDetect, BackgroundServicePanel } = window.TA;
-
+  const {
+    AI_TYPES: TYPES,
+    newAIProfile: newProfile,
+    ProfileEditor,
+    LocalDetect,
+    BackgroundServicePanel,
+  } = window.TA;
 
   // 瀏覽器裡存的所有資料（第三欄：清除後要通知哪些畫面立即更新）
   const DATA_KEYS = [
@@ -57,10 +62,15 @@
         </div>
         {st.ok ? (
           <div className="text-emerald-300">
-            ✅ 自動存檔中{st.savedAt ? `，最後存檔 ${st.savedAt.toLocaleTimeString('zh-TW', { hour12: false })}` : ''}
+            ✅ 自動存檔中
+            {st.savedAt
+              ? `，最後存檔 ${st.savedAt.toLocaleTimeString('zh-TW', { hour12: false })}`
+              : ''}
           </div>
         ) : (
-          <div className="text-amber-300">⚠️ {st.error}（修改仍保留在瀏覽器，下次修改時會再嘗試寫入）</div>
+          <div className="text-amber-300">
+            ⚠️ {st.error}（修改仍保留在瀏覽器，下次修改時會再嘗試寫入）
+          </div>
         )}
       </div>
     );
@@ -89,6 +99,7 @@
     };
     return (
       <div className="space-y-5 max-w-4xl">
+        <window.TA.UpdatePanel />
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
           <div>
             <h2 className="text-lg font-bold text-white">AI 連線</h2>
@@ -147,7 +158,9 @@
                   <button
                     type="button"
                     onClick={() => {
-                      if (!window.confirm(`確定刪除 AI 連線「${p.name}」？（含這組連線裡的金鑰）`)) {
+                      if (
+                        !window.confirm(`確定刪除 AI 連線「${p.name}」？（含這組連線裡的金鑰）`)
+                      ) {
                         window.TA.toast?.('ℹ️ 已取消，AI 連線沒有變動');
                         return;
                       }
@@ -227,8 +240,8 @@
           </details>
           <p className="text-[11px] text-slate-500 leading-relaxed">
             API Key 只存在這個瀏覽器的 localStorage（未加密，請勿在共用電腦使用），只在你按 AI
-            功能時經本機伺服器轉送給你選的服務，伺服器不會保存。 不想存在瀏覽器的話，可以把金鑰填在下方「金鑰與資料額度」，
-            這裡的 Key 欄位留空即可。
+            功能時經本機伺服器轉送給你選的服務，伺服器不會保存。
+            不想存在瀏覽器的話，可以把金鑰填在下方「金鑰與資料額度」， 這裡的 Key 欄位留空即可。
           </p>
         </div>
 
@@ -328,9 +341,12 @@
                     // 一定要等存進 data/userdata.json 再重新載入：否則載入時會讀回檔案裡的舊資料，還原就白做了
                     await window.TA.flushUserData();
                     const r = await window.TA.afterSave();
-                    if (!r.ok) throw new Error(`資料檔寫入失敗（${r.error}），沒有重新載入，請稍後再試`);
+                    if (!r.ok)
+                      throw new Error(`資料檔寫入失敗（${r.error}），沒有重新載入，請稍後再試`);
                     setRestoreMsg(`已還原 ${entries.length} 項資料，重新載入中…`);
-                    window.TA.toast?.(`✅ 已從備份還原 ${entries.length} 項資料並存檔，正在重新載入`);
+                    window.TA.toast?.(
+                      `✅ 已從備份還原 ${entries.length} 項資料並存檔，正在重新載入`,
+                    );
                     setTimeout(() => window.location.reload(), 800);
                   } catch (err) {
                     setRestoreMsg(`還原失敗：${err.message}`);

@@ -34,7 +34,7 @@ class BacktestHandlers:
                     raw_params[k] = payload[k]
         params = strategies.resolve_params(strategy, raw_params)
         meta = strategies.STRATEGIES[strategy]
-        initial_capital = arg_num(payload, "initial_capital", 1_000_000.0, "初始本金", lo=10000)
+        initial_capital = arg_num(payload, "initial_capital", 1_000_000.0, "初始本金", lo=1)
         commission_discount = arg_num(payload, "commission_discount", 0.6, "手續費折數", lo=0, hi=1)
         period_years = int(arg_num(payload, "period_years", 1, "回測期間（年）", integer=True, lo=1, hi=10))
 

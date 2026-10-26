@@ -1,12 +1,12 @@
-// 看盤頁右下角：模擬下單暫存匣（台股整張/零股 + ROD/IOC/FOK；美股限價/市價 + ANY/AON）
+// 看盤頁右下角：模擬下單（流程：成交模擬交易 → 規則確認下單 → 交易檢討）
 (() => {
-  const { fmt, Field, Seg } = window.TA;
-
+  const { fmt, Field, Seg, normSym } = window.TA;
   const { useState } = React;
 
   function OrderPanel({ ctx }) {
-    const { rules } = window.TA.usePortfolio();
+    const { rules, journal } = window.TA.usePortfolio();
     const [checked, setChecked] = useState({});
+    const [lastFill, setLastFill] = useState(null);
     const ruleList = rules?.rules || [];
     const allChecked = ruleList.every((r) => checked[r.rule_number]);
     const {
@@ -24,18 +24,91 @@
       tradeRules,
       tw,
     } = ctx;
+
+    const hardIssues = (orderIssues || []).filter((x) => !x.startsWith('提醒'));
+
+    // 直接確認規則並模擬成交（不必先放暫存匣再點一次成交）
+    const directFill = () => {
+      if (!allChecked) {
+        window.TA.toast?.('⚠️ 請先勾選「規則確認下單」的所有交易規則');
+        return;
+      }
+      if (hardIssues.length) {
+        window.TA.toast?.(`⚠️ 無法下單成交：${hardIssues[0]}`);
+        return;
+      }
+      const sym = normSym(q?.symbol || '');
+      const priceNum = Number(order.price);
+      const qtyNum = Number(order.qty);
+      const sh = tw ? (order.lotType === 'ROUND' ? qtyNum * 1000 : qtyNum) : qtyNum;
+      const r = window.TA.fillOrder({
+        symbol: sym,
+        side: order.side,
+        price: priceNum,
+        shares: sh,
+        fees: (fee || 0) + (tax || 0),
+      });
+      if (r.ok) {
+        setChecked({});
+        setLastFill({ side: order.side, symbol: sym, shares: sh, price: priceNum, msg: r.msg });
+        window.TA.notifySaved(r.msg);
+      } else {
+        window.TA.toast?.(`⚠️ ${r.msg}`);
+      }
+    };
+
+    const handleCartFill = (c) => {
+      if (!allChecked) {
+        window.TA.toast?.('⚠️ 請先勾選上方「規則確認下單」的所有交易規則再成交');
+        return;
+      }
+      fillCartItem(c);
+      setChecked({});
+      setLastFill({
+        side: c.side,
+        symbol: normSym(c.symbol),
+        shares: c.market === 'TW' && c.unit === '張' ? c.qty * 1000 : c.qty,
+        price: c.price,
+        msg: `已執行 ${c.symbol} ${c.side === 'BUY' ? '買進' : '賣出'}模擬成交`,
+      });
+    };
+
     return (
       <div
         className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3"
         data-tour="watch-order"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-bold text-white">
-            模擬下單暫存匣（{tw ? '台股' : window.TA.marketName(q?.symbol || '')}）
+            模擬交易下單（{tw ? '台股' : window.TA.marketName(q?.symbol || '')}）
           </h3>
           <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
             僅模擬・不會連接券商・成交後同步到持股與交易紀錄
           </span>
+        </div>
+
+        {/* 介面流程指示：成交模擬交易 → 規則確認下單 → 交易檢討 */}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2">
+          <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-200 font-semibold">
+            ① 成交模擬交易（填寫委託）
+          </span>
+          <span className="text-slate-500">→</span>
+          <span
+            className={`px-2 py-0.5 rounded font-semibold ${
+              allChecked ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'
+            }`}
+          >
+            ② 規則確認下單
+            {ruleList.length ? (allChecked ? '（已確認 ✓）' : '（待勾選）') : '（可下單）'}
+          </span>
+          <span className="text-slate-500">→</span>
+          <button
+            type="button"
+            onClick={() => window.TA.goTab?.('mod5')}
+            className="px-2.5 py-0.5 rounded bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 font-semibold cursor-pointer"
+          >
+            ③ 交易檢討（已平倉 {journal.length} 筆）→
+          </button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -151,10 +224,26 @@
           </ul>
         )}
 
-        {ruleList.length > 0 && (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1">
-            <div className="text-[11px] text-emerald-300 font-semibold">
-              下單前確認我的交易規則（來自交易檢討，全部勾選才能加入暫存匣）
+        {/* 第二步：規則確認下單 */}
+        {ruleList.length > 0 ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] text-emerald-300 font-semibold">
+                ② 規則確認下單（勾選個人交易規則後即可成交或加入暫存匣）
+              </span>
+              <span className="flex items-center gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = {};
+                    for (const r of ruleList) next[r.rule_number] = !allChecked;
+                    setChecked(next);
+                  }}
+                  className="text-emerald-300 hover:underline cursor-pointer"
+                >
+                  {allChecked ? '取消全選' : '一鍵全部確認 ✓'}
+                </button>
+              </span>
             </div>
             {ruleList.map((r) => (
               <label
@@ -173,19 +262,63 @@
               </label>
             ))}
           </div>
+        ) : (
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              ②
+              規則確認下單：目前尚無個人交易規則，可直接確認下單成交（完成賣出平倉後，可至「交易檢討」產生個人規則）。
+            </span>
+          </div>
         )}
 
-        <button
-          type="button"
-          onClick={() => {
-            if (addToCart()) setChecked({}); // 沒加成功（例如價格不對）就保留已勾選的規則
-          }}
-          disabled={!allChecked}
-          title={allChecked ? '' : '請先勾選上方所有交易規則'}
-          className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          ＋ 加入暫存匣
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={directFill}
+            disabled={!allChecked}
+            title={allChecked ? '確認規則並立即執行模擬成交' : '請先勾選上方所有交易規則'}
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ⚡ 規則確認並直接成交（{order.side === 'BUY' ? '買進加入持股' : '賣出寫入檢討'}）
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (addToCart()) setChecked({});
+            }}
+            disabled={!allChecked}
+            title={allChecked ? '先放入下方暫存匣，稍後再按成交' : '請先勾選上方所有交易規則'}
+            className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ＋ 加入暫存匣
+          </button>
+          <button
+            type="button"
+            onClick={() => window.TA.goTab?.('mod5')}
+            className="ml-auto px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold cursor-pointer"
+          >
+            前往交易檢討（{journal.length} 筆）→
+          </button>
+        </div>
+
+        {/* 第三步：成交後引導至交易檢討 */}
+        {lastFill && (
+          <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-100 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              ✅ {lastFill.msg}
+              {lastFill.side === 'SELL'
+                ? '（已平倉寫入交易紀錄，可立即前往交易檢討分析勝率與行為偏誤）'
+                : '（買進部位已同步至「我的持股」與「技術分析／組合風控」）'}
+            </span>
+            <button
+              type="button"
+              onClick={() => window.TA.goTab?.('mod5')}
+              className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold cursor-pointer"
+            >
+              ③ 前往交易檢討 →
+            </button>
+          </div>
+        )}
 
         {cart.length > 0 && (
           <div className="space-y-1.5 pt-1">
@@ -221,9 +354,14 @@
                 <span className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => fillCartItem(c)}
-                    title="模擬成交：買進加入我的持股；賣出寫入交易紀錄（交易檢討會用到）"
-                    className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/40 font-sans cursor-pointer"
+                    onClick={() => handleCartFill(c)}
+                    disabled={!allChecked}
+                    title={
+                      allChecked
+                        ? '模擬成交：買進加入我的持股；賣出寫入交易紀錄（交易檢討會用到）'
+                        : '請先勾選上方所有交易規則'
+                    }
+                    className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/40 font-sans cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     成交
                   </button>
@@ -231,7 +369,9 @@
                     type="button"
                     onClick={() => {
                       setCart(cart.filter((x) => x.id !== c.id));
-                      window.TA.notifySaved(`已從暫存匣移除 ${c.symbol} ${c.side === 'BUY' ? '買進' : '賣出'}委託`);
+                      window.TA.notifySaved(
+                        `已從暫存匣移除 ${c.symbol} ${c.side === 'BUY' ? '買進' : '賣出'}委託`,
+                      );
                     }}
                     aria-label={`移除 ${c.symbol} 委託`}
                     className="text-slate-500 hover:text-rose-300 cursor-pointer"

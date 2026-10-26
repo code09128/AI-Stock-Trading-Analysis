@@ -21,15 +21,8 @@
     RangeBar,
     IntradayChart,
   } = window.TA;
-  const {
-    Row,
-    useAlerts,
-    AlertsPanel,
-    OverviewPanel,
-    StockInfoPanel,
-    DividendCalendar,
-    CatChip,
-  } = window.TA;
+  const { Row, useAlerts, AlertsPanel, OverviewPanel, StockInfoPanel, DividendCalendar, CatChip } =
+    window.TA;
 
   // ---------- 看盤頁 ----------
   function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
@@ -38,7 +31,12 @@
     const [holdPrefill, setHoldPrefill] = useState(null); // 「加入我的持股」要預填到持股面板表單的內容
     const [etfs, setEtfs] = useState({ etfs: [], pending_yields: 0, sources: {} });
     const [etfSort, setEtfSort] = useState('hot');
-    const [selected, setSelected] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH)[0] || '2330');
+    const [selected, setSelected] = useState(
+      () => window.TA._watchSelected || readLS(LS_WATCH, DEFAULT_WATCH)[0] || '2330',
+    );
+    useEffect(() => {
+      window.TA._watchSelected = selected;
+    }, [selected]);
     const [quotes, setQuotes] = useState({});
     const [updatedAt, setUpdatedAt] = useState('--:--:--');
     const [netError, setNetError] = useState(null);
@@ -145,30 +143,30 @@
       const syms = symKey.split(',').filter(Boolean);
       const groups = [syms.filter(isTW), syms.filter((x) => !isTW(x))].filter((g) => g.length);
       try {
-      await Promise.all(
-        groups.map(async (group) => {
-          try {
-            const res = await fetch('/api/quotes', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ symbols: group }),
-            });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-            setQuotes((prev) => {
-              const next = { ...prev };
-              for (const qq of data.quotes) next[baseCode(qq.symbol)] = qq;
-              return next;
-            });
-            setUpdatedAt(data.timestamp);
-            setNetError(null);
-          } catch (e) {
-            setNetError(
-              `無法連到本機伺服器 (${e.message})。請確認 python -m src.api_server 正在執行。`,
-            );
-          }
-        }),
-      );
+        await Promise.all(
+          groups.map(async (group) => {
+            try {
+              const res = await fetch('/api/quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbols: group }),
+              });
+              const data = await res.json();
+              if (data.error) throw new Error(data.error);
+              setQuotes((prev) => {
+                const next = { ...prev };
+                for (const qq of data.quotes) next[baseCode(qq.symbol)] = qq;
+                return next;
+              });
+              setUpdatedAt(data.timestamp);
+              setNetError(null);
+            } catch (e) {
+              setNetError(
+                `無法連到本機伺服器 (${e.message})。請確認 python -m src.api_server 正在執行。`,
+              );
+            }
+          }),
+        );
       } finally {
         quotesBusy.current = false;
       }
@@ -279,7 +277,11 @@
       })
         .then((r) => r.json())
         .then((d) => !stop && setTradeRules(d))
-        .catch((e) => !stop && setTradeRules({ lot: null, fees: [], error: `交易規則查詢失敗：${e.message}` }));
+        .catch(
+          (e) =>
+            !stop &&
+            setTradeRules({ lot: null, fees: [], error: `交易規則查詢失敗：${e.message}` }),
+        );
       return () => {
         stop = true;
       };
@@ -456,7 +458,9 @@
     const amount = priceNum * shares;
     const feeRate = 0.001425;
     // 台股手續費與證交稅都是「元以下無條件捨去」（與券商對帳單一致）；手續費整張最低 20 元、零股最低 1 元
-    const fee = tw ? Math.max(order.lotType === 'ROUND' ? 20 : 1, Math.floor(amount * feeRate + 1e-9)) : 0;
+    const fee = tw
+      ? Math.max(order.lotType === 'ROUND' ? 20 : 1, Math.floor(amount * feeRate + 1e-9))
+      : 0;
     const sideKey = order.side === 'SELL' ? 'SELL' : 'BUY';
     const statutoryTax = (tradeRules?.fees || [])
       .filter((f) => f.side === sideKey || f.side === 'BOTH')
@@ -535,7 +539,9 @@
         tax,
       };
       setCart([item, ...cart]);
-      window.TA.notifySaved(`已把 ${selected} ${order.side === 'BUY' ? '買進' : '賣出'}委託加入暫存匣（模擬，不會真的下單）`);
+      window.TA.notifySaved(
+        `已把 ${selected} ${order.side === 'BUY' ? '買進' : '賣出'}委託加入暫存匣（模擬，不會真的下單）`,
+      );
       return true;
     };
 
@@ -1149,7 +1155,11 @@
                     <button
                       type="button"
                       onClick={() => {
-                        setHoldPrefill({ symbol: baseCode(selected), shares: '', cost: String(q.price ?? '') });
+                        setHoldPrefill({
+                          symbol: baseCode(selected),
+                          shares: '',
+                          cost: String(q.price ?? ''),
+                        });
                         setListTab('hold');
                       }}
                       className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"

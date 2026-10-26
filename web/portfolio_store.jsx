@@ -39,8 +39,18 @@
     const raw = readLS(KEYS.journal, []);
     const { out: journal, changed } = dedupeIds(Array.isArray(raw) ? raw : []);
     if (changed) writeLS(KEYS.journal, journal);
+    const rawHoldings = readLS(KEYS.holdings, []);
+    let holdingsChanged = false;
+    const holdings = (Array.isArray(rawHoldings) ? rawHoldings : []).map((h, idx) => {
+      if (h && !h.id) {
+        holdingsChanged = true;
+        return { ...h, id: `${h.symbol}_${h.broker || ''}_${idx}` };
+      }
+      return h;
+    });
+    if (holdingsChanged) writeLS(KEYS.holdings, holdings);
     return {
-      holdings: readLS(KEYS.holdings, []),
+      holdings,
       journal,
       rules: readLS(KEYS.rules, null), // { rules: [...], source, savedAt }
     };
@@ -79,11 +89,12 @@
     // 代號寫法可能不同（2330 / 2330.TW，CSV 匯入或舊資料）：跟其他頁一樣用 baseCode(normSym()) 比對
     const key = (s) => window.TA.baseCode(window.TA.normSym(s));
     const same = (x) => key(x.symbol) === key(symbol);
-    const h = holdings.find(same);
+    const matching = holdings.filter(same);
+    const h = matching[0];
     if (side === 'BUY') {
       const next = h
         ? holdings.map((x) =>
-            same(x)
+            x === h
               ? {
                   ...x,
                   shares: x.shares + shares,
@@ -97,6 +108,7 @@
         : [
             ...holdings,
             {
+              id: `${symbol}_${Date.now()}`,
               symbol,
               shares,
               cost: Math.round(((price * shares + fees) / shares) * 10000) / 10000,
@@ -107,35 +119,51 @@
       return { ok: true, msg: `已成交買進 ${symbol} ${shares} 股，持股已更新` };
     }
     const EPS = 1e-6; // 碎股小數運算的誤差：差不到百萬分之一股就當作全部賣完
-    if (!h || h.shares < shares - EPS)
+    const totalAvail = matching.reduce((sum, x) => sum + x.shares, 0);
+    if (!matching.length || totalAvail < shares - EPS)
       return {
         ok: false,
-        msg: `賣出失敗：持股中沒有足夠的 ${symbol}（目前 ${h ? h.shares : 0} 股）`,
+        msg: `賣出失敗：持股中沒有足夠的 ${symbol}（目前共 ${totalAvail} 股）`,
       };
-    // 損益先算好（成本已含買進手續費，這裡再扣賣出的手續費與稅），交易檢討表格不必等診斷跑完才有數字
-    const netPnl = Math.round(((price - h.cost) * shares - fees) * 100) / 100;
+    // 扣除股數（若有多個券商/批次持有，依序扣除）並計算加權出場成本
+    let remainingToSell = shares;
+    const nextHoldings = [];
+    let weightedCost = 0;
+    let totalDeducted = 0;
+    let entryTime = today();
+    for (const item of holdings) {
+      if (same(item) && remainingToSell > EPS) {
+        entryTime = item.opened || entryTime;
+        const deduct = Math.min(item.shares, remainingToSell);
+        weightedCost += item.cost * deduct;
+        totalDeducted += deduct;
+        remainingToSell -= deduct;
+        const left = item.shares - deduct;
+        if (left > EPS) {
+          nextHoldings.push({ ...item, shares: Math.round(left * 1e6) / 1e6 });
+        }
+      } else {
+        nextHoldings.push(item);
+      }
+    }
+    const avgCost = totalDeducted > 0 ? weightedCost / totalDeducted : h?.cost || 0;
+    const netPnl = Math.round(((price - avgCost) * shares - fees) * 100) / 100;
     const trade = {
       trade_id: nextTradeId(journal),
       symbol,
-      entry_time: h.opened || '',
+      entry_time: entryTime,
       exit_time: today(),
-      entry_price: h.cost,
+      entry_price: avgCost,
       exit_price: price,
       shares,
       fees,
       net_pnl: netPnl,
-      return_pct: h.cost ? Math.round((netPnl / (h.cost * shares)) * 10000) / 100 : 0,
+      return_pct: avgCost ? Math.round((netPnl / (avgCost * shares)) * 10000) / 100 : 0,
       emotion_score: 0,
       source: '模擬下單成交',
     };
     setJournal([...journal, trade]);
-    setHoldings(
-      h.shares - shares < EPS
-        ? holdings.filter((x) => !same(x))
-        : holdings.map((x) =>
-            same(x) ? { ...x, shares: Math.round((x.shares - shares) * 1e6) / 1e6 } : x,
-          ),
-    );
+    setHoldings(nextHoldings);
     return { ok: true, msg: `已成交賣出 ${symbol} ${shares} 股，已寫入交易紀錄 ${trade.trade_id}` };
   };
 

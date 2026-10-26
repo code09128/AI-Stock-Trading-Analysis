@@ -186,7 +186,9 @@
   // 新聞判斷：新聞催化劑與 Priced-in
   function Mod2Panel({ ctx }) {
     const { m2Data, m2Form, m2Loading, runMod2, setM2Form } = ctx;
-    const { NEWS_PRESETS } = window.TA;
+    const { NEWS_PRESETS, baseCode, normSym } = window.TA;
+    const { holdings } = window.TA.usePortfolio();
+    const heldSymbols = [...new Set(holdings.map((h) => h.symbol))];
     const { useState } = React;
     const [news, setNews] = useState(null);
     const [newsKind, setNewsKind] = useState('全部');
@@ -254,6 +256,36 @@
             </div>
           </div>
 
+          {heldSymbols.length > 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs flex flex-wrap items-center gap-2">
+              <b className="text-amber-200">我的持股新聞快查</b>
+              {heldSymbols.map((sym) => (
+                <button
+                  type="button"
+                  key={sym}
+                  onClick={() => {
+                    window.TA._autoNews = sym;
+                    setM2Form({
+                      ...m2Form,
+                      target: sym,
+                      headline: '',
+                      ret_5d_pct: '',
+                      ret_20d_pct: '',
+                      invalidation_criteria: '',
+                    });
+                  }}
+                  className={`px-2 py-0.5 rounded-md mono border cursor-pointer ${
+                    baseCode(normSym(sym)) === baseCode(normSym(m2Form.target || ''))
+                      ? 'bg-amber-500/30 border-amber-400 text-white'
+                      : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {sym}
+                </button>
+              ))}
+              <span className="text-slate-500">點代號自動抓取該檔最新新聞</span>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {NEWS_PRESETS.map((preset) => (
               <button
