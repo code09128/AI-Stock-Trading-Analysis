@@ -22,3 +22,8 @@ installer_main.py
 
 # 打包壓縮檔（可能夾帶 .env 等機敏資料），不要提交
 *.zip
+
+# 線上更新／manual_update.ps1 下載的新版程式（從原始碼專案的 dist\ 執行打包版時會放在專案根目錄）
+update/
+update_tmp/
+update_old/

@@ -876,6 +876,8 @@ function App() {
                 onShowTour={() => window.TA.startTour(0)}
               />
             )}
+            {activeTab === 'board' && <window.TA.MarketBoardPage />}
+            {activeTab === 'multichart' && <window.TA.MultiChartPage />}
             {activeTab === 'guide' && (
               <window.TA.GuidePage
                 onGo={handleSwitchTab}

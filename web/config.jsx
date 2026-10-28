@@ -69,6 +69,20 @@
         <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
       </>
     ),
+    board: (
+      <>
+        <path d="M3 3v18h18" />
+        <path d="M7 16v-3M11 16V9M15 16v-5M19 16V6" />
+      </>
+    ),
+    grid: (
+      <>
+        <rect width="7" height="7" x="3" y="3" rx="1" />
+        <rect width="7" height="7" x="14" y="3" rx="1" />
+        <rect width="7" height="7" x="3" y="14" rx="1" />
+        <rect width="7" height="7" x="14" y="14" rx="1" />
+      </>
+    ),
     bot: (
       <>
         <path d="M12 8V4H8" />
@@ -104,6 +118,22 @@
       title: '看盤',
       subtitle: '自選股、我的持股、即時報價與模擬下單',
       icon: 'candles',
+    },
+    {
+      id: 'board',
+      group: '行情',
+      short: '大盤籌碼',
+      title: '大盤籌碼',
+      subtitle: '國際指數、台指期日夜盤、三大法人、產業漲跌排行與台灣 50',
+      icon: 'board',
+    },
+    {
+      id: 'multichart',
+      group: '行情',
+      short: '多圖走勢',
+      title: '多圖走勢',
+      subtitle: '一次看 4／9／16 檔分時走勢，5 組版面可儲存',
+      icon: 'grid',
     },
     {
       id: 'mod1',

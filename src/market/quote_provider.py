@@ -34,9 +34,10 @@ US_CACHE_TTL_SEC = 3.0
 
 
 def _http_json(url: str, timeout: int = 8, opener: Any = None,
-               headers: Dict[str, str] = None) -> Dict[str, Any]:
+               headers: Dict[str, str] = None, body: Any = None) -> Dict[str, Any]:
     """送出請求並記錄到 FETCH_LOG；失敗時記錄後再拋出。
-    headers 用來放認證（例如 FinMind token），不會寫進紀錄；不要把金鑰放在網址裡。"""
+    headers 用來放認證（例如 FinMind token），不會寫進紀錄；不要把金鑰放在網址裡。
+    body 不是 None 時改用 POST 送出 JSON（期交所行情 API 用）。"""
     started = time.time()
     rec = {
         "time": datetime.now().strftime("%H:%M:%S"),
@@ -47,7 +48,11 @@ def _http_json(url: str, timeout: int = 8, opener: Any = None,
         "error": None,
     }
     try:
-        req = urllib.request.Request(url, headers={**UA, **(headers or {})})
+        if body is None:
+            req = urllib.request.Request(url, headers={**UA, **(headers or {})})
+        else:
+            req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                         headers={**UA, "Content-Type": "application/json", **(headers or {})})
         opener_open = opener.open if opener else urllib.request.urlopen
         with opener_open(req, timeout=timeout) as resp:
             raw = resp.read()

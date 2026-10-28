@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import sys
 import threading
 import urllib.error
@@ -31,6 +32,33 @@ TAG_ZIP = "https://codeload.github.com/{repo}/zip/refs/tags/{tag}"
 UA = {"User-Agent": "TW-US-Trading-Analyzer-Updater/1.0", "Accept": "application/vnd.github+json"}
 _VERSION_RE = re.compile(r'APP_VERSION\s*=\s*["\'](\d+\.\d+\.\d+)["\']')
 _LOCK = threading.Lock()
+
+
+def _windows_root_context() -> Optional[ssl.SSLContext]:
+    """只信任 Windows「受信任的根憑證」（不含「中繼憑證」）的連線設定。
+    有些電腦的中繼憑證區留著舊的交叉簽章憑證（例如被 AAA Certificate Services 簽的 USERTrust ECC），
+    Python 驗證 GitHub 憑證鏈時會先挑到它而失敗（unable to get issuer certificate）；瀏覽器與 PowerShell 不受影響。"""
+    if not hasattr(ssl, "enum_certificates"):  # 只有 Windows 有
+        return None
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    for cert, enc, trust in ssl.enum_certificates("ROOT"):
+        if enc == "x509_asn" and (trust is True or "1.3.6.1.5.5.7.3.1" in trust):  # 可用於伺服器驗證
+            try:
+                ctx.load_verify_locations(cadata=cert)
+            except ssl.SSLError:
+                pass
+    return ctx
+
+
+def _urlopen(req: urllib.request.Request, timeout: int):
+    """一般連線；憑證驗證失敗時改用只信任根憑證的設定再試一次（仍然完整驗證憑證，不會略過）。"""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.URLError as e:
+        ctx = _windows_root_context() if isinstance(e.reason, ssl.SSLCertVerificationError) else None
+        if ctx is None:
+            raise
+        return urllib.request.urlopen(req, timeout=timeout, context=ctx)
 
 
 def update_dir() -> Path:
@@ -117,7 +145,7 @@ def fetch_latest_release(timeout: int = 6) -> Dict[str, Any]:
     """GitHub 最新正式 Release（不含草稿與預先發布版）。"""
     req = urllib.request.Request(RELEASES_API, headers=UA)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _urlopen(req, timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -188,7 +216,7 @@ def _download_release(rel: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
     """下載該 Release 標籤的原始碼壓縮包，只解出 src/ 與 web/ 到 update/。"""
     url = TAG_ZIP.format(repo=REPO, tag=rel["tag"])
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as resp:
+        with _urlopen(urllib.request.Request(url, headers=UA), timeout) as resp:
             raw_zip = resp.read()
     except Exception as e:
         raise RuntimeError(f"下載 {rel['tag']} 失敗：{e}") from None
@@ -267,7 +295,7 @@ def auto_update_on_boot(on_status: Optional[Callable[[str], None]] = None) -> bo
         if not chk.get("ok") or not chk.get("has_update"):
             return False
         if on_status:
-            on_status(f"發現新版本 {chk['remote']['tag']}，正在下載更新…")
+            on_status(f"發現新版本：v{chk['current']['version']} → {chk['remote']['tag']}，正在下載更新…")
         return bool(apply_update(timeout=20).get("updated"))
     except Exception:
         return False

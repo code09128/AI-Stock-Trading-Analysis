@@ -9,6 +9,7 @@
   const QUIET = [
     '/api/quotes',
     '/api/indices',
+    '/api/board/',
     '/api/sparks',
     '/api/intraday',
     '/api/overview',

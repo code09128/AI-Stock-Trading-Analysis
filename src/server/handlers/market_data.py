@@ -5,7 +5,7 @@ import time
 
 from src.market import quote_provider
 from src.market.etf_reference import ETF_POOL
-from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, markets
+from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, market_board, markets
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
 from src.server.params import arg_num
@@ -72,6 +72,12 @@ class MarketDataHandlers:
                             payload.get("holdings") if isinstance(payload.get("holdings"), dict) else None)
         out["timestamp"] = time.strftime("%H:%M:%S")
         return out
+
+    def handle_board(self, part: str) -> Dict[str, Any]:
+        """大盤籌碼頁：world（國際指數＋台指期）／sectors（產業排行）／flow（三大法人）／tw50。"""
+        fn = {"world": market_board.world_indices, "sectors": market_board.sectors,
+              "flow": market_board.fund_flow, "tw50": market_board.tw50}[part]
+        return {**fn(), "timestamp": time.strftime("%H:%M:%S")}
 
     def handle_sparks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:40]

@@ -164,6 +164,26 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(res["mode"], "source")
         dl.assert_not_called()
 
+    def test_cert_verify_failure_retries_with_root_store_context(self):
+        """中繼憑證區有舊交叉簽章憑證時，改用只信任根憑證的設定再連一次（仍然驗證憑證）。"""
+        import ssl
+        import urllib.error
+        bad = urllib.error.URLError(ssl.SSLCertVerificationError("unable to get issuer certificate"))
+        body = b'{"tag_name": "v1.2.0", "body": "notes"}'
+        ctx = object()
+        with patch("urllib.request.urlopen", side_effect=[bad, self._resp(body)]) as op, \
+                patch.object(updater, "_windows_root_context", return_value=ctx):
+            rel = updater.fetch_latest_release()
+        self.assertEqual(rel["version"], "1.2.0")
+        self.assertIs(op.call_args_list[1].kwargs["context"], ctx)
+
+    def test_other_network_errors_are_not_retried(self):
+        import urllib.error
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timed out")) as op:
+            res = updater.check_update()
+        self.assertFalse(res["ok"])
+        self.assertEqual(op.call_count, 1)
+
     def test_no_release_yet(self):
         import urllib.error
         err = urllib.error.HTTPError(updater.RELEASES_API, 404, "Not Found", {}, None)

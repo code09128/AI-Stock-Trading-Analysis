@@ -10,6 +10,8 @@
 | 頁面 | 做什麼 |
 |---|---|
 | **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
+| **大盤籌碼** | 開盤前先看大環境：國際指數（美股、亞洲、美元指數、匯率）、美股期貨、**台指期日盤＋夜盤**與期現貨價差；三大法人近 5 日買賣超、類股成交比重；**產業漲跌排行**（證交所各類股，附成交金額、比重、量比）；**台灣 50**（上市市值前 50 大，盤中即時、量比、市值）。全部公開資料，不需金鑰 |
+| **多圖走勢** | 一次看 2×2／3×3／4×4 張分時走勢，每格自己輸入代號，5 組版面各自儲存（可一鍵帶入自選股或持股） |
 | **技術分析** | 還權日 K、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
 | **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
 | **策略回測** | 9 種策略：技術面 6 種（雙均線、KD 低檔黃金交叉、均線多頭排列、量價突破、乖離率回歸、跳空缺口）＋台股籌碼／基本面 3 種（法人連買、月營收創新高、融資減少；FinMind 歷史存在本機只補抓最新幾天），另可用 🧱 條件積木自訂策略（5 個範本）；訊號隔日開盤成交、含各市場手續費與法定稅；部位模型（資金比例／固定金額／ATR 風險定額）、單筆停損與移動停利、大盤均線濾網（統計擋下次數）、成交量 0 視同暫停交易；最大回撤以每日收盤市值計算；1／3／5／10 年、多空盤整環境拆解、前後段驗證；參數熱力圖（★ 穩定高原、對照買進持有）、滾動前進分析（WFE）、蒙地卡羅（打亂順序／重抽樣 500～3,000 次）；📡 今日訊號（自選股／持股／自訂清單 × 策略，匯出 CSV）、📤 匯出 TradingView Pine v5（附使用說明與差異說明）、🖨️ PDF 報告、🧩 策略組合（等權重／波動率倒數／夏普值加權、相關係數矩陣、績效貢獻）、▶ K 線回放教學（逐根播放、買賣點自動暫停說明、語音解說）；台股證交稅依股票 0.3%／ETF 0.1%／債券 ETF 停徵自動套用 |
@@ -99,10 +101,13 @@ cd AI-Stock-Trading-Analysis
 - 版本號在 `src/version.py`（`APP_VERSION`，格式 主.次.修）。打包版只會更新到 GitHub 上**正式發布的 Release**，推到 `main` 的開發中修改不會被推給使用者。
 - 打包版每次重新啟動時自動檢查最新 Release，有新版就下載該版本的 `src/`、`web/` 到程式資料夾的 `update/` 並套用；設定頁「版本與線上更新」也能手動檢查與下載。下載後會核對壓縮檔裡的版本號和 Release 一致才套用，`data/` 與 `.env` 不受影響。
 - 原始碼版（有 `.git`）不會被自動覆蓋，有新版時設定頁會提示，請自己 `git pull`。
+- 啟動畫面標題下顯示目前版本，載入清單的「檢查更新」會顯示是否有新版與 Release 說明前兩行。
+- **程式內連不上 GitHub 時（手動更新）**：把 `manual_update.bat`、`manual_update.ps1`（Release 附件或專案根目錄）放到程式安裝資料夾，先結束程式再雙擊 `manual_update.bat`。它用 Windows 的 PowerShell 下載最新 Release，做的事和程式內建更新相同（只放 `src/`、`web/` 到 `update/` 並核對版本號），重開程式即生效。
+  - 已知原因：部分電腦「中繼憑證授權單位」留有舊的交叉簽章憑證（USERTrust ECC，簽發者 AAA Certificate Services），Python 驗證 GitHub 憑證鏈時會失敗（`unable to get issuer certificate`），瀏覽器與 PowerShell 不受影響。v1.0.3 起程式遇到這種錯誤會改用只信任根憑證的設定重試；更早的打包版請用手動更新、重新安裝，或自行在 `certmgr.msc` 刪除那張中繼憑證。
 - 發布新版：改 `src/version.py` 的版本號 → commit、push → 建立同名 Release，例如：
 
   ```bash
-  gh release create v1.0.1 --title "v1.0.1" --notes "這一版的更新內容"
+  gh release create v1.0.1 --title "v1.0.1" --notes "這一版的更新內容" manual_update.bat manual_update.ps1
   ```
 
 ## 設定（全部選填）
@@ -190,7 +195,7 @@ python build_app.py --portable   # 另外再產生免安裝單一執行檔（多
 src/
 ├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar、
 │                trade_rules（海外手續費/每手股數）、finmind、finmind_store（FinMind 歷史本機快取）、chip_data（籌碼）、etf_data、etf_reference、
-│                chart_data、heatmap（股市熱力圖）、fx、markets、market_calendar、market_rules、tz
+│                chart_data、heatmap（股市熱力圖）、market_board（大盤籌碼頁：國際指數、台指期、法人、產業、台灣 50）、fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
 ├── news/        新聞：news_feed（多來源抓取與去重）、announcement_store（重大訊息每日存檔與歷史）、
 │                news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
@@ -213,7 +218,7 @@ src/
 - `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認與畫面縮放；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
 - `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
 - `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
-- `pages/`：watch（看盤）、heatmap（股市熱力圖）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
+- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、multi_chart（多圖走勢）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 
 開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。

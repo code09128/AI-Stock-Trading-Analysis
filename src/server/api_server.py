@@ -6,7 +6,7 @@
 - 啟動伺服器（run_server）
 
 主要端點：
-- GET  /api/health、/api/indices、/api/etf、/api/fetchlog、/api/tests/run、/api/mod3/strategies（回測策略清單）
+- GET  /api/health、/api/indices、/api/board/*（大盤籌碼頁）、/api/etf、/api/fetchlog、/api/tests/run、/api/mod3/strategies（回測策略清單）
 - POST /api/mod1/analyze（技術分析）、/api/mod2/news（新聞判斷）、/api/mod3/backtest（策略回測）、/api/mod3/optimize（參數熱力圖與滾動前進）、/api/mod3/montecarlo、/api/mod3/signals（今日訊號）、/api/mod3/pine（匯出 Pine v5）、/api/mod3/portfolio（策略組合）、/api/mod3/custom/describe（自訂策略檢查）、
        /api/mod4/risk（組合風控）、/api/mod5/coach（交易檢討）、/api/news/digest、/api/fundamentals、
        /api/quotes、/api/stockinfo、/api/ai/* …（完整清單見 ROUTES）
@@ -44,6 +44,10 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/tests/run": D.handle_run_tests,
     "/api/mod3/strategies": D.handle_mod3_strategies,
     "/api/mod3/custom/templates": D.handle_mod3_custom_templates,
+    "/api/board/world": lambda: D.handle_board("world"),
+    "/api/board/sectors": lambda: D.handle_board("sectors"),
+    "/api/board/flow": lambda: D.handle_board("flow"),
+    "/api/board/tw50": lambda: D.handle_board("tw50"),
     "/api/update/status": updater.current_version,
     "/api/update/check": updater.check_update,
 }

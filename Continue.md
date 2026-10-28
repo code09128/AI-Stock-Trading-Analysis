@@ -88,7 +88,14 @@
    - FinMind「測試」按鈕改成驗證成功才寫入 `.env`；走勢預測卡基準價改用最新收盤；暫存匣「成交」按鈕未勾規則時停用。
    - 注意：該 agent 直接修改過 `data/userdata.json`（移除 0050、寫入 15 筆持有中紀錄），違反專案規則；持有中紀錄會由上面的清理移除。
 16. ✅ **v1.0.1（2026-10-26）**：美股開盤前分時圖空白（Yahoo「1 天」回上一個交易日的點，交易時段卻是今天 → `chart_data.intraday` 把時段整天往前移到資料點那天並標 `is_fallback`）；分時圖「最後成交」改用最後一個分時點的實際時間，同時列交易所當地時間與台灣時間（例如「2026-10-23 16:00（美東）／台灣 2026-10-24 04:00」）；報價（台灣時間）比分時圖新時註明分時資料來源尚未更新。交易檢討沒有賣出也顯示持有中部位、功能說明卡。
-17. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
+17. ✅ **大盤籌碼頁、多圖走勢、啟動畫面版本資訊（2026-10-28）**：
+   - 大盤籌碼（側邊欄「行情」）：`src/market/market_board.py`，`GET /api/board/world|sectors|flow|tw50`。國際指數與美股期貨走 Yahoo；加權、櫃買走 TWSE MIS（`t00`／`o00`，Yahoo 沒有櫃買指數）；台指期日盤＋夜盤走期交所 MIS（`mis.taifex.com.tw` POST，`_http_json` 新增 `body` 參數）；產業排行、類股成交、三大法人走證交所 `MI_INDEX`／`BFIAMU`／`BFI82U`（收盤後才有當天，之前往回找最近交易日；過去日期永久快取；連續請求間隔 0.8 秒避免被證交所擋）；台灣 50＝`STOCK_DAY_ALL` × 上市公司已發行股數取市值前 50（不含 ETF，接近但不等於正式成分股）。
+   - MIS 一次查太多檔會很慢（實測 20 檔十幾秒、10 檔不到 1 秒），台灣 50 每 10 檔一批、同時 2 批，失敗的批次重試一次；仍失敗的那檔改用前一日收盤並標「收盤」。MIS 不支援類股指數代號（查了會卡住），所以產業排行只能用盤後資料。
+   - 多圖走勢（側邊欄「行情」）：`web/pages/multi_chart.jsx`，用 `/api/intraday`，同時最多抓 3 檔、每 60 秒一輪；5 組版面存 `tw_us_multichart_v1`（會同步到 userdata）。
+   - 啟動畫面：標題下顯示版本與來源（原始碼版／打包內建版／線上更新版），步驟清單多一項「檢查更新」，有新版標黃色並列出 Release 說明前兩行與更新方式；桌面版下載訊息改成「v1.0.2 → v1.0.3」。打包版仍維持啟動時自動下載。
+   - 測試 `tests/test_market_board.py`（台指期近月、產業排行與比重、法人加總、台灣 50 排名與量比、失敗不快取）。
+18. ✅ **v1.0.3 線上更新憑證問題與手動更新（2026-10-28）**：使用者電腦 `CurrentUser\CA` 有被 AAA Certificate Services 交叉簽章的 USERTrust ECC，Python 的 `load_default_certs` 會連同中繼憑證一起當信任來源，OpenSSL 先挑到它而驗證 GitHub（Sectigo E36 → E46 → USERTrust ECC）失敗；PowerShell、curl 正常。`updater._urlopen` 遇到 `SSLCertVerificationError` 時改用只載入 Windows ROOT 區（可用於伺服器驗證）的 SSLContext 重試，仍完整驗證。舊打包版無法自己更新到這個修正，另做 `manual_update.bat`／`manual_update.ps1`（PowerShell 下載最新 Release → `update\`，核對版本號、寫 `version.json`；程式執行中會要求先關閉；原始碼專案資料夾會先警告），Release 附上這兩個檔案。`.gitignore` 加 `update/`。
+19. **之後可考慮**：自訂策略加入籌碼以外的 FinMind 資料（月營收、融資）當運算元；策略組合加入再平衡成本；K 線回放加上技術指標副圖。
 
 ---
 

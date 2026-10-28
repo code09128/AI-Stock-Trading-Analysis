@@ -47,6 +47,9 @@
       background: linear-gradient(135deg, #0ea5e9, #4f46e5); display: flex; align-items: center; justify-content: center; }
     #splash .sp-title { font-size: 22px; font-weight: 600; letter-spacing: 0.02em; }
     #splash .sp-sub { font-size: 12px; color: #6b7584; letter-spacing: 0.18em; text-transform: uppercase; margin-top: -12px; }
+    #splash .sp-ver { font-size: 12px; color: #9aa4b2; margin-top: -10px; min-height: 16px; }
+    #splash .sp-note { width: 340px; max-width: calc(100vw - 32px); font-size: 11px; color: #fbbf24; line-height: 1.6;
+      border-left: 2px solid #f59e0b; padding-left: 8px; white-space: pre-line; }
     #splash .sp-chart { display: flex; align-items: flex-end; gap: 7px; height: 56px; margin-top: 6px; }
     #splash .sp-bar { width: 9px; border-radius: 2px; position: relative; animation: sp-grow 1.2s ease-in-out infinite; }
     #splash .sp-bar::before { content: ''; position: absolute; left: 4px; width: 1px; top: -8px; bottom: -8px; background: inherit; }
@@ -192,6 +195,8 @@
   <script type="text/babel" src="./pages/holdings_panel.jsx"></script>
   <script type="text/babel" src="./pages/heatmap.jsx"></script>
   <script type="text/babel" src="./pages/watch.jsx"></script>
+  <script type="text/babel" src="./pages/market_board.jsx"></script>
+  <script type="text/babel" src="./pages/multi_chart.jsx"></script>
   <script type="text/babel" src="./pages/candle_guide.jsx"></script>
   <script type="text/babel" src="./pages/strategy_guide.jsx"></script>
   <script type="text/babel" src="./pages/settings_monitor.jsx"></script>

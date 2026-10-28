@@ -35,6 +35,9 @@
     const splash = document.getElementById('splash');
     if (!splash) return null;
     const msg = document.getElementById('splash-msg');
+    const ver = document.createElement('div');
+    ver.className = 'sp-ver';
+    splash.querySelector('.sp-sub')?.after(ver);
     const list = document.createElement('ul');
     list.className = 'sp-steps';
     splash.appendChild(list);
@@ -43,7 +46,7 @@
     skip.className = 'sp-skip';
     skip.textContent = '直接進入（剩下的在背景繼續載入）';
     splash.appendChild(skip);
-    return { list, msg, skip };
+    return { list, msg, skip, ver, splash };
   }
 
   function addRow(ui, label) {
@@ -68,7 +71,8 @@
     };
   }
 
-  // 跑一個步驟：成功顯示結果摘要；逾時或失敗只標示，不擋住進入
+  // 跑一個步驟：成功顯示結果摘要；逾時或失敗只標示，不擋住進入。
+  // fn 回傳 { warn: '說明' } 時這一項標成黃色（例如有新版本）
   function runStep(ui, label, fn) {
     const row = addRow(ui, label);
     const started = Date.now();
@@ -88,7 +92,8 @@
             done = true;
             clearTimeout(timer);
             const sec = ((Date.now() - started) / 1000).toFixed(1);
-            row.set('ok', info ? `${info}・${sec} 秒` : `${sec} 秒`);
+            if (info?.warn) row.set('warn', info.warn);
+            else row.set('ok', info ? `${info}・${sec} 秒` : `${sec} 秒`);
             resolve();
           },
           (e) => {
@@ -100,6 +105,34 @@
           },
         );
     });
+  }
+
+  // 版本與更新：標題下顯示目前版本；有新版時顯示更新說明前兩行。
+  // 打包版啟動時已在背景自動下載（desktop.py），這裡只顯示結果，不另外下載
+  async function checkVersion(ui) {
+    const d = await getJSON('/api/update/check');
+    const cur = d.current?.version;
+    if (ui?.ver && cur) ui.ver.textContent = `v${cur}${d.current?.source ? `・${d.current.source}` : ''}`;
+    if (!d.ok) return { warn: `無法檢查更新（${d.error || '連線失敗'}）` };
+    if (!d.has_update) return `v${cur} 已是最新版`;
+    const tag = d.remote?.tag || `v${d.remote?.version}`;
+    const lines = String(d.remote?.notes || '')
+      .split(/\r?\n/)
+      .map((s) => s.replace(/^[\s#*-]+/, '').trim())
+      .filter(Boolean)
+      .slice(0, 2);
+    const how = d.source_checkout
+      ? '原始碼版請用 git pull 更新。'
+      : d.current?.source === '原始碼版'
+        ? '可到設定頁下載更新。'
+        : '重新啟動程式會自動更新，或到設定頁立即下載。';
+    if (ui?.splash) {
+      const note = document.createElement('div');
+      note.className = 'sp-note';
+      note.textContent = lines.length ? `${tag} 更新內容：\n${lines.join('\n')}\n${how}` : how;
+      ui.list.after(note);
+    }
+    return { warn: `有新版 ${tag}（目前 v${cur}）` };
   }
 
   function bootPreload() {
@@ -122,6 +155,7 @@
           await getJSON('/api/health');
           return '';
         }),
+        runStep(ui, '檢查更新', () => checkVersion(ui)),
         runStep(ui, '讀取你的資料', async () => {
           await window.TA.userDataReady;
           const w = readJSON('tw_us_watchlist_v1', null);
