@@ -525,12 +525,15 @@
             <NumField
               id="m3-disc"
               label="台股手續費折數"
-              tip="券商手續費 0.1425% 乘上折數，例如 0.6＝六折。台股賣出另扣證交稅：股票 0.3%、ETF 0.1%、債券 ETF（代號 B 結尾）停徵到 2026 年底，回測會依標的自動套用。"
+              tip="券商手續費 0.1425% 乘上折數，例如 0.6＝六折；這個折數跟看盤頁模擬下單共用，改一邊另一邊也會跟著變。台股賣出另扣證交稅：股票 0.3%、ETF 0.1%、債券 ETF（代號 B 結尾）停徵到 2026 年底，回測會依標的自動套用。美股賣出另扣 SEC 規費與 FINRA TAF。"
               step="0.1"
               min="0.1"
               max="1.0"
               value={m3Form.commission_discount}
-              onChange={(v) => set({ commission_discount: v })}
+              onChange={(v) => {
+                set({ commission_discount: v });
+                window.TA.setFeeDiscount(v); // 與模擬下單共用；輸入到一半的值不會存
+              }}
             />
             <div>
               <label htmlFor="m3-years" className="block text-xs text-slate-400 mb-1">

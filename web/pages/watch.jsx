@@ -16,6 +16,9 @@
     colorOf,
     twTick,
     isOnTick,
+    twFee,
+    feeDiscount,
+    localDate,
     Tip,
     Stat,
     RangeBar,
@@ -58,8 +61,15 @@
       side: 'BUY',
       lotType: 'ROUND',
       tif: 'ROD',
+      priceType: 'LIMIT', // 台股：LIMIT 限價／UP 漲停／DOWN 跌停／FLAT 平盤／MKT 市價
+      session: 'REGULAR', // 台股：REGULAR 盤中／AFTER 盤後
+      usKind: 'NORMAL', // 美股：NORMAL 一般／STOP 觸價／MOO 限定開盤／MOC 限定收盤
+      stopPrice: '',
+      gtc: false, // 美股長效單
+      gtcDate: '',
       usType: 'LIMIT',
       usTif: 'ANY',
+      settle: 'FX', // 美股交割：FX 外幣／TWD 台幣
       price: '',
       qty: 1,
     });
@@ -265,11 +275,18 @@
 
     // 台美股以外：每手股數與法定稅費（港股每檔不同，後端查港交所清單）
     const [tradeRules, setTradeRules] = useState(null);
+    // 手續費折數（與策略回測共用）：在下單面板或回測頁改了，這裡跟著重算
+    const [feeDisc, setFeeDisc] = useState(feeDiscount);
+    useEffect(() => {
+      const on = () => setFeeDisc(feeDiscount());
+      window.addEventListener('fee-discount-changed', on);
+      return () => window.removeEventListener('fee-discount-changed', on);
+    }, []);
     useEffect(() => {
       let stop = false;
       setTradeRules(null);
       const m = window.TA.marketOf(selected);
-      if (m === 'TW' || m === 'US') return;
+      if (m === 'TW') return; // 美股也要查：SEC 規費、FINRA TAF 由後端依今天日期決定
       fetch('/api/trade_rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -452,21 +469,39 @@
     };
 
     // 下單試算與檢核
-    const priceNum = Number(order.price);
+    // 台股價格類型不是「限價」時，價格跟著報價走：漲停／跌停／平盤（昨收）；市價買用最佳賣價、賣用最佳買價
+    // 盤後整張是「盤後定價交易」，一律用收盤價
+    const afterRound = tw && order.session === 'AFTER' && order.lotType === 'ROUND';
+    const derivedPrice = !tw
+      ? null
+      : afterRound
+        ? q?.price
+        : order.priceType === 'UP'
+          ? q?.limit_up
+          : order.priceType === 'DOWN'
+            ? q?.limit_down
+            : order.priceType === 'FLAT'
+              ? q?.prev_close
+              : order.priceType === 'MKT'
+                ? (order.side === 'BUY' ? q?.asks?.[0]?.price : q?.bids?.[0]?.price) || q?.price
+                : null;
+    const priceLocked = tw && (afterRound || order.priceType !== 'LIMIT');
+    const priceNum = priceLocked ? Number(derivedPrice || 0) : Number(order.price);
     const qtyNum = Number(order.qty);
     const shares = tw ? (order.lotType === 'ROUND' ? qtyNum * 1000 : qtyNum) : qtyNum;
     const amount = priceNum * shares;
-    const feeRate = 0.001425;
     // 台股手續費與證交稅都是「元以下無條件捨去」（與券商對帳單一致）；手續費整張最低 20 元、零股最低 1 元
-    const fee = tw
-      ? Math.max(order.lotType === 'ROUND' ? 20 : 1, Math.floor(amount * feeRate + 1e-9))
-      : 0;
+    const fee = tw ? twFee(amount, order.lotType === 'ROUND', feeDisc) : 0;
     const sideKey = order.side === 'SELL' ? 'SELL' : 'BUY';
     const statutoryTax = (tradeRules?.fees || [])
       .filter((f) => f.side === sideKey || f.side === 'BOTH')
       .reduce((s, f) => {
-        const v = amount * f.rate;
-        return s + (f.ceil ? Math.ceil(v - 1e-9) : Math.round(v * 100) / 100);
+        // 與後端 trade_rules.statutory_cost 相同：按金額（rate）或按股數（per_share，美股 TAF），可有最低／上限
+        let v = f.per_share != null ? shares * f.per_share : amount * f.rate;
+        v = f.ceil ? Math.ceil(v - 1e-9) : Math.round(v * 100) / 100;
+        if (f.min != null) v = Math.max(f.min, v);
+        if (f.max != null) v = Math.min(f.max, v);
+        return s + v;
       }, 0);
     const tax = tw
       ? order.side === 'SELL'
@@ -474,7 +509,8 @@
         : 0
       : Math.round(statutoryTax * 100) / 100;
     const orderIssues = [];
-    if (!(priceNum > 0)) orderIssues.push('請輸入價格');
+    if (!(priceNum > 0))
+      orderIssues.push(priceLocked ? '目前取不到這個價格類型的報價資料（漲跌停／昨收／五檔），請改用限價' : '請輸入價格');
     // 數量：台股整張與零股買進要整數；台股零股賣出允許小數（把銀行碎股記錄平倉用）；美股可交易碎股
     if (!(qtyNum > 0)) orderIssues.push('數量需大於 0');
     else if (tw && order.lotType === 'ROUND' && !Number.isInteger(qtyNum))
@@ -489,8 +525,33 @@
     if (tw && q?.limit_up && priceNum > q.limit_up) orderIssues.push(`高於漲停價 ${q.limit_up}`);
     if (tw && q?.limit_down && priceNum > 0 && priceNum < q.limit_down)
       orderIssues.push(`低於跌停價 ${q.limit_down}`);
-    if (tw && order.lotType === 'ODD' && order.tif === 'ROD')
-      orderIssues.push('提醒：盤中零股為逐筆撮合，ROD 以當日有效為準');
+    if (tw && order.lotType === 'ODD' && order.tif === 'ROD' && order.session === 'REGULAR')
+      // 盤中零股是集合競價：09:10 第一次撮合，之後每 5 秒一次（2024-12-02 起；原本寫「逐筆撮合」是錯的）
+      // 出處：證交所／櫃買中心零股交易規則 https://www.tpex.org.tw/zh-tw/mainboard/trading/rules/odd-lot.html（查證 2026-10-29）
+      orderIssues.push('提醒：盤中零股是集合競價，09:10 第一次撮合、之後每 5 秒撮合一次；ROD 當日有效');
+    if (tw && order.session === 'AFTER') {
+      orderIssues.push(
+        order.lotType === 'ROUND'
+          ? '提醒：盤後定價交易 14:00～14:30 接受委託，一律以當日收盤價成交（模擬用目前價格）'
+          : '提醒：盤後零股 13:40～14:30 接受委託，14:30 一次撮合',
+      );
+      if (order.tif !== 'ROD') orderIssues.push('盤後交易只接受 ROD');
+      if (order.lotType === 'ODD' && order.priceType !== 'LIMIT') orderIssues.push('盤後零股只接受限價委託');
+    }
+    if (tw && order.priceType === 'MKT' && order.session === 'REGULAR')
+      orderIssues.push('提醒：市價單不保證成交價，模擬以目前最佳一檔價格計算');
+    if (!tw && order.usType === 'MARKET' && order.side === 'BUY') orderIssues.push('市價只能用在賣出');
+    if (!tw && order.usKind === 'STOP' && !(Number(order.stopPrice) > 0)) orderIssues.push('觸價單請輸入觸發價');
+    if (!tw && order.usKind === 'STOP' && Number(order.stopPrice) > 0)
+      orderIssues.push(
+        `提醒：觸價單要等價格${order.side === 'BUY' ? '漲到' : '跌到'} ${order.stopPrice} 才會送出；模擬成交不等待觸發`,
+      );
+    if (!tw && (order.usKind === 'MOO' || order.usKind === 'MOC'))
+      orderIssues.push(
+        `提醒：${order.usKind === 'MOO' ? '限定開盤只在開盤競價' : '限定收盤只在收盤競價'}成交；模擬以目前價格計算`,
+      );
+    if (!tw && order.gtc && !(order.gtcDate > localDate()))
+      orderIssues.push('長效單的到期日要晚於今天');
     const lot = tradeRules?.lot;
     if (!tw && tradeRules?.error) orderIssues.push(`提醒：${tradeRules.error}，無法檢查每手股數`);
     if (!tw && lot > 1 && qtyNum > 0 && qtyNum % lot !== 0)
@@ -533,7 +594,7 @@
         price: priceNum,
         qty: qtyNum,
         unit: tw ? (order.lotType === 'ROUND' ? '張' : '股') : '股',
-        type: tw ? order.tif : `${order.usType === 'LIMIT' ? '限價' : '市價'}/${order.usTif}`,
+        type: window.TA.orderLabel(order, tw),
         amount,
         fee,
         tax,
@@ -861,6 +922,8 @@
                       lotType: t ? (round ? 'ROUND' : 'ODD') : o.lotType,
                       qty: round ? lots : r.shares,
                       price: String(r.price ?? r.cost),
+                      priceType: 'LIMIT',
+                      session: 'REGULAR', // 之前選了盤後的話，整張會鎖成收盤價，帶入的價格就沒作用
                     }));
                     say(
                       round && rest > 0
@@ -1173,6 +1236,14 @@
                     >
                       設提醒
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => window.TA.openSavings?.(baseCode(selected))}
+                      title="到存股計畫，用這檔的長期報酬率試算定期定額"
+                      className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
+                    >
+                      存股試算
+                    </button>
                   </div>
                 </div>
 
@@ -1191,6 +1262,11 @@
                     tax,
                     tradeRules,
                     tw,
+                    priceNum,
+                    priceLocked,
+                    etfFlag,
+                    afterRound,
+                    feeDisc,
                   }}
                 />
               </>
@@ -1207,5 +1283,14 @@
     );
   }
 
-  window.TA = Object.assign(window.TA || {}, { WatchPage });
+  // 其他頁面（多圖走勢、大盤籌碼、存股計畫）一鍵切到看盤頁看某一檔：看盤頁掛上時讀 _pendingWatch
+  const openInWatch = (sym) => {
+    if (!sym) return;
+    const detail = { select: normSym(sym), rightTab: 'quote' };
+    window.TA._pendingWatch = detail;
+    window.TA.goTab?.('watch');
+    window.dispatchEvent(new CustomEvent('watch-action', { detail }));
+  };
+
+  window.TA = Object.assign(window.TA || {}, { WatchPage, openInWatch });
 })();

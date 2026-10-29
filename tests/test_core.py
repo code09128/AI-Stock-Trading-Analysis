@@ -61,6 +61,23 @@ class TestTradingCore(unittest.TestCase):
         self.assertEqual(sell_res["fee"], 1567.0)  # 1,567.5 元以下無條件捨去
         self.assertEqual(sell_res["tax"], 3300.0) # 0.3% 證交稅
 
+    def test_us_sell_fees_current_rates(self):
+        """美股賣出 1 萬股 × 100 美元：SEC 規費 100 萬 × 20.60／百萬 = 20.60、TAF 1 萬 × 0.000195 = 1.95（費率 2026-10-29 查證）。"""
+        from datetime import date
+        from src.market.trade_rules import rules_for, statutory_cost, us_fees
+        res = calculate_friction_cost("US", "SELL", 100.0, 10000)
+        self.assertAlmostEqual(res["tax"], 22.55)
+        self.assertEqual(calculate_friction_cost("US", "BUY", 100.0, 10000)["tax"], 0.0)
+        self.assertAlmostEqual(statutory_cost(us_fees(), "SELL", 1e8, 1_000_000), 2060 + 9.79)  # TAF 每筆上限
+        self.assertAlmostEqual(statutory_cost(us_fees(date(2026, 11, 2)), "SELL", 1e6, 10000), 20.60)  # 2026 Q4 TAF 暫停
+        self.assertEqual(statutory_cost(us_fees(), "SELL", 10, 1), 0.01 + 0.0)  # SEC 規費進位到 1 美分
+        # 看盤頁模擬下單用的交易規則（/api/trade_rules）也帶同一份美股規費
+        self.assertEqual([f["label"] for f in rules_for("NVDA")["fees"]][0], "SEC 規費")
+        # 提示依日期產生：暫停期間才寫「暫停收費」，過了就不再顯示
+        from src.market.trade_rules import _us_note
+        self.assertIn("暫停收費", _us_note(date(2026, 11, 1)))
+        self.assertNotIn("暫停", _us_note(date(2027, 1, 2)))
+
     def test_backtest_zero_lookahead_and_metrics(self):
         # 模擬 5 根 K 棒
         bars = [

@@ -161,7 +161,7 @@
         </div>
         {f.in_file && st?.path && (
           <div className="text-[11px] text-emerald-300/90">
-            📁 檔案確認：<span className="mono">{st.path}</span>（已寫入並生效）
+            📁 檔案確認：<span className="mono break-all">{st.path}</span>（已寫入並生效）
           </div>
         )}
         <div className="flex flex-wrap gap-2">
@@ -342,7 +342,7 @@
               )}
             </div>
             <div className="text-[11px] text-slate-400">
-              設定檔路徑：<span className="mono text-slate-300">{st.path}</span>
+              設定檔路徑：<span className="mono text-slate-300 break-all">{st.path}</span>
               {st.exists ? (
                 <span className="ml-2 text-emerald-400">（✅ 檔案已存在）</span>
               ) : (

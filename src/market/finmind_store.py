@@ -30,11 +30,15 @@ def cache_dir() -> Path:
 
 
 def _key(dataset: str) -> Callable[[Dict[str, Any]], Tuple]:
-    """同一筆資料的唯一鍵：法人買賣一天有多種身分（name）、月營收以年月為準。"""
+    """同一筆資料的唯一鍵：法人買賣一天有多種身分（name）、月營收以年月為準、
+    股利政策同一天可能公告多個期別（以期別與除權息日區分）。"""
     if dataset == "TaiwanStockInstitutionalInvestorsBuySell":
         return lambda r: (r.get("date"), r.get("name"))
     if dataset == "TaiwanStockMonthRevenue":
         return lambda r: (int(r.get("revenue_year") or 0), int(r.get("revenue_month") or 0))
+    if dataset == "TaiwanStockDividend":
+        return lambda r: (r.get("date"), r.get("year"), r.get("CashExDividendTradingDate"),
+                          r.get("StockExDividendTradingDate"))
     return lambda r: (r.get("date"),)
 
 

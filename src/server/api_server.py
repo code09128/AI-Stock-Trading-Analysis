@@ -8,7 +8,7 @@
 主要端點：
 - GET  /api/health、/api/indices、/api/board/*（大盤籌碼頁）、/api/etf、/api/fetchlog、/api/tests/run、/api/mod3/strategies（回測策略清單）
 - POST /api/mod1/analyze（技術分析）、/api/mod2/news（新聞判斷）、/api/mod3/backtest（策略回測）、/api/mod3/optimize（參數熱力圖與滾動前進）、/api/mod3/montecarlo、/api/mod3/signals（今日訊號）、/api/mod3/pine（匯出 Pine v5）、/api/mod3/portfolio（策略組合）、/api/mod3/custom/describe（自訂策略檢查）、
-       /api/mod4/risk（組合風控）、/api/mod5/coach（交易檢討）、/api/news/digest、/api/fundamentals、
+       /api/mod4/risk（組合風控）、/api/savings/*（存股計畫）、/api/mod5/coach（交易檢討）、/api/news/digest、/api/fundamentals、
        /api/quotes、/api/stockinfo、/api/ai/* …（完整清單見 ROUTES）
 """
 
@@ -80,6 +80,9 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/mod3/portfolio": D.handle_mod3_portfolio,
     "/api/mod3/custom/describe": D.handle_mod3_custom_describe,
     "/api/mod4/risk": D.handle_mod4_risk,
+    "/api/savings/calc": D.handle_savings_calc,
+    "/api/savings/returns": D.handle_savings_returns,
+    "/api/savings/dividends": D.handle_savings_dividends,
     "/api/mod5/coach": D.handle_mod5_coach,
     # AI
     "/api/ai/test": lambda p: D.handle_ai("test", p),

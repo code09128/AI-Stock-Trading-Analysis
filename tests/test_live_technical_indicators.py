@@ -1,4 +1,7 @@
+from datetime import date, timedelta
 import unittest
+from unittest.mock import patch
+
 from src.market.bar import Bar
 from src.market.data_adapter import DualMarketDataAdapter
 
@@ -80,21 +83,28 @@ class TestLiveTechnicalIndicators(unittest.TestCase):
         self.assertEqual(merged[-1].close, 105.0)
 
     def test_indicators_incorporate_live_price(self):
-        """驗證 build_technical_snapshot 納入即時報價後，MA 與最新價格即時連動"""
-        snap_no_live = self.adapter.build_technical_snapshot("2330.TW", include_live=False)
-        base_price = snap_no_live["latest_close"]
-        live_quote = {
-            "is_live": True,
-            "price": base_price + 200.0,
-            "open": base_price + 10.0,
-            "high": base_price + 210.0,
-            "low": base_price,
-            "volume": 5000.0,
-            "quote_date_local": "20261024",
-            "quote_time": "2026-10-24 13:00:00",
-            "source": "TWSE MIS",
-        }
-        snap = self.adapter.build_technical_snapshot("2330.TW", quote=live_quote, include_live=True)
+        """驗證 build_technical_snapshot 納入即時報價後，MA 與最新價格即時連動（日 K 用假資料，不連網、不受今天日期影響）"""
+        start = date(2026, 1, 1)
+        bars = [Bar(timestamp=(start + timedelta(days=i)).isoformat(), open=1000.0, high=1010.0,
+                    low=990.0, close=1000.0 + i, volume=1000.0) for i in range(220)]
+        feed = {"market": "TW", "symbol": "2330.TW", "currency": "TWD", "data_source": "LIVE_YAHOO_FINANCE",
+                "is_live": True, "bars": bars}
+        next_day = start + timedelta(days=220)  # 日 K 最後一天的隔天：報價比日 K 新才會被併入
+        with patch.object(self.adapter, "fetch_bars", return_value=feed):
+            snap_no_live = self.adapter.build_technical_snapshot("2330.TW", include_live=False)
+            base_price = snap_no_live["latest_close"]
+            live_quote = {
+                "is_live": True,
+                "price": base_price + 200.0,
+                "open": base_price + 10.0,
+                "high": base_price + 210.0,
+                "low": base_price,
+                "volume": 5000.0,
+                "quote_date_local": next_day.strftime("%Y%m%d"),
+                "quote_time": f"{next_day.isoformat()} 13:00:00",
+                "source": "TWSE MIS",
+            }
+            snap = self.adapter.build_technical_snapshot("2330.TW", quote=live_quote, include_live=True)
         self.assertEqual(snap["latest_close"], base_price + 200.0)
         self.assertTrue(snap["live_overlay"]["applied"])
         self.assertGreater(snap["indicators"]["MA5"], snap_no_live["indicators"]["MA5"])

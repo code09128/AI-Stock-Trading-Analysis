@@ -357,7 +357,7 @@
             {confirmClear ? '再點一次確認清除' : '清除本機紀錄'}
           </button>
         </div>
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/60">
+        <div className="max-h-80 overflow-auto rounded-lg border border-slate-800 bg-slate-950/60">
           {rows.length === 0 ? (
             <div className="text-xs text-slate-500 p-3">
               {src === 'server' && server === null ? '載入中…' : '沒有紀錄'}

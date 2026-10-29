@@ -11,7 +11,17 @@ from typing import Any, Dict, List, Optional
 import math
 import re
 
-from src.market.trade_rules import STATUTORY_FEES, statutory_cost
+from src.market.trade_rules import STATUTORY_FEES, statutory_cost, us_fees
+
+# ---------- 費率出處（稅費會變，更新時改這裡並更新查證日期；最後查證 2026-10-29）----------
+# 台股手續費：成交值 1.425‰（券商可在此上限內打折），未滿 20 元以 20 元計
+#   出處：證交所六十年史「手續費費率」https://www.twse.com.tw/staticFiles/product/publication/twse60/html/292/
+#   零股最低 1 元是多數券商的做法（非法規），回測的「手續費折數」也是使用者自己的券商條件
+TW_FEE_RATE = 0.001425
+# 台股證交稅：股票 3‰、ETF（受益憑證）1‰，賣出時收取 —《證券交易稅條例》
+# 債券 ETF 停徵到 2026-12-31；行政院 2026-10-01 通過延長到 2036-12-31 的修正草案，尚未三讀，三讀後再改
+#   出處：中央社 https://www.cna.com.tw/news/aipl/202610010185.aspx
+# 美股 SEC 規費與 FINRA TAF 的費率、出處在 trade_rules.py（回測與模擬下單共用同一份）
 
 def get_tw_tick_size(price: float) -> float:
     """
@@ -63,7 +73,7 @@ def align_tw_tick(price: float, mode: str = "nearest") -> float:
     else:
         return round(aligned, 1) if aligned % 1 != 0 else float(int(aligned))
 
-BOND_ETF_TAX_FREE_UNTIL = date(2026, 12, 31)  # 債券 ETF 證交稅停徵期限（到期若再延長要改這裡）
+BOND_ETF_TAX_FREE_UNTIL = date(2026, 12, 31)  # 債券 ETF 證交稅停徵期限（延長修法三讀後改這裡，前端 ui.jsx 的 twSellTaxRate 也要改）
 
 
 def tw_sell_tax_rate(code: str, on: Optional[date] = None) -> float:
@@ -91,12 +101,12 @@ def calculate_friction_cost(
     
     市場 'TW' (台股):
     - 手續費: 成交金額 * 0.1425% * 券商折扣 (預設 1.0，最低 20 元)
-    - 證交稅: 賣出時收取 成交金額 * 0.3% (買入免稅)
+    - 證交稅: 賣出時收取，稅率由 tw_tax_rate 傳入（股票 0.3%、ETF 0.1%、債券 ETF 停徵；未傳時用 0.3%），買入免稅
     
     市場 'US' (美股):
     - 手續費: 一般券商零手續費 (或依自訂費率)
-    - SEC 規費: 賣出時收取 (成交金額 * 0.0000278，最低 $0.01)
-    - FINRA TAF: 賣出時每股 $0.000166 (上限 $8.30)
+    - SEC 規費、FINRA TAF：賣出時收取，費率與出處見 trade_rules.us_fees()
+      （回測沒有逐筆交易日期，用一般費率，不套用 TAF 暫停期間）
 
     其他市場：只算 trade_rules 的法定稅費（不含券商佣金）；fees 可傳入個股規則（如港股 ETF 免印花稅）。
     """
@@ -106,7 +116,7 @@ def calculate_friction_cost(
 
     if market_upper == "TW":
         # 手續費、證交稅都是元以下無條件捨去（+1e-9 避免浮點誤差把 1425.0 算成 1424.999…）
-        base_fee = total_val * 0.001425 * commission_discount
+        base_fee = total_val * TW_FEE_RATE * commission_discount
         fee = max(min_commission_twd, math.floor(base_fee + 1e-9))
         rate = 0.003 if tw_tax_rate is None else tw_tax_rate  # 用 tw_sell_tax_rate() 依股票／ETF／債券 ETF 決定
         tax = math.floor(total_val * rate + 1e-9) if action_upper in ("SELL", "賣出") else 0.0
@@ -132,9 +142,7 @@ def calculate_friction_cost(
     else:
         # 美股
         fee = 0.0
-        sec_fee = max(0.01, round(total_val * 0.0000278, 2)) if action_upper in ("SELL", "SHORT") else 0.0
-        taf = min(8.30, round(shares * 0.000166, 2)) if action_upper in ("SELL", "SHORT") else 0.0
-        tax_fees = sec_fee + taf
+        tax_fees = statutory_cost(us_fees(), action_upper, total_val, shares)
         return {
             "market": "US",
             "total_value": round(total_val, 2),

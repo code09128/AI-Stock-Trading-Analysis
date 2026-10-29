@@ -48,6 +48,7 @@
   const marketName = (sym) => MARKET_INFO[marketOf(sym)].name;
   // 預設計價幣別（實際以報價回傳的 currency 為準；英股是 GBp 便士）
   // 台股賣出證交稅率（與後端 market_rules.tw_sell_tax_rate 相同）：股票 0.3%、ETF 0.1%、債券 ETF 停徵到 2026-12-31
+  // 台股賣出證交稅率：股票 0.3%、ETF 0.1%、債券 ETF 停徵（期限要和後端 market_rules.BOND_ETF_TAX_FREE_UNTIL 一致）
   const twSellTaxRate = (code) => {
     const c = String(code || '').toUpperCase().replace(/\.(TW|TWO)$/, '');
     if (!c.startsWith('00')) return 0.003;
@@ -89,6 +90,24 @@
     return 5;
   };
   const isOnTick = (price, tick) => Math.abs(price / tick - Math.round(price / tick)) < 1e-6;
+  // 台股手續費折數：模擬下單、策略回測、存股計畫共用同一個設定（預設 0.6＝六折，跟回測預設一致）
+  const LS_FEE_DISCOUNT = 'tw_us_fee_discount_v1';
+  const feeDiscount = () => {
+    const v = Number(readLS(LS_FEE_DISCOUNT, 0.6));
+    return v > 0 && v <= 1 ? v : 0.6;
+  };
+  const setFeeDiscount = (v) => {
+    const n = Number(v);
+    if (!(n > 0 && n <= 1)) return false; // 輸入到一半（空白、0.）先不存
+    writeLS(LS_FEE_DISCOUNT, n);
+    window.dispatchEvent(new Event('fee-discount-changed'));
+    return true;
+  };
+  // 台股手續費：成交金額 × 0.1425% × 折數，元以下捨去；整張最低 20 元、零股最低 1 元（與後端 market_rules 相同）
+  const twFee = (amount, round, discount = feeDiscount()) =>
+    Math.max(round ? 20 : 1, Math.floor(amount * 0.001425 * discount + 1e-9));
+  // 本機日期 YYYY-MM-DD（toISOString 是 UTC，台灣早上 8 點前會是前一天）
+  const localDate = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
   // ---------- 小元件 ----------
   // 說明小圓點：點一下（或滑過、Tab 聚焦）顯示說明，再點一次／點外面／Esc／捲動就關閉。
@@ -226,6 +245,10 @@
     colorOf,
     twTick,
     isOnTick,
+    twFee,
+    feeDiscount,
+    setFeeDiscount,
+    localDate,
     Tip,
     Stat,
   });

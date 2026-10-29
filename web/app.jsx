@@ -39,7 +39,16 @@ function App() {
   const [m2Data, setM2Data] = useState(null);
 
   // 策略回測 狀態
-  const [m3Form, setM3Form] = useState(DEFAULT_BACKTEST);
+  // 手續費折數與看盤頁模擬下單共用（window.TA.feeDiscount）：開啟時帶入、在下單面板改了也同步
+  const [m3Form, setM3Form] = useState(() => ({
+    ...DEFAULT_BACKTEST,
+    commission_discount: window.TA.feeDiscount(),
+  }));
+  useEffect(() => {
+    const on = () => setM3Form((f) => ({ ...f, commission_discount: window.TA.feeDiscount() }));
+    window.addEventListener('fee-discount-changed', on);
+    return () => window.removeEventListener('fee-discount-changed', on);
+  }, []);
   const [m3Loading, setM3Loading] = useState(false);
   const [m3Data, setM3Data] = useState(null);
 
@@ -608,7 +617,8 @@ function App() {
     setM1Ticker('2330.TW');
     setM1BarCount(30);
     setM2Form(NEWS_PRESETS[0]);
-    setM3Form(DEFAULT_BACKTEST);
+    // 手續費折數是使用者的券商條件（與模擬下單共用），重置分析參數時保留
+    setM3Form({ ...DEFAULT_BACKTEST, commission_discount: window.TA.feeDiscount() });
     setM4Holdings(DEFAULT_HOLDINGS);
     setM4CashPct(20.0);
     // 換回範例時來源也要改成範例：否則仍標成「我的紀錄」，下次診斷會把範例寫回蓋掉真正的交易紀錄
@@ -873,11 +883,12 @@ function App() {
                 onSendToMod1={sendToMod1}
                 onSendToMod2={sendToMod2}
                 onSendHoldings={sendHoldings}
-                onShowTour={() => window.TA.startTour(0)}
+                onShowTour={() => window.TA.startTour('watch')}
               />
             )}
             {activeTab === 'board' && <window.TA.MarketBoardPage />}
             {activeTab === 'multichart' && <window.TA.MultiChartPage />}
+            {activeTab === 'savings' && <window.TA.SavingsPlanPage />}
             {activeTab === 'guide' && (
               <window.TA.GuidePage
                 onGo={handleSwitchTab}

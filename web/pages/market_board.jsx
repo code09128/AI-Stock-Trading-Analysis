@@ -94,6 +94,7 @@
             <li>
               <H>台灣 50</H>：上市市值前 50 大個股（接近台灣 50 指數成分股），盤中每 30 秒更新價格。
               <b>量比</b>＝今天累計成交量 ÷ 前一交易日成交量（盤中還沒收完，數字會一路變大）。
+              點股票名稱會切到看盤頁看那一檔的五檔、新聞並可模擬下單。
             </li>
           </ul>
           <p className="text-slate-400">
@@ -399,7 +400,14 @@
                   <tr key={r.code} className="border-t border-slate-800/60" title={`資料時間 ${r.quote_time}`}>
                     <td className="py-1 px-1.5 mono text-slate-400">{r.code}</td>
                     <td className="py-1 px-1.5 text-slate-200">
-                      {r.name}
+                      <button
+                        type="button"
+                        onClick={() => window.TA.openInWatch?.(r.code)}
+                        title="到看盤頁看這檔的五檔、新聞與下單"
+                        className="hover:text-sky-300 hover:underline cursor-pointer text-left"
+                      >
+                        {r.name}
+                      </button>
                       {!r.is_live && <span className="ml-1 text-[10px] text-slate-500">收盤</span>}
                     </td>
                     <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change)}`}>{fmt(r.price)}</td>
@@ -426,7 +434,7 @@
     // 產業排行與資金流向共用類股資料（同一份請求）
     const sectors = usePoll('/api/board/sectors', 600000);
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" data-tour="board-root">
         <BoardHelp />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <WorldCard />

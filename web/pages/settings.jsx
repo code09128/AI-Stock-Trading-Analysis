@@ -57,7 +57,7 @@
     return (
       <div className="text-[11px] rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 space-y-0.5">
         <div className="text-slate-400">
-          資料檔：<span className="mono text-slate-300">{st.path || '讀取中…'}</span>
+          資料檔：<span className="mono text-slate-300 break-all">{st.path || '讀取中…'}</span>
           <window.TA.Tip text="這個 userdata.json 就是你的資料正本；同一層的 backups 資料夾是每天的自動備份。搬家時把整個程式資料夾一起搬即可。" />
         </div>
         {st.ok ? (

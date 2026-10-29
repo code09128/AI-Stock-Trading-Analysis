@@ -1,7 +1,101 @@
 // 看盤頁右下角：模擬下單（流程：成交模擬交易 → 規則確認下單 → 交易檢討）
 (() => {
-  const { fmt, Field, Seg, normSym } = window.TA;
-  const { useState } = React;
+  const { fmt, Field, Seg, normSym, twTick, localDate } = window.TA;
+  const { useState, useEffect } = React;
+
+  const TW_PRICE_TYPES = [
+    ['LIMIT', '限價'],
+    ['UP', '漲停'],
+    ['DOWN', '跌停'],
+    ['FLAT', '平盤'],
+    ['MKT', '市價'],
+  ];
+  const US_KINDS = [
+    ['NORMAL', '一般委託'],
+    ['STOP', '觸價單'],
+    ['MOO', '限定開盤'],
+    ['MOC', '限定收盤'],
+  ];
+  const labelOf = (list, v) => (list.find((x) => x[0] === v) || [])[1] || v;
+
+  // 暫存匣顯示的委託條件，例如「限價/ROD」「盤後定價/ROD」「觸價@150 限價/ANY 長效至 2027-01-29」
+  const orderLabel = (o, tw) => {
+    if (tw) {
+      if (o.session === 'AFTER') return `${o.lotType === 'ROUND' ? '盤後定價' : '盤後零股'}/${o.tif}`;
+      return `${labelOf(TW_PRICE_TYPES, o.priceType || 'LIMIT')}/${o.tif}`;
+    }
+    const kind =
+      o.usKind === 'STOP'
+        ? `觸價@${o.stopPrice} `
+        : o.usKind && o.usKind !== 'NORMAL'
+          ? `${labelOf(US_KINDS, o.usKind)} `
+          : '';
+    const gtc = o.gtc ? ` 長效至 ${o.gtcDate}` : '';
+    return `${kind}${o.usType === 'MARKET' ? '市價' : '限價'}/${o.usTif}${gtc}${o.settle === 'TWD' ? ' 台幣交割' : ''}`;
+  };
+
+  // 手續費折數（與策略回測共用）：打字時只改輸入框，是 0～1 的有效數字才存；離開欄位時還原成目前的值
+  function FeeDiscountInput({ value }) {
+    const [text, setText] = useState(String(value));
+    useEffect(() => setText(String(value)), [value]);
+    return (
+      <label className="flex items-center gap-1 text-slate-400 font-sans">
+        手續費 0.1425% ×
+        <input
+          type="number"
+          step="0.05"
+          min="0.1"
+          max="1"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            window.TA.setFeeDiscount(e.target.value);
+          }}
+          onBlur={() => setText(String(value))}
+          aria-label="手續費折數"
+          className="w-14 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 mono text-white"
+        />
+        （{fmt(value * 10, 1)} 折，跟策略回測共用；依你的券商條件填）
+      </label>
+    );
+  }
+
+  const stepCls =
+    'px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
+
+  // 數字輸入兩側加 −／＋（價格依跳動檔位、數量每次 1）
+  function Stepper({ value, onChange, onStep, disabled, label }) {
+    return (
+      <div className="flex">
+        <button
+          type="button"
+          onClick={() => onStep(-1)}
+          disabled={disabled}
+          aria-label={`${label}減少`}
+          className={`${stepCls} rounded-l-lg`}
+        >
+          −
+        </button>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          inputMode="decimal"
+          aria-label={label}
+          className="w-full min-w-0 bg-slate-950 border-y border-slate-700 px-2 py-1.5 mono text-white text-center disabled:text-amber-200"
+        />
+        <button
+          type="button"
+          onClick={() => onStep(1)}
+          disabled={disabled}
+          aria-label={`${label}增加`}
+          className={`${stepCls} rounded-r-lg`}
+        >
+          ＋
+        </button>
+      </div>
+    );
+  }
 
   function OrderPanel({ ctx }) {
     const { rules, journal } = window.TA.usePortfolio();
@@ -23,7 +117,49 @@
       tax,
       tradeRules,
       tw,
+      priceNum,
+      priceLocked,
+      etfFlag,
+      afterRound,
+      feeDisc,
     } = ctx;
+    const set = (patch) => setOrder({ ...order, ...patch });
+
+    // 美股選台幣交割時，預估金額另外換算成台幣
+    const cur = q?.currency;
+    const [fxRate, setFxRate] = useState(null);
+    useEffect(() => {
+      setFxRate(null);
+      if (tw || !cur || cur === 'TWD' || order.settle !== 'TWD') return undefined;
+      let stop = false;
+      fetch('/api/fx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currencies: [cur] }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (!stop) setFxRate(d.rates?.[cur]?.rate || null);
+        })
+        .catch(() => {});
+      return () => {
+        stop = true;
+      };
+    }, [tw, cur, order.settle]);
+
+    // −／＋：價格依台股跳動檔位（美股 0.01），按了就切回限價。
+    // 往下跨過檔位邊界要用下一檔的跳動單位（1000 往下是 999，不是 995）
+    const stepPrice = (dir) => {
+      const base = priceNum > 0 ? priceNum : Number(q?.price) || 0;
+      const tick = tw ? twTick(dir < 0 ? base - 1e-9 : base, etfFlag) : 0.01;
+      const next = Math.max(tick, Math.round((base + dir * tick) / tick) * tick);
+      set({ priceType: 'LIMIT', price: String(Number(next.toFixed(4))) });
+    };
+    // 數量每次 ±1，保留小數（持股帶入的美股碎股、銀行零頭）；減到 0 以下就不動
+    const stepQty = (dir) => {
+      const next = Math.round(((Number(order.qty) || 0) + dir) * 1e4) / 1e4;
+      if (next > 0) set({ qty: next });
+    };
 
     const hardIssues = (orderIssues || []).filter((x) => !x.startsWith('提醒'));
 
@@ -38,7 +174,6 @@
         return;
       }
       const sym = normSym(q?.symbol || '');
-      const priceNum = Number(order.price);
       const qtyNum = Number(order.qty);
       const sh = tw ? (order.lotType === 'ROUND' ? qtyNum * 1000 : qtyNum) : qtyNum;
       const r = window.TA.fillOrder({
@@ -115,7 +250,10 @@
           <Field label="買賣">
             <Seg
               value={order.side}
-              onChange={(v) => setOrder({ ...order, side: v })}
+              onChange={(v) =>
+                // 市價只能用在賣出：改成買進時換回委託價格
+                set({ side: v, ...(v === 'BUY' && order.usType === 'MARKET' ? { usType: 'LIMIT' } : {}) })
+              }
               options={[
                 ['BUY', '買進', 'bg-rose-600'],
                 ['SELL', '賣出', 'bg-emerald-600'],
@@ -131,6 +269,21 @@
                   options={[
                     ['ROUND', '整張'],
                     ['ODD', '零股'],
+                  ]}
+                />
+              </Field>
+              <Field
+                label="盤別"
+                tip="盤中 09:00～13:30。盤後：整張是「盤後定價交易」14:00～14:30，一律以收盤價成交；零股是「盤後零股」13:40～14:30，14:30 一次撮合。盤後只接受限價 ROD。"
+              >
+                <Seg
+                  value={order.session}
+                  onChange={(v) =>
+                    set({ session: v, ...(v === 'AFTER' ? { tif: 'ROD', priceType: 'LIMIT' } : {}) })
+                  }
+                  options={[
+                    ['REGULAR', '盤中'],
+                    ['AFTER', '盤後'],
                   ]}
                 />
               </Field>
@@ -151,13 +304,39 @@
             </>
           ) : (
             <>
-              <Field label="委託類型" tip="限價：指定價格；市價：以當時最佳價成交（價格不保證）">
+              <Field
+                label="委託種類"
+                tip="一般委託：送出就掛單。觸價單：價格碰到觸發價才送出。限定開盤／限定收盤：只參加開盤或收盤競價。模擬下單都是立即成交，種類只記在委託條件裡。"
+              >
+                <select
+                  value={order.usKind}
+                  onChange={(e) => set({ usKind: e.target.value })}
+                  aria-label="委託種類"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                >
+                  {US_KINDS.map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                label="價格方式"
+                tip="委託價格：指定價格（限價）。市價：只能用在賣出，以當時最佳價成交（價格不保證）。"
+              >
                 <Seg
                   value={order.usType}
-                  onChange={(v) => setOrder({ ...order, usType: v })}
+                  onChange={(v) => {
+                    if (v === 'MARKET' && order.side === 'BUY') {
+                      window.TA.toast?.('⚠️ 市價只能用在賣出');
+                      return;
+                    }
+                    set({ usType: v });
+                  }}
                   options={[
-                    ['LIMIT', '限價'],
-                    ['MARKET', '市價'],
+                    ['LIMIT', '委託價格'],
+                    ['MARKET', '市價賣出'],
                   ]}
                 />
               </Field>
@@ -176,31 +355,119 @@
               </Field>
             </>
           )}
-          <Field label={`價格（${q.currency}）`}>
-            <input
-              value={order.price}
-              onChange={(e) => setOrder({ ...order, price: e.target.value })}
-              inputMode="decimal"
-              aria-label="委託價格"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 mono text-white"
+          <Field
+            label={`價格（${q.currency}）${afterRound ? '・盤後定價＝收盤價' : ''}`}
+            tip={tw ? '−／＋ 依台股跳動檔位調整，按了會切回「限價」' : undefined}
+          >
+            <Stepper
+              label="委託價格"
+              value={priceLocked ? (priceNum ? String(priceNum) : '--') : order.price}
+              onChange={(v) => set({ price: v, priceType: 'LIMIT' })}
+              onStep={stepPrice}
+              disabled={afterRound}
             />
           </Field>
           <Field label={`數量（${tw ? (order.lotType === 'ROUND' ? '張' : '股') : '股'}）`}>
-            <input
+            <Stepper
+              label="委託數量"
               value={order.qty}
-              onChange={(e) => setOrder({ ...order, qty: e.target.value })}
-              inputMode="decimal"
-              aria-label="委託數量"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 mono text-white"
+              onChange={(v) => set({ qty: v })}
+              onStep={stepQty}
             />
           </Field>
         </div>
 
+        {tw && !afterRound && (
+          <Field
+            label="價格類型"
+            tip="漲停／跌停／平盤（昨收）跟著報價自動帶入；市價：買進用最佳賣價、賣出用最佳買價模擬成交。"
+          >
+            <Seg
+              value={order.priceType}
+              onChange={(v) =>
+                order.session === 'AFTER' && v !== 'LIMIT'
+                  ? window.TA.toast?.('⚠️ 盤後零股只接受限價委託')
+                  : set({ priceType: v, ...(v === 'LIMIT' && priceNum ? { price: String(priceNum) } : {}) })
+              }
+              options={TW_PRICE_TYPES}
+            />
+          </Field>
+        )}
+
+        {!tw && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+            {order.usKind === 'STOP' && (
+              <Field
+                label={`觸發價（${q.currency}）`}
+                tip="買進：價格漲到觸發價才送出；賣出：跌到觸發價才送出（停損常用）"
+              >
+                <input
+                  value={order.stopPrice}
+                  onChange={(e) => set({ stopPrice: e.target.value })}
+                  inputMode="decimal"
+                  aria-label="觸發價"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 mono text-white"
+                />
+              </Field>
+            )}
+            <Field label="長效單" tip="勾選後委託到指定日期前都有效（一般委託只到當天收盤）">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={!!order.gtc}
+                  onChange={(e) => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() + 3);
+                    set({ gtc: e.target.checked, gtcDate: order.gtcDate || localDate(d) });
+                  }}
+                  aria-label="長效單"
+                />
+                <input
+                  type="date"
+                  value={order.gtcDate}
+                  disabled={!order.gtc}
+                  onChange={(e) => set({ gtcDate: e.target.value })}
+                  aria-label="長效單到期日"
+                  className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs mono text-white disabled:opacity-40"
+                />
+              </div>
+            </Field>
+            <Field
+              label="交割幣別"
+              tip="外幣交割：從外幣帳戶扣款。台幣交割：券商用當天匯率換成台幣扣款（匯率以券商為準，這裡是估算）"
+            >
+              <Seg
+                value={order.settle}
+                onChange={(v) => set({ settle: v })}
+                options={[
+                  ['FX', `以外幣（${q.currency}）`],
+                  ['TWD', '以台幣'],
+                ]}
+              />
+            </Field>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2 text-xs mono bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2">
-          <span>預估金額 {fmt(Math.max(amount, 0), 0)}</span>
+          <span>
+            預估金額 {tw ? '' : `${q.currency} `}
+            {fmt(Math.max(amount, 0), tw ? 0 : 2)}
+          </span>
+          {!tw && order.settle === 'TWD' && (
+            <span className="text-amber-200">
+              {/* 買進要付成交金額＋稅費；賣出入帳是成交金額－稅費（SEC 規費、TAF 從賣出款扣） */}
+              ≈ 台幣{' '}
+              {fxRate
+                ? fmt((Math.max(amount, 0) + (order.side === 'SELL' ? -1 : 1) * (tax || 0)) * fxRate, 0)
+                : '（匯率取得中…）'}
+              {fxRate
+                ? `（匯率約 ${fmt(fxRate, 3)}，${order.side === 'SELL' ? '已扣' : '含'}法定稅費）`
+                : ''}
+            </span>
+          )}
           {tw && <span>手續費約 {fmt(fee, 0)}</span>}
           {tw && order.side === 'SELL' && <span>證交稅約 {fmt(tax, 0)}</span>}
-          {tw && <span className="text-slate-500">（手續費以 0.1425% 無折扣估算）</span>}
+          {tw && <FeeDiscountInput value={feeDisc} />}
           {tradeRules && (
             <span>
               法定稅費約 {fmt(tax, 2)}
@@ -388,5 +655,5 @@
     );
   }
 
-  window.TA = Object.assign(window.TA || {}, { OrderPanel });
+  window.TA = Object.assign(window.TA || {}, { OrderPanel, orderLabel });
 })();

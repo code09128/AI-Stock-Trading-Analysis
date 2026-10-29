@@ -5,6 +5,7 @@ from src.server.handlers.technical import TechnicalHandlers
 from src.server.handlers.news import NewsHandlers
 from src.server.handlers.backtest import BacktestHandlers
 from src.server.handlers.portfolio import PortfolioHandlers
+from src.server.handlers.savings import SavingsHandlers
 from src.server.handlers.journal import JournalHandlers
 from src.server.handlers.ai import AIHandlers
 from src.server.handlers.selftest import SelfTestHandlers
@@ -17,6 +18,7 @@ class TradingEngineDispatcher(
     NewsHandlers,
     BacktestHandlers,
     PortfolioHandlers,
+    SavingsHandlers,
     JournalHandlers,
     AIHandlers,
     SelfTestHandlers,

@@ -135,6 +135,8 @@ class UpdaterTests(unittest.TestCase):
         self.assertFalse((up / "README.md").exists())
         self.assertFalse((up / "TradingAnalysis.zip").exists())
         self.assertEqual((self.app_dir / ".env").read_text(encoding="utf-8"), "FINMIND_TOKEN=keep_me\n")
+        # 自選股、持股、AI 設定都存在 data/userdata.json：更新不能動到
+        self.assertEqual((self.app_dir / "data" / "userdata.json").read_text(encoding="utf-8"), '{"ok":true}')
         self.assertEqual(updater.current_version()["version"], "1.0.1")
 
     def test_version_mismatch_is_rejected(self):
