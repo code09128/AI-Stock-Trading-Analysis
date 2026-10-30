@@ -10,16 +10,14 @@
 """
 
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime, timedelta
-import urllib.request
+from datetime import datetime, timedelta, timezone
 import urllib.parse
-import json
 import os
-import threading
-import time
 
 from src.market import finmind, fx, markets
 from src.market.bar import Bar
+from src.market.cache import TTLCache
+from src.market.net import http_json
 from src.technical.indicators import (
     calculate_ma,
     calculate_rsi,
@@ -43,31 +41,16 @@ def is_partial_session(market: str, bar_date: str, now: Optional[datetime] = Non
 # 失敗也快取（例如上櫃股查 .TW 會 404），60 秒內不重送；最新價另由即時報價覆蓋，不受影響。
 BAR_CACHE_TTL_SEC = 60
 _YAHOO_CURRENCY: Dict[str, str] = {}  # Yahoo 代號 -> 實際計價幣別
-_BAR_CACHE: Dict[Any, Any] = {}
-_BAR_LOCK = threading.Lock()
+_BAR_CACHE = TTLCache()
 
 
 def _cached_bars(key: Any, loader) -> List[Bar]:
-    with _BAR_LOCK:
-        hit = _BAR_CACHE.get(key)
-    if hit and time.time() - hit[0] < BAR_CACHE_TTL_SEC:
-        if isinstance(hit[1], Exception):
-            raise hit[1]
-        return hit[1]
-    try:
-        value = loader()
-    except Exception as e:
-        with _BAR_LOCK:
-            _BAR_CACHE[key] = (time.time(), e)
-        raise
-    with _BAR_LOCK:
-        _BAR_CACHE[key] = (time.time(), value)
-    return value
+    """同一份日 K 同時有好幾個請求要（例如組合風控 16 檔各算 Beta 都要 ^TWII）：只抓一次；失敗也記 BAR_CACHE_TTL_SEC 秒。"""
+    return _BAR_CACHE.get_or_load(key, loader, BAR_CACHE_TTL_SEC, on_error="cache")
 
 
 def clear_bar_cache() -> None:
-    with _BAR_LOCK:
-        _BAR_CACHE.clear()
+    _BAR_CACHE.clear()
 
 
 def classify_levels(candidates: List[float], price: float, atr: Optional[float], market: str,
@@ -224,14 +207,18 @@ class DualMarketDataAdapter:
         bars = _cached_bars(("yahoo", symbol, range_str), lambda: self._load_yahoo(symbol, range_str))
         return bars[-days:]
 
-    def _load_yahoo(self, symbol: str, range_str: str) -> List[Bar]:
+    def fetch_period(self, symbol: str, start: str, end: str) -> List[Bar]:
+        """只抓 start～end（YYYY-MM-DD）這一段日 K：歷史情境回放只需要特定幾個月，不用下載整整 10 年。"""
+        def epoch(day: str) -> int:
+            return int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp())
+
+        span = f"period1={epoch(start)}&period2={epoch(end) + 86400}"
+        return _cached_bars(("yahoo", symbol, span), lambda: self._load_yahoo(symbol, span=span))
+
+    def _load_yahoo(self, symbol: str, range_str: str = "", span: str = "") -> List[Bar]:
         encoded_sym = urllib.parse.quote(symbol)
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_sym}?interval=1d&range={range_str}"
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_sym}?interval=1d&{span or f'range={range_str}'}"
+        payload = http_json(url, timeout=self.timeout)
 
         result = payload["chart"]["result"][0]
         timestamps = result.get("timestamp", [])

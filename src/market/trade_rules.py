@@ -11,12 +11,12 @@ import math
 import re
 import threading
 import time
-import urllib.request
 import zipfile
 from datetime import date
 from typing import Any, Dict, List, Optional
 
 from src.market.markets import market_of, split_suffix
+from src.market.net import http_bytes
 
 FIXED_LOT = {"JP": 100, "CN": 100, "SG": 100}
 
@@ -111,9 +111,7 @@ def _hk_list() -> Optional[Dict[str, Dict[str, Any]]]:
     with _hk_lock:
         if _hk_cache["data"] is None or time.time() - _hk_cache["at"] > _HK_TTL:
             try:
-                req = urllib.request.Request(HKEX_URL, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    _hk_cache["data"] = _parse_hkex(r.read())
+                _hk_cache["data"] = _parse_hkex(http_bytes(HKEX_URL, 30))
                 _hk_cache["error"] = None
             except Exception as e:  # 下載失敗：保留上次成功的清單，並回報原因
                 _hk_cache["error"] = f"港交所證券清單下載失敗：{e}"

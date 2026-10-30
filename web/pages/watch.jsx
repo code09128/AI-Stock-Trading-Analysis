@@ -185,8 +185,7 @@
     useEffect(() => {
       loadQuotes();
       if (!polling) return undefined;
-      const id = setInterval(loadQuotes, 5000);
-      return () => clearInterval(id);
+      return window.TA.pollEvery(loadQuotes, 5000);
     }, [loadQuotes, polling]);
 
     // 迷你走勢：自選股與持股（10 分鐘快取在後端）
@@ -238,10 +237,10 @@
           })
           .catch(() => {});
       load();
-      const id = setInterval(load, 300000);
+      const cancel = window.TA.pollEvery(load, 300000);
       return () => {
         stop = true;
-        clearInterval(id);
+        cancel();
       };
     }, [holdCurrencies]);
 
@@ -266,10 +265,10 @@
           });
       };
       load();
-      const id = setInterval(load, 30000);
+      const cancel = window.TA.pollEvery(load, 30000);
       return () => {
         stop = true;
-        clearInterval(id);
+        cancel();
       };
     }, [selected]);
 
@@ -328,10 +327,10 @@
           .finally(() => !stop && setOverviewLoading(false));
       };
       load();
-      const id = setInterval(load, 300000);
+      const cancel = window.TA.pollEvery(load, 300000);
       return () => {
         stop = true;
-        clearInterval(id);
+        cancel();
       };
     }, [needOverview, ovKey]);
 

@@ -275,10 +275,10 @@
           });
       };
       load();
-      const id = setInterval(load, 30000);
+      const cancel = window.TA.pollEvery(load, 30000);
       return () => {
         stop = true;
-        clearInterval(id);
+        cancel();
       };
     }, []);
     if (!rows.length) return null;

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 from src.market.bar import Bar
+from src.market.cache import TTLCache
 from src.portfolio import savings_plan as sp
 from src.server import dispatcher
 from src.server.handlers import savings
@@ -183,7 +184,7 @@ class HandlerTests(unittest.TestCase):
                 patch.object(self.d.adapter, "fetch_bars") as yahoo, \
                 patch.object(savings.quote_provider, "get_quotes", return_value=[quote]), \
                 patch.object(savings.stock_info, "_dividends_yahoo", return_value=[]), \
-                patch.dict(savings.etf_data._CACHE, clear=True):
+                patch.object(savings.etf_data, "_CACHE", TTLCache()):
             r = self.d.handle_savings_returns({"symbol": "0056"})
         yahoo.assert_not_called()
         self.assertAlmostEqual(r["cagr"], 5, delta=0.3)
@@ -204,7 +205,7 @@ class HandlerTests(unittest.TestCase):
                 patch.object(self.d.adapter, "fetch_bars", return_value=feed), \
                 patch.object(savings.quote_provider, "get_quotes", return_value=[quote]), \
                 patch.object(savings.stock_info, "_dividends_yahoo", return_value=divs), \
-                patch.dict(savings.etf_data._CACHE, clear=True):
+                patch.object(savings.etf_data, "_CACHE", TTLCache()):
             r = self.d.handle_savings_returns({"symbol": "0050"})
         self.assertAlmostEqual(r["cagr"], 8, delta=0.05)
         self.assertEqual(r["ttm_yield_pct"], 3.0)
@@ -217,7 +218,7 @@ class HandlerTests(unittest.TestCase):
                 patch.object(savings.stock_info, "_dividends_yahoo", return_value=divs), \
                 patch.object(savings.etf_data, "fund_registry", return_value={}), \
                 patch.object(savings, "HIGH_DIVIDEND_POOL", []), \
-                patch.dict(savings.etf_data._CACHE, clear=True):
+                patch.object(savings.etf_data, "_CACHE", TTLCache()):
             d = self.d.handle_savings_dividends({"lump_sum": 1.2e6, "symbols": ["0050"]})
         self.assertEqual(d["rows"][0]["monthly_from_lump"], 1000)  # 120 萬 × 1% ÷ 12
         self.assertNotIn("capital_needed", d["rows"][0])

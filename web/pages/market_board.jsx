@@ -3,7 +3,7 @@
 //       /api/board/sectors、/api/board/flow（證交所盤後資料，10 分鐘）
 (() => {
   const { useState, useEffect, useCallback, useRef } = React;
-  const { fmt, colorOf, Tip } = window.TA;
+  const { fmt, signed, colorOf, Tip } = window.TA;
 
   // 定時抓一個 GET 端點：上一輪還沒回來就跳過；頁面離開就停止
   function usePoll(url, ms) {
@@ -30,13 +30,11 @@
     }, [url]);
     useEffect(() => {
       load();
-      const id = setInterval(load, ms);
-      return () => clearInterval(id);
+      return window.TA.pollEvery(load, ms);
     }, [load, ms]);
     return { data, err, loading, load };
   }
 
-  const sign = (v, d = 2) => (v === null || v === undefined ? '--' : `${v > 0 ? '+' : ''}${fmt(v, d)}`);
   const Arrow = ({ v }) => (v > 0 ? '▲' : v < 0 ? '▼' : '');
 
   function Card({ title, tip, extra, children }) {
@@ -118,7 +116,7 @@
           <>
             <div className={`mono text-lg font-bold ${colorOf(f.change)}`}>{fmt(f.price, 0)}</div>
             <div className={`mono text-xs ${colorOf(f.change)}`}>
-              <Arrow v={f.change} /> {fmt(Math.abs(f.change ?? 0), 0)}（{sign(f.change_pct)}%）
+              <Arrow v={f.change} /> {fmt(Math.abs(f.change ?? 0), 0)}（{signed(f.change_pct)}%）
             </div>
             <div className="text-[10px] text-slate-500 truncate">
               量 {fmt(f.volume, 0)} 口・{f.quote_time || '--'}
@@ -153,7 +151,7 @@
                   價差（期貨 − 加權）
                   <Tip text="台指期近月日盤價格減加權指數。正價差＝期貨比現貨高，市場偏樂觀；逆價差＝偏悲觀。除息旺季（6～9 月）期貨會因為預期除息而自然偏低。" />
                 </div>
-                <div className={`mono text-lg font-bold ${colorOf(fut.basis)}`}>{sign(fut.basis, 0)}</div>
+                <div className={`mono text-lg font-bold ${colorOf(fut.basis)}`}>{signed(fut.basis, 0)}</div>
                 <div className="text-[10px] text-slate-500">
                   {fut.basis > 0 ? '正價差' : fut.basis < 0 ? '逆價差' : '--'}
                 </div>
@@ -171,8 +169,8 @@
                           <td className="py-1 pr-2 mono text-right text-white">
                             {fmt(r.price, r.symbol === 'TWD=X' ? 3 : 2)}
                           </td>
-                          <td className={`py-1 pr-2 mono text-right ${colorOf(r.change)}`}>{sign(r.change)}</td>
-                          <td className={`py-1 mono text-right ${colorOf(r.change)}`}>{sign(r.change_pct)}%</td>
+                          <td className={`py-1 pr-2 mono text-right ${colorOf(r.change)}`}>{signed(r.change)}</td>
+                          <td className={`py-1 mono text-right ${colorOf(r.change)}`}>{signed(r.change_pct)}%</td>
                         </>
                       ) : (
                         <td colSpan={3} className="py-1 text-right text-slate-500">
@@ -236,7 +234,7 @@
                       key={k}
                       className={`py-1 mono text-right ${colorOf(d[k])} ${k === 'total' ? 'font-semibold' : ''}`}
                     >
-                      {sign(d[k])}
+                      {signed(d[k])}
                     </td>
                   ))}
                 </tr>
@@ -259,7 +257,7 @@
                   />
                 </div>
                 <span className="w-14 text-right mono text-slate-200">{fmt(r.turnover_share_pct, 1)}%</span>
-                <span className={`w-14 text-right mono ${colorOf(r.change_pct)}`}>{sign(r.change_pct)}%</span>
+                <span className={`w-14 text-right mono ${colorOf(r.change_pct)}`}>{signed(r.change_pct)}%</span>
               </div>
             ))}
           </div>
@@ -331,7 +329,7 @@
                 {rows.map((r) => (
                   <tr key={r.name} className="border-t border-slate-800/60">
                     <td className="py-1 px-1.5 text-slate-200">{r.name}</td>
-                    <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change_pct)}`}>{sign(r.change_pct)}%</td>
+                    <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change_pct)}`}>{signed(r.change_pct)}%</td>
                     <td className="py-1 px-1.5">
                       <div className="relative h-2 bg-slate-800/60 rounded">
                         <div
@@ -411,7 +409,7 @@
                       {!r.is_live && <span className="ml-1 text-[10px] text-slate-500">收盤</span>}
                     </td>
                     <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change)}`}>{fmt(r.price)}</td>
-                    <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change)}`}>{sign(r.change_pct)}%</td>
+                    <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change)}`}>{signed(r.change_pct)}%</td>
                     <td
                       className={`py-1 px-1.5 mono text-right ${r.volume_ratio >= 1 ? 'text-amber-300' : 'text-slate-400'}`}
                     >

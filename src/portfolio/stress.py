@@ -6,34 +6,20 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
-import threading
-import time
 
 from src.market.data_adapter import DualMarketDataAdapter
 from src.market import etf_data
 
 TTL = 1800
-_LOCK = threading.Lock()
-_CACHE: Dict[str, Any] = {}
 
 
 def _closes(symbol: str) -> Optional[Dict[str, float]]:
-    with _LOCK:
-        hit = _CACHE.get(symbol)
-        if hit and time.time() - hit["t"] < TTL:
-            return hit["v"]
-    ad = DualMarketDataAdapter()
-    for ysym in etf_data._yahoo_candidates(symbol):
-        try:
-            bars = ad._fetch_from_yahoo(ysym, days=500)
-        except Exception:
-            continue
-        if len(bars) > 60:
-            v = {b.timestamp: b.close for b in bars}
-            with _LOCK:
-                _CACHE[symbol] = {"t": time.time(), "v": v}
-            return v
-    return None
+    def load():
+        ad = DualMarketDataAdapter()
+        bars = etf_data.first_bars(symbol, lambda y: ad._fetch_from_yahoo(y, days=500), min_bars=61)
+        return {b.timestamp: b.close for b in bars} if bars else None
+
+    return etf_data._cached(f"stress_closes:{symbol}", load, ttl=TTL)
 
 
 def historical_stress(holdings: List[Dict[str, Any]], usd_twd: float) -> Dict[str, Any]:

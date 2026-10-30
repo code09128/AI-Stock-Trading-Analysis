@@ -57,20 +57,14 @@ HEDGES = [
 REGION_LABEL = {"TW": "台灣", "US": "美國", "HK": "香港", "JP": "日本", "UK": "英國", "CN": "中國", "KR": "韓國"}
 
 
-def _long_closes(symbol: str) -> Optional[Dict[str, float]]:
-    """約 10 年的還權日收盤（回放 2020、2022 需要）。快取 12 小時。"""
+def _period_closes(symbol: str, start: str, end: str) -> Optional[Dict[str, float]]:
+    """start～end 這一段的還權日收盤（只抓回放要用的期間，不下載 10 年）。起點前多抓 14 天，讓 _window 判斷是否已上市。快取 12 小時。"""
     def load():
         ad = DualMarketDataAdapter()
-        for ysym in etf_data._yahoo_candidates(symbol):
-            try:
-                bars = ad._fetch_from_yahoo(ysym, days=2600)
-            except Exception:
-                continue
-            if len(bars) > 60:
-                return {b.timestamp: b.close for b in bars}
-        return None
+        bars = etf_data.first_bars(symbol, lambda y: ad.fetch_period(y, _shift(start, -14), end))
+        return {b.timestamp: b.close for b in bars} if bars else None
 
-    return etf_data._cached(f"long_closes:{symbol}", load, ttl=12 * 3600)
+    return etf_data._cached(f"period_closes:{symbol}:{start}:{end}", load, ttl=12 * 3600)
 
 
 def _window(closes: Dict[str, float], start: str, end: str) -> Optional[List[Tuple[str, float]]]:
@@ -96,7 +90,7 @@ def beta_scenarios(total_twd: float, beta: float) -> List[Dict[str, Any]]:
 def replay(holdings: List[Dict[str, Any]], sc: Dict[str, Any]) -> Dict[str, Any]:
     syms = [h["symbol"] for h in holdings] + [b for b, _ in BENCHMARKS]
     with ThreadPoolExecutor(max_workers=6) as ex:
-        series = dict(zip(syms, ex.map(_long_closes, syms)))
+        series = dict(zip(syms, ex.map(lambda s: _period_closes(s, sc["start"], sc["end"]), syms)))
     total = sum(h["value_twd"] for h in holdings) or 1.0
     rows, paths, covered = [], [], 0.0
     for h in holdings:

@@ -1,7 +1,7 @@
 // 看盤頁左側的「技術總覽」表格與「提醒」面板，以及全站共用的提醒判斷引擎 AlertWatcher（掛在 App 上）
 (() => {
   const { useState, useEffect, useRef } = React;
-  const { fmt, colorOf, baseCode, normSym, readLS, writeLS } = window.TA;
+  const { fmt, signed, colorOf, baseCode, normSym, readLS, writeLS } = window.TA;
 
   const LS_ALERTS = 'tw_us_alerts_v1';
 
@@ -387,17 +387,13 @@
                 >
                   <td className="py-1.5 font-bold text-white">{baseCode(s)}</td>
                   <td className={colorOf(q?.change_pct)}>
-                    {q?.change_pct == null
-                      ? '--'
-                      : `${q.change_pct > 0 ? '+' : ''}${fmt(q.change_pct)}%`}
+                    {signed(q?.change_pct, 2, '%')}
                   </td>
                   <td className={o?.rsi14 != null ? rsiCls(o.rsi14) : 'text-slate-600'}>
                     {o?.error ? '失敗' : o?.rsi14 != null ? fmt(o.rsi14, 1) : '…'}
                   </td>
                   <td className={colorOf(o?.dist_ma20_pct)}>
-                    {o?.dist_ma20_pct == null
-                      ? '--'
-                      : `${o.dist_ma20_pct > 0 ? '+' : ''}${fmt(o.dist_ma20_pct)}%`}
+                    {signed(o?.dist_ma20_pct, 2, '%')}
                   </td>
                   <td>{o?.volume_ratio == null ? '--' : fmt(o.volume_ratio, 2)}</td>
                   <td className={trendCls[o?.trend] || 'text-slate-300'}>{o?.trend || '…'}</td>

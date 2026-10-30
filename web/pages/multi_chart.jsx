@@ -389,10 +389,10 @@
           })
           .catch(() => {});
       }
-      const id = setInterval(run, REFRESH_MS);
+      const cancel = window.TA.pollEvery(run, REFRESH_MS);
       return () => {
         stop = true;
-        clearInterval(id);
+        cancel();
       };
     }, [visibleKey]);
 

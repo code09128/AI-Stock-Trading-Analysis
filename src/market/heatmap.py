@@ -19,6 +19,7 @@ from src.company import stock_info
 from src.market import etf_data, fx, markets
 from src.market import quote_provider as qp
 from src.market.data_adapter import DualMarketDataAdapter
+from src.market.util import to_num as _num
 
 MAX_SYMBOLS = 60
 
@@ -52,13 +53,6 @@ US_SECTOR_ZH = {
     "Industrials": "工業", "Energy": "能源", "Utilities": "公用事業", "Real Estate": "不動產",
     "Basic Materials": "原物料",
 }
-
-
-def _num(v: Any) -> Optional[float]:
-    try:
-        return float(str(v).replace(",", ""))
-    except (TypeError, ValueError):
-        return None
 
 
 V7_FIELDS = ("regularMarketPrice,regularMarketChangePercent,regularMarketVolume,regularMarketTime,currency,"

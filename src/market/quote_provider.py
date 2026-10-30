@@ -9,71 +9,27 @@
 每一次對外請求都會寫入 FETCH_LOG（網址、狀態、耗時、位元組），供前端「資料來源透明面板」顯示。
 """
 
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List
-import json
 import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 
 from src.market.data_adapter import DualMarketDataAdapter
+from src.market.net import FETCH_LOG, LOG_LOCK, http_json
+from src.market.util import to_num
 
-UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 MIS_URL = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 
-FETCH_LOG: deque = deque(maxlen=60)
 _LOCK = threading.Lock()
 _CACHE: Dict[str, Any] = {}
 CACHE_TTL_SEC = 3.0
 US_CACHE_TTL_SEC = 3.0
-
-
-def _http_json(url: str, timeout: int = 8, opener: Any = None,
-               headers: Dict[str, str] = None, body: Any = None) -> Dict[str, Any]:
-    """送出請求並記錄到 FETCH_LOG；失敗時記錄後再拋出。
-    headers 用來放認證（例如 FinMind token），不會寫進紀錄；不要把金鑰放在網址裡。
-    body 不是 None 時改用 POST 送出 JSON（期交所行情 API 用）。"""
-    started = time.time()
-    rec = {
-        "time": datetime.now().strftime("%H:%M:%S"),
-        "url": url,
-        "status": "ERR",
-        "ms": 0,
-        "bytes": 0,
-        "error": None,
-    }
-    try:
-        if body is None:
-            req = urllib.request.Request(url, headers={**UA, **(headers or {})})
-        else:
-            req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
-                                         headers={**UA, "Content-Type": "application/json", **(headers or {})})
-        opener_open = opener.open if opener else urllib.request.urlopen
-        with opener_open(req, timeout=timeout) as resp:
-            raw = resp.read()
-            rec["status"] = resp.status
-            rec["bytes"] = len(raw)
-        return json.loads(raw.decode("utf-8", errors="replace"))
-    except Exception as e:
-        rec["error"] = str(e)
-        raise
-    finally:
-        rec["ms"] = int((time.time() - started) * 1000)
-        with _LOCK:
-            FETCH_LOG.appendleft(rec)
-
-
-def _num(v: Any) -> Any:
-    try:
-        f = float(v)
-        return f if f == f else None
-    except (TypeError, ValueError):
-        return None
+_http_json = http_json  # 其他模組習慣用 qp._http_json（帶 UA、受連線上限控管、寫入 FETCH_LOG；實作在 net.py）
+_num = to_num
 
 
 def _split_levels(prices: str, vols: str) -> List[Dict[str, float]]:
@@ -99,27 +55,45 @@ def _base(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+MIS_CHUNK = 5  # 每批 5 檔（上市＋上櫃各一筆＝10 筆）：MIS 一次查太多會很慢（實測 16 檔要 30 秒、10 筆不到 1 秒）
+MIS_WORKERS = 2  # 同時太多請求 MIS 反而變慢
+
+
+def _mis_batch(chunk: List[Dict[str, str]]) -> Dict[str, Any]:
+    ex_ch = "|".join(f"{ex}_{n['raw_code'].upper()}.tw" for n in chunk for ex in ("tse", "otc"))
+    url = f"{MIS_URL}?{urllib.parse.urlencode({'ex_ch': ex_ch, 'json': 1, 'delay': 0})}"
+    try:
+        try:
+            payload = _http_json(url, timeout=6)
+        except Exception:  # 證交所偶爾回應很慢，重試一次
+            payload = _http_json(url, timeout=8)
+        return {"rows": {r.get("c", "").upper(): r for r in payload.get("msgArray", [])}, "error": None}
+    except Exception as e:
+        return {"rows": {}, "error": str(e)}
+
+
 def fetch_tw_quotes(
     norms: List[Dict[str, str]], names: Dict[str, str]
 ) -> Dict[str, Dict[str, Any]]:
-    ex_ch = "|".join(f"{ex}_{n['raw_code'].upper()}.tw" for n in norms for ex in ("tse", "otc"))
-    url = f"{MIS_URL}?{urllib.parse.urlencode({'ex_ch': ex_ch, 'json': 1, 'delay': 0})}"
-    result: Dict[str, Dict[str, Any]] = {}
-    try:
-        try:
-            payload = _http_json(url, timeout=12)
-        except Exception:  # 證交所偶爾回應很慢，重試一次
-            payload = _http_json(url, timeout=15)
-        rows = {r.get("c", "").upper(): r for r in payload.get("msgArray", [])}
-    except Exception as e:
-        for n in norms:
-            q = _base(n, names)
-            q["error"] = f"TWSE MIS 連線失敗: {e}"
-            result[n["symbol"]] = q
-        return result
+    chunks = [norms[i:i + MIS_CHUNK] for i in range(0, len(norms), MIS_CHUNK)]
+    with ThreadPoolExecutor(max_workers=MIS_WORKERS) as pool:
+        batches = list(pool.map(_mis_batch, chunks))
+    rows: Dict[str, Any] = {}
+    failed: Dict[str, str] = {}  # 代號 -> 那一批的連線錯誤（只有那一批的股票標失敗，其他批照常顯示）
+    for chunk, b in zip(chunks, batches):
+        rows.update(b["rows"])
+        if b["error"]:
+            for n in chunk:
+                failed[n["raw_code"].upper()] = b["error"]
+    url = MIS_URL
 
+    result: Dict[str, Dict[str, Any]] = {}
     for n in norms:
         q = _base(n, names)
+        if n["raw_code"].upper() in failed:
+            q["error"] = f"TWSE MIS 連線失敗: {failed[n['raw_code'].upper()]}"
+            result[n["symbol"]] = q
+            continue
         r = rows.get(n["raw_code"].upper())
         if not r:
             q["error"] = "TWSE MIS 查無此代號（上市/上櫃皆無資料）"
@@ -260,5 +234,5 @@ def get_quotes(symbols: List[str], names: Dict[str, str]) -> List[Dict[str, Any]
 
 
 def get_fetch_log() -> List[Dict[str, Any]]:
-    with _LOCK:
+    with LOG_LOCK:
         return list(FETCH_LOG)

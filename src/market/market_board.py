@@ -20,6 +20,8 @@ import urllib.parse
 
 from src.company import stock_info
 from src.market import quote_provider as qp
+from src.market.cache import TTLCache
+from src.market.util import to_num as _num
 
 WORLD_GROUPS = [
     ("美股", [("^GSPC", "S&P 500"), ("^IXIC", "那斯達克"), ("^DJI", "道瓊"), ("^SOX", "費城半導體"),
@@ -45,20 +47,13 @@ TWSE_GAP_SEC = 0.8  # 證交所網站有頻率限制（約每 5 秒 3 次），�
 MIS_CHUNK = 10  # MIS 一次查太多檔會變得很慢（實測 20 檔要十幾秒、10 檔不到 1 秒）
 
 _LOCK = threading.Lock()
-_CACHE: Dict[str, Any] = {}
+_CACHE = TTLCache()
 _TWSE_LOCK = threading.Lock()
 _TWSE_LAST = [0.0]
 
 
-def _cached(key: str, ttl: float, loader: Callable[[], Any]) -> Any:
-    with _LOCK:
-        hit = _CACHE.get(key)
-        if hit and (ttl is None or time.time() - hit["t"] < ttl):
-            return hit["v"]
-    value = loader()
-    with _LOCK:
-        _CACHE[key] = {"t": time.time(), "v": value}
-    return value
+def _cached(key: str, ttl: Optional[float], loader: Callable[[], Any]) -> Any:
+    return _CACHE.get_or_load(key, loader, ttl, on_error="raise")  # 失敗不快取，下次重新抓
 
 
 def _safe(fn: Callable[[], Dict[str, Any]], what: str) -> Dict[str, Any]:
@@ -67,14 +62,6 @@ def _safe(fn: Callable[[], Dict[str, Any]], what: str) -> Dict[str, Any]:
         return fn()
     except Exception as e:
         return {"rows": [], "days": [], "error": f"{what}取得失敗：{e}"}
-
-
-def _num(v: Any) -> Optional[float]:
-    try:
-        f = float(str(v).replace(",", "").strip())
-        return f if f == f else None
-    except (TypeError, ValueError):
-        return None
 
 
 def _pct(change: Optional[float], ref: Optional[float]) -> Optional[float]:

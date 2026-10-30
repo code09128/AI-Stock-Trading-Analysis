@@ -12,9 +12,9 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 import threading
-import time
 
 from src.market import finmind
+from src.market.cache import TTLCache
 from src.market.data_adapter import DualMarketDataAdapter
 
 DATASETS = {
@@ -28,7 +28,7 @@ GROUPS = {
 }
 WINDOWS = (5, 20)
 CACHE_TTL_SEC = 3600
-_CACHE: Dict[str, Any] = {}
+_CACHE = TTLCache()
 _LOCK = threading.Lock()
 
 
@@ -144,10 +144,9 @@ def chips(symbol: str) -> Dict[str, Any]:
         return {"symbol": n["symbol"], "supported": False,
                 "reason": f"{n['symbol']} 不是台股代號；籌碼資料（三大法人、融資融券）只有台股有"}
     code = n["raw_code"]
-    with _LOCK:
-        hit = _CACHE.get(code)
-        if hit and time.time() - hit["t"] < CACHE_TTL_SEC:
-            return hit["v"]
+    hit = _CACHE.get(code, CACHE_TTL_SEC)
+    if hit is not None:
+        return hit
 
     # 抓約 45 個日曆天，確保有 20 個以上交易日（含連假）
     start = (date.today() - timedelta(days=45)).isoformat()
@@ -168,7 +167,6 @@ def chips(symbol: str) -> Dict[str, Any]:
         "errors": errors,
         "source": "FinMind（三大法人買賣超、融資融券、外資持股），收盤後更新（T+1）",
     }
-    with _LOCK:
-        if len(errors) < len(DATASETS):  # 全部失敗不快取，下次重試
-            _CACHE[code] = {"t": time.time(), "v": result}
+    if len(errors) < len(DATASETS):  # 全部失敗不快取，下次重試
+        _CACHE.put(code, result)
     return result

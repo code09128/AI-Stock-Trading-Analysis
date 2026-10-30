@@ -20,29 +20,19 @@ import urllib.request
 from src.market import quote_provider as qp
 from src.market import markets
 from src.market.data_adapter import DualMarketDataAdapter
+from src.market.cache import TTLCache
+from src.market.net import http_bytes
 
 TWSE_OPENAPI = "https://openapi.twse.com.tw/v1"
 TTL = 6 * 3600
 _LOCK = threading.Lock()
-_CACHE: Dict[str, Any] = {}
+_CACHE = TTLCache()
 _OPENER: Dict[str, Any] = {}
 
 
 def _cached(key: str, loader, ttl: int = TTL):
-    with _LOCK:
-        hit = _CACHE.get(key)
-        if hit and time.time() - hit["t"] < ttl:
-            return hit["v"]
-    try:
-        value = loader()
-    except Exception:
-        value = None
-    with _LOCK:
-        if value is None and hit:
-            return hit["v"]  # 失敗時沿用舊資料
-        if value is not None:
-            _CACHE[key] = {"t": time.time(), "v": value}
-    return value
+    """loader 失敗或回傳 None 時：有舊資料就沿用，否則記一筆「抓不到」（見 cache.TTLCache）。"""
+    return _CACHE.get_or_load(key, loader, ttl)
 
 
 def _yahoo_candidates(symbol: str) -> List[str]:
@@ -51,6 +41,18 @@ def _yahoo_candidates(symbol: str) -> List[str]:
         return [n["symbol"]]
     base = n["raw_code"]
     return [f"{base}.TW", f"{base}.TWO"]
+
+
+def first_bars(symbol: str, fetch, min_bars: int = 1):
+    """依序試 Yahoo 候選代號（台股 .TW／.TWO），回傳第一個筆數足夠的日 K；都失敗回 None。fetch(yahoo_symbol) -> bars。"""
+    for ysym in _yahoo_candidates(symbol):
+        try:
+            bars = fetch(ysym)
+        except Exception:
+            continue
+        if len(bars) >= min_bars:
+            return bars
+    return None
 
 
 # ---------- TWSE ----------
@@ -107,24 +109,33 @@ def dividend_yield(symbol: str) -> Optional[Dict[str, Any]]:
     return _cached(f"yield:{symbol}", load)
 
 
+_OPENER_LOCK = threading.Lock()
+
+
 def _yahoo_opener():
-    with _LOCK:
-        if "op" in _OPENER and time.time() - _OPENER["t"] < 3600:
-            return _OPENER["op"], _OPENER["crumb"]
-    jar = http.cookiejar.CookieJar()
-    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    try:
-        qp._http_json("https://fc.yahoo.com", timeout=8, opener=op)
-    except Exception:
-        pass  # 這個網址本來就回 404，只是為了取得 cookie
-    crumb_req = urllib.request.Request(
-        "https://query2.finance.yahoo.com/v1/test/getcrumb", headers=qp.UA
-    )
-    with op.open(crumb_req, timeout=10) as resp:
-        crumb = resp.read().decode()
-    with _LOCK:
-        _OPENER.update(op=op, crumb=crumb, t=time.time())
-    return op, crumb
+    def cached():
+        with _LOCK:
+            if "op" in _OPENER and time.time() - _OPENER["t"] < 3600:
+                return _OPENER["op"], _OPENER["crumb"]
+        return None
+
+    hit = cached()
+    if hit:
+        return hit
+    with _OPENER_LOCK:  # 好幾檔 ETF 同時預熱時，只讓第一個去取 cookie 與 crumb
+        hit = cached()
+        if hit:
+            return hit
+        jar = http.cookiejar.CookieJar()
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        try:
+            qp._http_json("https://fc.yahoo.com", timeout=8, opener=op)
+        except Exception:
+            pass  # 這個網址本來就回 404，只是為了取得 cookie
+        crumb = http_bytes("https://query2.finance.yahoo.com/v1/test/getcrumb", 10, opener=op).decode()
+        with _LOCK:
+            _OPENER.update(op=op, crumb=crumb, t=time.time())
+        return op, crumb
 
 
 def top_holdings(symbol: str) -> Optional[Dict[str, Any]]:
@@ -170,15 +181,8 @@ def calc_beta(symbol: str) -> Optional[Dict[str, Any]]:
         bench = markets.info(norm["market"])["index"]  # 各市場自己的大盤（台 ^TWII、美 ^GSPC、港 ^HSI…）
         ad = DualMarketDataAdapter()
         bench_bars = ad._fetch_from_yahoo(bench, days=250)
-        bars = None
-        for ysym in _yahoo_candidates(symbol):
-            try:
-                bars = ad._fetch_from_yahoo(ysym, days=250)
-                if len(bars) > 60:
-                    break
-            except Exception:
-                continue
-        if not bars or len(bars) <= 60:
+        bars = first_bars(symbol, lambda y: ad._fetch_from_yahoo(y, days=250), min_bars=61)
+        if not bars:
             return None
 
         def rets(bs):
@@ -216,8 +220,7 @@ def build_etf_rows(pool: List[str], quotes: Dict[str, Dict[str, Any]]) -> List[D
         except (TypeError, ValueError):
             pass
         price = q.get("price")
-        with _LOCK:
-            y = (_CACHE.get(f"yield:{code}") or {}).get("v")
+        y = _CACHE.peek(f"yield:{code}")
         rows.append(
             {
                 "symbol": code,

@@ -162,17 +162,13 @@ function App() {
     [m1Ticker, m1BarCount, m1Timeframe, showToast],
   );
 
-  // 初始載入：只跑一次（runMod1 會隨代號改變而換新，依賴它的話每次換股都會再分析一次 2330）
-  const initRef = useRef(false);
+  // 初始載入：只查系統狀態；技術分析等切到該頁才抓（handleSwitchTab 沒有資料時會分析），不在啟動時先抓
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
     fetch('/api/health')
       .then((r) => r.json())
       .then((d) => setHealth(d))
       .catch(() => {});
-    runMod1({ overrideTicker: '2330.TW', simulateTick: false, useAI: false, quiet: true });
-  }, [runMod1]);
+  }, []);
 
   // 盤中動態每秒倒數與每 5 秒自動跳動更新
   useEffect(() => {
@@ -181,7 +177,8 @@ function App() {
     const timer = setInterval(() => {
       setCountdownSec((prev) => {
         if (prev <= 1) {
-          if (!m1Busy.current) runMod1({ simulateTick: false, quiet: true }); // 上一次還沒回來就跳過這一輪
+          // 上一次還沒回來、或頁面不在前景就跳過這一輪
+          if (!m1Busy.current && !window.TA.pageAway?.()) runMod1({ simulateTick: false, quiet: true });
           return 5;
         }
         return prev - 1;
@@ -626,7 +623,10 @@ function App() {
     setM5Entries(DEFAULT_JOURNAL);
     setM5Data(null);
     setIsResetModalOpen(false);
-    runMod1({ overrideTicker: '2330.TW', overrideBarCount: 30, simulateTick: false, quiet: true });
+    // 不在技術分析頁就只清掉結果，等切過去再抓
+    if (activeTab === 'mod1')
+      runMod1({ overrideTicker: '2330.TW', overrideBarCount: 30, simulateTick: false, quiet: true });
+    else setM1Data(null);
     showToast('已將各分頁參數重置為出廠預設值');
   };
 

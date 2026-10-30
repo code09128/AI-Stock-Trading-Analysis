@@ -220,10 +220,9 @@
     useEffect(() => {
       setData(null);
       load();
-      const t = setInterval(() => {
-        if (!document.hidden && !busyRef.current) load(); // 上一輪還沒回來就跳過
+      return window.TA.pollEvery(() => {
+        if (!busyRef.current) load(); // 上一輪還沒回來就跳過
       }, 20000);
-      return () => clearInterval(t);
     }, [load]);
 
     useEffect(() => {

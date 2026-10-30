@@ -22,20 +22,20 @@ import json
 import os
 import re
 import threading
-import time
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 
 from src.market import quote_provider as qp
 from src.market.data_adapter import DualMarketDataAdapter
+from src.market.cache import TTLCache
+from src.market.net import http_bytes, http_json
 from src.news import announcement_store
 
 TW_TZ = zone("Asia/Taipei")
 SEC_UA_DEFAULT = "local-trading-research-tool/1.0"
 TTL = 300
 _LOCK = threading.Lock()
-_CACHE: Dict[str, Any] = {}
+_CACHE = TTLCache()
 
 SEC_ITEMS = {
     "1.01": "簽訂重大合約",
@@ -52,22 +52,8 @@ SEC_ITEMS = {
 
 
 def _get_text(url: str, headers: Dict[str, str], timeout: int = 25) -> bytes:
-    """與 quote_provider._http_json 相同的記錄方式，但回傳原始 bytes（RSS 用）。"""
-    started = time.time()
-    rec = {"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": "ERR", "ms": 0,
-           "bytes": 0, "error": None}
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout) as r:
-            raw = r.read()
-            rec.update(status=r.status, bytes=len(raw))
-            return raw
-    except Exception as e:
-        rec["error"] = str(e)
-        raise
-    finally:
-        rec["ms"] = int((time.time() - started) * 1000)
-        with qp._LOCK:
-            qp.FETCH_LOG.appendleft(rec)
+    """回傳原始 bytes（RSS 用）；headers 裡的 User-Agent 會取代預設值（SEC 要求自報身分）。"""
+    return http_bytes(url, timeout, headers=headers)
 
 
 def _item(title: str, source: str, link: str, dt_utc: datetime, kind: str, market: str,
@@ -194,19 +180,10 @@ def _twse_material(code: str) -> List[Dict[str, Any]]:
     rows = []
     fetch_error = None
     url = "https://openapi.twse.com.tw/v1/opendata/t187ap04_L"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
-    started = time.time()
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            rows = json.loads(r.read().decode("utf-8"))
+        rows = http_json(url, timeout=15, headers={"Accept": "application/json"})
         announcement_store.save_today_twse_material(rows)
-        with qp._LOCK:
-            qp.FETCH_LOG.appendleft({"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": 200,
-                                     "ms": int((time.time() - started) * 1000), "bytes": 0, "error": None})
     except Exception as e:
-        with qp._LOCK:
-            qp.FETCH_LOG.appendleft({"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": "ERR",
-                                     "ms": int((time.time() - started) * 1000), "bytes": 0, "error": str(e)})
         fetch_error = e
 
     # 合併今日最新與本地累積的歷史重大訊息（保留 90 天，去重）
@@ -291,10 +268,9 @@ def dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def fetch_news(symbol: str, name: str = "") -> Dict[str, Any]:
     key = f"news:{symbol}"
-    with _LOCK:
-        hit = _CACHE.get(key)
-        if hit and time.time() - hit["t"] < TTL:
-            return hit["v"]
+    hit = _CACHE.get(key, TTL)
+    if hit is not None:
+        return hit
     n = DualMarketDataAdapter.normalize_symbol(symbol)
     market, code = n["market"], n["raw_code"]
     jobs = []
@@ -338,6 +314,5 @@ def fetch_news(symbol: str, name: str = "") -> Dict[str, Any]:
     uniq = dedupe(items)
     result = {"symbol": n["symbol"], "market": market, "items": uniq[:60], "sources": sources,
               "errors": errors}
-    with _LOCK:
-        _CACHE[key] = {"t": time.time(), "v": result}
+    _CACHE.put(key, result)
     return result

@@ -7,11 +7,11 @@
 
 from datetime import datetime
 from typing import Any, Dict, Iterable
-import json
 import threading
 import time
 import urllib.parse
-import urllib.request
+
+from src.market.net import http_json
 
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/"
 CACHE_TTL_SEC = 300
@@ -29,9 +29,7 @@ def _pair(cur: str) -> str:
 
 def _fetch(cur: str, timeout: int = 8) -> float:
     url = f"{YAHOO_URL}{urllib.parse.quote(_pair(cur))}?interval=1d&range=5d"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    data = http_json(url, timeout=timeout)
     rate = float(data["chart"]["result"][0]["meta"]["regularMarketPrice"])
     if not rate > 0:
         raise ValueError(f"匯率數值異常：{rate}")

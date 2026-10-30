@@ -1,7 +1,7 @@
 // 看盤頁：個股／ETF 基本資料與配息（右側分頁）＋ 配息月曆（左側分頁）
 (() => {
   const { useState, useEffect } = React;
-  const { fmt, colorOf, baseCode } = window.TA;
+  const { fmt, signed, colorOf, baseCode } = window.TA;
 
   const CAT_STYLE = {
     STOCK: 'bg-sky-500/15 text-sky-300 border-sky-500/40',
@@ -53,7 +53,7 @@
   );
 
   // 財報與市場預期：台股月營收＋季財報；美股 EPS 驚喜、分析師預估與上下修；規則分類的「預期差」
-  const sgn = (v, d = 2) => (v == null ? '--' : `${v > 0 ? '+' : ''}${fmt(v, d)}%`);
+  const sgn = (v, d = 2) => signed(v, d, '%');
   const sgnCls = (v) => (v == null ? 'text-slate-500' : v >= 0 ? 'text-emerald-400' : 'text-rose-400');
   const GAP_STYLE = {
     可能已反映在股價: 'border-amber-500/40 bg-amber-500/5 text-amber-100',

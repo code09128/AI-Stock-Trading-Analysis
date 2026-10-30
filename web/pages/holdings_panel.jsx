@@ -2,7 +2,7 @@
   // 我的持股：市值／成本／損益總覽（可切即時價或昨收、填帳戶現金／投資金額／已領配息以便和銀行對帳）、
   // 持股清單（分析、回測、帶入賣出委託、移除）、新增與 CSV 匯入、送去組合風控
   const { useState, useEffect, useMemo } = React;
-  const { readLS, writeLS, currencyOf, normSym, baseCode, fmt, colorOf, Tip } = window.TA;
+  const { readLS, writeLS, currencyOf, normSym, baseCode, fmt, signed, colorOf, Tip } = window.TA;
 
   function HoldingsPanel({
     holdings,
@@ -388,7 +388,7 @@
             active={baseCode(selected) === baseCode(r.symbol)}
             onClick={() => onSelect(r.symbol)}
             sub={`${r.broker ? `【${r.broker}】` : ''}${Number.isInteger(r.shares) ? fmt(r.shares, 0) : fmt(r.shares, 4)} 股・成本 ${fmt(r.cost)}・${
-              r.pnlPct == null ? '--' : `${r.pnlPct > 0 ? '+' : ''}${fmt(r.pnlPct)}%`
+              signed(r.pnlPct, 2, '%')
             }`}
             action={
               <span className="flex items-center gap-1">

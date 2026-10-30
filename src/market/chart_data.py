@@ -6,11 +6,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-import threading
-import time
 import urllib.parse
 
 from src.market import quote_provider as qp
+from src.market.cache import TTLCache
 from src.market.data_adapter import DualMarketDataAdapter
 
 INDICES = [
@@ -25,21 +24,15 @@ INDEX_NAMES = dict(INDICES)
 
 INTRADAY_TTL = 30
 SPARK_TTL = 600
-_LOCK = threading.Lock()
-_CACHE: Dict[str, Any] = {}
+_CACHE = TTLCache()
 
 
 def _get(key: str, ttl: int):
-    with _LOCK:
-        hit = _CACHE.get(key)
-        if hit and time.time() - hit["t"] < ttl:
-            return hit["v"]
-    return None
+    return _CACHE.get(key, ttl)
 
 
 def _put(key: str, value: Any) -> None:
-    with _LOCK:
-        _CACHE[key] = {"t": time.time(), "v": value}
+    _CACHE.put(key, value)
 
 
 def _yahoo_symbols(symbol: str) -> List[str]:

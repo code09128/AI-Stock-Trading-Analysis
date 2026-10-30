@@ -75,6 +75,12 @@
       ? '--'
       : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+  // 帶正負號的數字（+1.23、-0.50）；沒有值顯示 --。unit 例如 '%'
+  const signed = (v, d = 2, unit = '') => {
+    const s = fmt(v, d);
+    return s === '--' ? s : `${v > 0 ? '+' : ''}${s}${unit}`;
+  };
+
   // 台灣紅漲綠跌
   const colorOf = (chg) =>
     chg > 0 ? 'text-rose-400' : chg < 0 ? 'text-emerald-400' : 'text-slate-300';
@@ -242,6 +248,7 @@
     normSym,
     baseCode,
     fmt,
+    signed,
     colorOf,
     twTick,
     isOnTick,

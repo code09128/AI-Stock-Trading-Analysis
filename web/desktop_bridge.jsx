@@ -80,7 +80,28 @@
   // 縮到系統匣時由 Python 背景引擎檢查提醒，頁面暫停；回到前景時重新載入資料檔裡的提醒（背景可能已觸發）
   function setDesktopHidden(hidden) {
     window.TA.desktopHidden = !!hidden;
-    if (!hidden) window.TA.reloadAlertsFromServer?.();
+    if (!hidden) {
+      window.TA.reloadAlertsFromServer?.();
+      window.dispatchEvent(new Event('ta-resume')); // 讓定時更新的畫面馬上補抓一次
+    }
+  }
+
+  // 頁面不在前景（瀏覽器分頁切走、桌面版縮到系統匣）：定時更新的畫面先暫停，回來後下一輪再抓
+  const pageAway = () => document.hidden || !!window.TA.desktopHidden;
+
+  // 定時更新：不在前景就跳過該輪；回到前景（切回分頁、從系統匣叫回）立刻補抓一次，不用等下一輪。回傳取消函式
+  function pollEvery(fn, ms) {
+    const run = () => {
+      if (!pageAway()) fn();
+    };
+    const id = setInterval(run, ms);
+    document.addEventListener('visibilitychange', run);
+    window.addEventListener('ta-resume', run);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', run);
+      window.removeEventListener('ta-resume', run);
+    };
   }
 
   // ---------- 畫面縮放（桌面版）----------
@@ -260,6 +281,8 @@
     askClose,
     setDesktopHidden,
     desktopHidden: false,
+    pageAway,
+    pollEvery,
     ZoomControl,
     ZoomSettings,
   });
