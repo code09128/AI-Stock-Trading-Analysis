@@ -37,7 +37,10 @@
 
 ### A. 直接執行（打包好的程式）
 
-先打包（見下方「打包成桌面程式」），或拿別人打包好的檔案。打包好的程式不用另外安裝 Python。
+到 [Releases 頁面](https://github.com/code09128/AI-Stock-Trading-Analysis/releases/latest) 下載打包好的程式，或自己打包（見下方「打包成桌面程式」）。打包好的程式不用另外安裝 Python。
+
+- **Mac**：Releases 每一版都有 `AI-Stock-Trading-Analysis-mac-arm64.dmg`（GitHub 的 Mac 主機自動打包，只能在 Apple 晶片的 Mac 執行），下載就能用。
+- **Windows**：Releases 只放手動更新工具，安裝程式要自己用 `package.bat` 打包。
 
 **Windows**
 
