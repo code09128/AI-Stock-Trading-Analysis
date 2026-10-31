@@ -1,2 +1,5 @@
 # Windows 批次檔必須是 CRLF，否則 cmd 會把中文切成亂碼指令
 *.bat text eol=crlf
+# Mac／Linux 的 shell 腳本必須是 LF，否則 bash 會把行尾的 \r 當成指令的一部分
+*.command text eol=lf
+*.sh text eol=lf

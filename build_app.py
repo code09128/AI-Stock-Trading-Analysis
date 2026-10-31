@@ -1,13 +1,22 @@
 """
 自動打包腳本 (build_app.py)
-一鍵將專案打包成桌面視窗程式（desktop.py：Edge WebView2 獨立視窗＋載入動畫，沒有黑色主控台）：
+一鍵將專案打包成桌面視窗程式（desktop.py：獨立視窗＋載入動畫，沒有黑色主控台）。
+在哪個系統執行就打包成那個系統的程式（PyInstaller 不能跨系統打包）。
+
+Windows：
 1. 資料夾版: dist/股票交易分析系統/（exe＋_internal，直接執行最快；自己測試用這個）
 2. 整合安裝程式: dist/股票交易分析系統_Setup.exe（內容就是資料夾版，加上安裝、捷徑與解除安裝；給別人用這個）
 3. 加 --portable 才另外產生免安裝單一執行檔: dist/股票交易分析系統.exe（每次啟動先解壓縮，較慢；放隨身碟用）
-用法：python build_app.py [--portable]
-需要：pip install -r requirements-desktop.txt（pywebview、pyinstaller）；有 Pillow 時會產生啟動圖。
+
+Mac：
+1. 應用程式: dist/股票交易分析系統.app（雙擊開啟；可拖到「應用程式」資料夾）
+2. 安裝映像檔: dist/股票交易分析系統.dmg（給別人用：打開後把程式拖到「應用程式」）
+
+用法：python build_app.py [--portable]（Mac 用 python3，--portable 只有 Windows 有）
+需要：pip install -r requirements-desktop.txt（pywebview、pyinstaller）；有 Pillow 時 Windows 單一 exe 會有啟動圖、Mac 版會有程式圖示。
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -48,6 +57,8 @@ def get_pyinstaller_cmd() -> list:
 
 APP_NAME = "股票交易分析系統"
 APP_DIR = DIST_DIR / APP_NAME  # 資料夾版（安裝程式用）
+IS_MAC = sys.platform == "darwin"
+MAC_BUNDLE_ID = "io.github.code09128.ai-stock-trading"
 
 
 def build_web_dir() -> Path:
@@ -121,19 +132,32 @@ def make_version_file() -> Path:
     return out
 
 
+def icon_args() -> list:
+    """Mac 的 .app 圖示要 .icns：PyInstaller 會用 Pillow 把 app.ico 轉過去，沒有 Pillow 就用預設圖示（不影響打包）。"""
+    if IS_MAC:
+        try:
+            import PIL  # noqa: F401  只檢查有沒有安裝
+        except ImportError:
+            print("  [略過] 沒有 Pillow，Mac 版用預設圖示（pip3 install pillow 可加上）")
+            return []
+    return [f"--icon={ICON_PATH}"]
+
+
 def pyinstaller_base(web_dir: Path, name: str, mode: str) -> list:
-    """桌面版共用參數：desktop.py 為入口、無主控台（--windowed）。"""
+    """桌面版共用參數：desktop.py 為入口、無主控台（--windowed；Mac 上會產生 .app）。
+    --add-data 的分隔符號 Windows 是「;」、Mac 是「:」，用 os.pathsep。"""
+    sep = os.pathsep
     return get_pyinstaller_cmd() + [
         "--noconfirm",
         "--clean",
         mode,
         "--windowed",
         f"--name={name}",
-        f"--icon={ICON_PATH}",
-        f"--add-data={web_dir};web",
-        f"--add-data={ROOT / '.env.example'};.",
-        f"--add-data={ICON_PATH};.",  # 系統匣圖示
-        f"--add-data={make_version_file()};.",
+        *icon_args(),
+        f"--add-data={web_dir}{sep}web",
+        f"--add-data={ROOT / '.env.example'}{sep}.",
+        f"--add-data={ICON_PATH}{sep}.",  # 系統匣圖示
+        f"--add-data={make_version_file()}{sep}.",
         "--collect-submodules=src",
         f"--workpath={BUILD_DIR / mode.strip('-')}",
         f"--specpath={BUILD_DIR}",
@@ -456,7 +480,67 @@ def build_installer_exe(app_dir: Path) -> Path:
     return installer_path
 
 
+def build_mac_app(web_dir: Path) -> Path:
+    """Mac：資料夾模式加 --windowed 會產生 .app。資料不放在 .app 裡（見 config.get_app_dir），所以不用像 Windows 先搬開。
+    在 Apple 晶片的 Mac 上打包只能在 Apple 晶片執行，Intel Mac 要在 Intel Mac 上另外打包。"""
+    step(f"正在打包 Mac 應用程式 ({APP_NAME}.app)...")
+    cmd = pyinstaller_base(web_dir, APP_NAME, "--onedir") + [
+        f"--osx-bundle-identifier={MAC_BUNDLE_ID}",
+        str(ROOT / "desktop.py"),
+    ]
+    res = subprocess.run(cmd, cwd=str(ROOT))
+    if res.returncode != 0:
+        raise RuntimeError("PyInstaller 打包 .app 失敗！")
+    app = DIST_DIR / f"{APP_NAME}.app"
+    if not app.is_dir():
+        raise FileNotFoundError(f"未找到產生的 .app: {app}")
+    size_mb = sum(f.stat().st_size for f in app.rglob("*") if f.is_file() and not f.is_symlink()) / (1024 * 1024)
+    print(f"  [OK] 成功產生應用程式: {app} ({size_mb:.2f} MB)")
+    return app
+
+
+def build_mac_dmg(app: Path) -> Path:
+    """Mac：用系統內建的 hdiutil 做 .dmg，裡面放程式和「應用程式」資料夾的捷徑，打開後拖過去就安裝好。"""
+    step(f"正在製作安裝映像檔 ({APP_NAME}.dmg)...")
+    staging = BUILD_DIR / "dmg"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    shutil.copytree(app, staging / app.name, symlinks=True)  # .app 裡的框架靠符號連結，不能展開
+    (staging / "Applications").symlink_to("/Applications")
+    dmg = DIST_DIR / f"{APP_NAME}.dmg"
+    res = subprocess.run(["hdiutil", "create", "-volname", APP_NAME, "-srcfolder", str(staging),
+                          "-ov", "-format", "UDZO", str(dmg)])
+    shutil.rmtree(staging, ignore_errors=True)
+    if res.returncode != 0 or not dmg.exists():
+        raise RuntimeError("hdiutil 製作 .dmg 失敗！")
+    print(f"  [OK] 成功產生安裝映像檔: {dmg} ({dmg.stat().st_size / (1024 * 1024):.2f} MB)")
+    return dmg
+
+
+def main_mac():
+    _progress["total"] = 3
+    print("=" * 60)
+    print(f"開始構建 {APP_NAME} Mac 程式（.app＋.dmg）")
+    print("=" * 60)
+    if "--portable" in sys.argv[1:]:
+        print("  [略過] --portable 只有 Windows 版有；Mac 的 .app 本身就是免安裝，直接複製就能用")
+    check_desktop_deps()
+    web_dir = build_web_dir()
+    app = build_mac_app(web_dir)
+    dmg = build_mac_dmg(app)
+    step("全部打包構建完成！")
+    print("=" * 60)
+    print(f"1. 應用程式（雙擊開啟，可拖到「應用程式」）: {app}")
+    print(f"2. 安裝映像檔（給別人用）:                 {dmg}")
+    print("   沒有簽章：別人第一次開啟要在程式上按右鍵 →「打開」（或到「系統設定 → 隱私權與安全性」按「強制打開」）")
+    print("=" * 60)
+
+
 def main():
+    if IS_MAC:
+        main_mac()
+        return
     portable = "--portable" in sys.argv[1:]
     _progress["total"] = 4 if portable else 3
     print("=" * 60)

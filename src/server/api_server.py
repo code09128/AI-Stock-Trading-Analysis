@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict
 
 from src.ai import ai_client
 from src.company import fundamentals
-from src.market import bar_store, quote_provider, trade_rules
+from src.market import bar_store, net, quote_provider, trade_rules
 from src.server import activity_log, alert_engine, autostart, env_settings, jobs, updater, user_data
 from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, get_web_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
 
@@ -40,7 +40,8 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/fetchlog": lambda: {"log": quote_provider.get_fetch_log()},
     "/api/env": env_settings.status,
     "/api/userdata": user_data.load,
-    "/api/autostart": lambda: {"enabled": autostart.is_autostart_enabled()},
+    # supported：系統匣與開機啟動只有 Windows 版有（Mac 版設定頁改顯示說明）
+    "/api/autostart": lambda: {"enabled": autostart.is_autostart_enabled(), "supported": sys.platform == "win32"},
     "/api/tests/run": D.handle_run_tests,
     "/api/mod3/strategies": D.handle_mod3_strategies,
     "/api/mod3/custom/templates": D.handle_mod3_custom_templates,
@@ -302,6 +303,7 @@ def make_server(port: int = 8088) -> ThreadingHTTPServer:
 
 
 def run_server(port: int = 8088) -> None:
+    net.use_mac_system_certs()  # Mac 的 python.org Python 沒有憑證檔時改用系統根憑證；其他系統不動
     bar_store.enable()  # 日 K 存本機（data/bar_cache）；單元測試直接呼叫 make_server，不會寫檔
     make_server(port).serve_forever()
 

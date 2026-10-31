@@ -28,11 +28,27 @@ def _source_project_of(exe_dir: Path):
     return None
 
 
+MAC_APP_NAME = "股票交易分析系統"
+
+
+def _mac_bundle_of(exe_dir: Path):
+    """Mac 打包版的執行檔在「<名稱>.app/Contents/MacOS/」裡，回傳 .app 本身；不是就回傳 None。"""
+    if sys.platform == "darwin" and exe_dir.name == "MacOS" and exe_dir.parent.parent.suffix == ".app":
+        return exe_dir.parent.parent
+    return None
+
+
 def get_app_dir() -> Path:
     """取得應用程式工作目錄，用於存取 data\\、.env 與 logs。
-    打包版是 exe 所在目錄；但從專案的 dist\\ 直接執行時用專案根目錄，跟 start.bat／run.py 共用同一份資料。"""
+    打包版是 exe 所在目錄；但從專案的 dist\\ 直接執行時用專案根目錄，跟 start.bat／run.py 共用同一份資料。
+    Mac 的 .app 內部不能寫入（放在「應用程式」資料夾沒有權限、寫入也會破壞簽章），
+    改用 ~/Library/Application Support/股票交易分析系統/；重新安裝或換版本資料都還在。"""
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent
+        bundle = _mac_bundle_of(exe_dir)
+        if bundle is not None:
+            return (_source_project_of(bundle.parent)
+                    or Path.home() / "Library" / "Application Support" / MAC_APP_NAME)
         return _source_project_of(exe_dir) or exe_dir
     return _find_project_root()
 

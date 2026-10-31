@@ -8,6 +8,11 @@
 """
 
 import json
+import os
+import ssl
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -15,6 +20,7 @@ import urllib.request
 from collections import deque
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 # 實測：MIS 同時 2 條最快，再多反而變慢；Yahoo 在頻寬有限時 4 條以上也不會更快
@@ -29,6 +35,36 @@ SLOT_WAIT_SEC = 12  # 排隊最久等多久；超過就丟 TimeoutError
 _LOCK = threading.Lock()
 _SLOTS: Dict[Tuple[str, str], threading.BoundedSemaphore] = {}
 _LIVE_RANGES = ("range=1d", "range=5d")  # 日 K 本機快取的補抓（range=1mo）算大下載：不跟報價搶即時連線
+
+
+MAC_ROOT_KEYCHAIN = "/System/Library/Keychains/SystemRootCertificates.keychain"
+
+
+def use_mac_system_certs() -> bool:
+    """Mac：python.org 的 Python 與打包版 .app 不會讀系統鑰匙圈，OpenSSL 預設的憑證檔常常不存在，
+    結果每個 HTTPS 請求都 CERTIFICATE_VERIFY_FAILED。這時把系統根憑證匯出成 PEM，用 SSL_CERT_FILE 指給 OpenSSL
+    （之後每次建立連線都會讀到）。已經有憑證檔（Homebrew Python、跑過 Install Certificates）或不是 Mac 就不動。
+    限制：只含系統內建的根憑證，不含自己加到鑰匙圈的（例如公司代理伺服器的憑證）；遇到這種環境要改成一併匯出
+    登入鑰匙圈，或讓使用者自己設定 SSL_CERT_FILE。回傳是否有改設定。"""
+    if sys.platform != "darwin" or os.environ.get("SSL_CERT_FILE"):
+        return False
+    cafile = ssl.get_default_verify_paths().cafile  # 檔案不存在時是 None
+    if cafile and os.path.isfile(cafile):
+        return False
+    try:
+        pem = subprocess.run(["/usr/bin/security", "find-certificate", "-a", "-p", MAC_ROOT_KEYCHAIN],
+                             capture_output=True, timeout=10, check=True).stdout
+        if b"BEGIN CERTIFICATE" not in pem:
+            return False
+        path = Path(tempfile.gettempdir()) / "trading_mac_roots.pem"  # Mac 的暫存資料夾每個使用者各一個
+        tmp = path.with_name(f"{path.stem}.{os.getpid()}.tmp")
+        tmp.write_bytes(pem)
+        tmp.replace(path)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"讀取 Mac 系統根憑證失敗，HTTPS 連線可能會失敗：{e}", file=sys.stderr)
+        return False
+    os.environ["SSL_CERT_FILE"] = str(path)
+    return True
 
 
 def _kind(url: str) -> str:

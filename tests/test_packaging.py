@@ -41,6 +41,22 @@ class PackagingPathTests(unittest.TestCase):
             with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", str(other)):
                 self.assertEqual(get_app_dir(), other.parent)
 
+    def test_mac_app_uses_application_support(self):
+        """Mac 的 .app 內部不能寫：資料放 ~/Library/Application Support；從專案 dist/ 執行時照樣共用專案資料。"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            exe = Path("/Applications/股票交易分析系統.app/Contents/MacOS/股票交易分析系統")
+            with patch.object(sys, "platform", "darwin"), patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "executable", str(exe)), patch.object(Path, "home", return_value=root):
+                self.assertEqual(get_app_dir(), root / "Library" / "Application Support" / "股票交易分析系統")
+            (root / "src" / "server").mkdir(parents=True)
+            (root / "run.py").write_text("", encoding="utf-8")
+            in_dist = root / "dist" / "股票交易分析系統.app" / "Contents" / "MacOS" / "股票交易分析系統"
+            with patch.object(sys, "platform", "darwin"), patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "executable", str(in_dist)):
+                self.assertEqual(get_app_dir(), root)
+
     def test_frozen_activity_log_dir(self):
         with patch.object(sys, "frozen", True, create=True), \
              patch.object(sys, "executable", "D:\\Apps\\Trading\\trading.exe"):

@@ -29,28 +29,42 @@
 
 | 用法 | 適合誰 | 需要安裝 | 怎麼開 |
 |---|---|---|---|
-| **A. 直接執行（打包好的程式）** | 只想使用、不改程式 | 不用 Python | 執行安裝精靈，或雙擊免安裝 exe |
-| **B. 從原始碼執行** | 想用最新程式碼 | Python 3.10 以上 | `start.bat`（瀏覽器）或 `python desktop.py`（桌面視窗） |
+| **A. 直接執行（打包好的程式）** | 只想使用、不改程式 | 不用 Python | Windows：執行安裝精靈，或雙擊免安裝 exe；Mac：打開 `.dmg`，把程式拖到「應用程式」 |
+| **B. 從原始碼執行** | 想用最新程式碼 | Python 3.10 以上 | `start.bat`／`python3 run.py`（瀏覽器）或 `python desktop.py`（桌面視窗） |
 | **C. 開發模式** | 要修改程式 | Python 3.10 以上；選配 Node.js | `start.bat`，改完重新整理或重開 |
 
 服務只綁定 127.0.0.1，只有本機能連線。
 
 ### A. 直接執行（打包好的程式）
 
-先打包（見下方「打包」），或拿別人打包好的檔案：
+先打包（見下方「打包成桌面程式」），或拿別人打包好的檔案。打包好的程式不用另外安裝 Python。
+
+**Windows**
 
 - **安裝版（建議，開啟最快）**：執行 `股票交易分析系統_Setup.exe` → 桌面出現捷徑 → 雙擊開啟。重新安裝會沿用原本的資料與金鑰。
 - **免安裝版**：雙擊 `股票交易分析系統.exe`，可以放隨身碟帶著走。每次開啟要先解壓縮，會先顯示啟動圖（約 2 秒）。
 
-兩種都是獨立視窗、沒有黑色主控台。電腦需要 Microsoft Edge WebView2 Runtime（Windows 11 與更新過的 Windows 10 內建）。桌面視窗版（打包版與 `python desktop.py`）的操作：
+兩種都是獨立視窗、沒有黑色主控台。電腦需要 Microsoft Edge WebView2 Runtime（Windows 11 與更新過的 Windows 10 內建）。
+
+**Mac**
+
+- 打開 `股票交易分析系統.dmg`，把「股票交易分析系統」拖到「應用程式」資料夾，之後從「應用程式」或 Launchpad 開啟。也可以直接雙擊 `股票交易分析系統.app`，不用安裝。
+- 程式沒有 Apple 簽章，**別人的 Mac 第一次開啟**會被擋：在程式上按右鍵 →「打開」→ 再按「打開」；或到「系統設定 → 隱私權與安全性」按「強制打開」。只要做一次。自己打包自己用不會被擋。
+- 在 Apple 晶片（M1 以後）的 Mac 上打包的程式只能在 Apple 晶片的 Mac 執行；Intel Mac 要在 Intel Mac 上另外打包。
+- 用系統內建的 WebKit 顯示畫面，不需要另外安裝東西；畫面縮放需要 macOS 11 以上。
+
+桌面視窗版（打包版與 `python desktop.py`）的操作：
 
 - **啟動**：載入動畫上逐項顯示正在準備的資料（伺服器、你的資料、大盤、即時報價、走勢小圖、分時、技術指標），先抓好進到畫面就不用等。每項最多 8 秒、整體最多 15 秒；3 秒後可按「直接進入」，慢的項目在背景繼續抓。
-- **畫面縮放**：標題列右上角「－ 100% ＋」、設定頁的常用比例，或 Ctrl＋加減號、Ctrl＋滾輪（Ctrl＋0 回到 100%）。字與介面一起縮放，版面依放大後的寬度自動重新排列，不會擠在一起；下次開啟沿用。
-- **關閉**：按右上角 X 會詢問「縮到系統匣／結束程式／取消」。
-  - 縮到系統匣：價格、漲跌幅（每 15 秒）與 RSI（每 5 分鐘）提醒繼續在背景檢查，達標時跳出 Windows 通知；點系統匣圖示叫回視窗。
+- **畫面縮放**：標題列右上角「－ 100% ＋」、設定頁的常用比例，或 Ctrl（Mac 用 ⌘）＋加減號、Ctrl＋滾輪（Ctrl＋0 回到 100%）。字與介面一起縮放，版面依放大後的寬度自動重新排列，不會擠在一起；下次開啟沿用。
+- **關閉**：Windows 按右上角 X 會詢問「縮到系統匣／結束程式／取消」；Mac 沒有系統匣，只詢問「結束程式／取消」。
+  - 縮到系統匣（Windows）：價格、漲跌幅（每 15 秒）與 RSI（每 5 分鐘）提醒繼續在背景檢查，達標時跳出 Windows 通知；點系統匣圖示叫回視窗。
   - 結束程式：先存好最新修改，視窗立刻消失，背景工作平行收尾，最多 4 秒一定結束。系統匣圖示按右鍵也可以「結束程式」。
-- **開機自動啟動**（設定頁）：登入 Windows 後直接縮在系統匣執行。
-- **資料位置**：存在程式所在資料夾的 `data/`。**直接執行專案 `dist\` 裡的 exe 時，改用專案根目錄的 `data/`、`.env`、`logs/`**，跟 `start.bat`／`python desktop.py` 共用同一份自選股與持股；裝到其他位置的才各自一份。
+- **開機自動啟動**（設定頁，只有 Windows）：登入 Windows 後直接縮在系統匣執行。
+- **資料位置**：
+  - Windows：存在程式所在資料夾的 `data/`。
+  - Mac：存在 `~/Library/Application Support/股票交易分析系統/`（Finder 顯示為「資源庫」），`.app` 裡面不放資料，重新安裝或換新版資料都還在。
+  - **直接執行專案 `dist/` 裡打包好的程式時（Windows 的 exe、Mac 的 .app 都一樣），改用專案根目錄的 `data/`、`.env`、`logs/`**，跟 `start.bat`／`python desktop.py` 共用同一份自選股與持股；裝到其他位置的才各自一份。
 
 ### B. 從原始碼執行
 
@@ -65,14 +79,16 @@ cd AI-Stock-Trading-Analysis
   python run.py
   ```
 
-  Windows 也可以雙擊 `start.bat`。會自動用瀏覽器打開 http://127.0.0.1:8088/ ；停止：關閉黑色視窗或按 Ctrl+C。換埠號：`python run.py 8090`。
+  Windows 也可以雙擊 `start.bat`；Mac 在「終端機」執行 `python3 run.py`。會自動用瀏覽器打開 http://127.0.0.1:8088/ ；停止：關閉黑色視窗（終端機）或按 Ctrl+C。換埠號：`python run.py 8090`。
 
-- **桌面視窗版**（Windows，跟打包版一樣的獨立視窗）：
+- **桌面視窗版**（跟打包版一樣的獨立視窗；Mac 把 `pip`／`python` 換成 `pip3`／`python3`）：
 
   ```bash
   pip install -r requirements-desktop.txt
   python desktop.py
   ```
+
+  > Mac 用 python.org 下載的 Python 時，沒有跑過「Install Certificates.command」也能連線：程式會自動改用 Mac 系統內建的根憑證。
 
   8088 已經有本程式在跑（例如 `start.bat` 開著）時，桌面版會直接連過去，不會開第二個伺服器。改了程式不用重新打包，關掉再執行 `python desktop.py` 就是新版。
 
@@ -103,7 +119,7 @@ cd AI-Stock-Trading-Analysis
 - 打包版每次重新啟動時自動檢查最新 Release，有新版就下載該版本的 `src/`、`web/` 到程式資料夾的 `update/` 並套用；設定頁「版本與線上更新」也能手動檢查與下載。下載後會核對壓縮檔裡的版本號和 Release 一致才套用，`data/` 與 `.env` 不受影響。
 - 原始碼版（有 `.git`）不會被自動覆蓋，有新版時設定頁會提示，請自己 `git pull`。
 - 啟動畫面標題下顯示目前版本，載入清單的「檢查更新」會顯示是否有新版與 Release 說明前兩行。
-- **程式內連不上 GitHub 時（手動更新）**：把 `manual_update.bat`、`manual_update.ps1`（Release 附件或專案根目錄）放到程式安裝資料夾，先結束程式再雙擊 `manual_update.bat`。它用 Windows 的 PowerShell 下載最新 Release，做的事和程式內建更新相同（只放 `src/`、`web/` 到 `update/` 並核對版本號），重開程式即生效。
+- **程式內連不上 GitHub 時（手動更新，只有 Windows）**：把 `manual_update.bat`、`manual_update.ps1`（Release 附件或專案根目錄）放到程式安裝資料夾，先結束程式再雙擊 `manual_update.bat`。它用 Windows 的 PowerShell 下載最新 Release，做的事和程式內建更新相同（只放 `src/`、`web/` 到 `update/` 並核對版本號），重開程式即生效。
   - 已知原因：部分電腦「中繼憑證授權單位」留有舊的交叉簽章憑證（USERTrust ECC，簽發者 AAA Certificate Services），Python 驗證 GitHub 憑證鏈時會失敗（`unable to get issuer certificate`），瀏覽器與 PowerShell 不受影響。v1.0.3 起程式遇到這種錯誤會改用只信任根憑證的設定重試；更早的打包版請用手動更新、重新安裝，或自行在 `certmgr.msc` 刪除那張中繼憑證。
 - 發布新版：改 `src/version.py` 的版本號 → commit、push → 建立同名 Release，例如：
 
@@ -127,6 +143,7 @@ cd AI-Stock-Trading-Analysis
 
 | 資料 | 位置 |
 |---|---|
+| 資料根目錄 | Windows 與原始碼版：程式資料夾；Mac 打包版：`~/Library/Application Support/股票交易分析系統/`。以下路徑都相對於這裡 |
 | 持股、交易紀錄、交易規則、自選股、提醒、AI 設定 | `data/userdata.json`（修改後 0.5 秒自動存檔；每天備份到 `data/backups/`，保留 14 天） |
 | 金鑰 | `.env` |
 | 操作紀錄 | `logs/`（每日一檔，保留 30 天）；桌面版的程式輸出與錯誤在 `logs/desktop.log` |
@@ -149,15 +166,19 @@ cd AI-Stock-Trading-Analysis
 
 每次請求的網址、狀態與耗時都會記錄，看盤頁「看資料怎麼抓的」可以查看。公開資料源可能改版、限流或延遲。
 
-## 打包成 Windows 程式
+## 打包成桌面程式（Windows／Mac）
 
-**第一次**先安裝打包工具（只要做一次）：
+在哪個系統打包，就產生那個系統的程式（PyInstaller 不能跨系統打包：Windows 打不出 Mac 版，反之亦然）。
+
+**第一次**先安裝打包工具（只要做一次；Mac 用 `pip3`）：
 
 ```bash
 pip install -r requirements-desktop.txt
 ```
 
-之後每次打包：雙擊 `package.bat`，或執行：
+### Windows
+
+每次打包：雙擊 `package.bat`，或執行：
 
 ```bash
 python build_app.py              # 資料夾版＋安裝精靈（約 2～3 分鐘）
@@ -180,6 +201,26 @@ python build_app.py --portable   # 另外再產生免安裝單一執行檔（多
 >
 > 重新打包會保留資料夾版 `dist\股票交易分析系統\` 裡的 `data/`、`logs/`、`.env`。
 
+### Mac
+
+需要 Python 3.10 以上（[python.org](https://www.python.org/downloads/macos/) 或 Homebrew 都可以）。每次打包：在 Finder 雙擊 `package.command`（第一次若被擋，按右鍵 →「打開」），或在終端機執行：
+
+```bash
+python3 build_app.py
+```
+
+產出在 `dist/`：
+
+| 檔案 | 說明 | 用在 |
+|---|---|---|
+| `股票交易分析系統.app` | 應用程式，雙擊開啟；可直接拖到「應用程式」資料夾 | **自己用** |
+| `股票交易分析系統.dmg` | 安裝映像檔：打開後把程式拖到「應用程式」 | **給別人用** |
+
+- 有 Pillow（`pip3 install pillow`）時程式會用 `app.ico` 當圖示，沒有就用預設圖示；有 Node.js 時一樣會先預先編譯前端。
+- 從 git 取得的 `package.command` 如果雙擊沒反應，先在終端機執行 `chmod +x package.command`。
+- Mac 版沒有系統匣、背景通知與開機自動啟動（設定頁會註明）；其他功能與 Windows 版相同。
+- 程式沒有 Apple 簽章與公證：別人第一次開啟要按右鍵 →「打開」（見上方「A. 直接執行」）。要讓別人雙擊就能開，需要 Apple 開發者帳號簽章並公證。
+
 ## 程式碼架構
 
 根目錄的入口與工具：
@@ -187,8 +228,9 @@ python build_app.py --portable   # 另外再產生免安裝單一執行檔（多
 | 檔案 | 用途 |
 |---|---|
 | `run.py`／`start.bat` | 瀏覽器版：開伺服器並用預設瀏覽器打開 |
-| `desktop.py` | 桌面視窗版：WebView2 獨立視窗、關閉確認、系統匣、畫面縮放，伺服器在背景執行（打包版的入口）；`--background` 直接縮在系統匣啟動 |
-| `build_app.py`／`package.bat` | 打包成單一 exe、資料夾版與安裝精靈 |
+| `desktop.py` | 桌面視窗版：獨立視窗（Windows WebView2／Mac WebKit）、關閉確認、系統匣（Windows）、畫面縮放，伺服器在背景執行（打包版的入口）；`--background` 直接縮在系統匣啟動 |
+| `build_app.py`／`package.bat`／`package.command` | 打包：Windows 產生資料夾版、安裝精靈與單一 exe；Mac 產生 .app 與 .dmg |
+| `manual_update.bat`／`manual_update.ps1` | Windows 打包版連不上 GitHub 時的手動更新 |
 | `build_web.py` | 前端預先編譯（esbuild），打包時自動呼叫 |
 | `requirements-desktop.txt` | 桌面版與打包需要的套件（pywebview、PyInstaller） |
 
@@ -196,7 +238,8 @@ python build_app.py --portable   # 另外再產生免安裝單一執行檔（多
 
 ```
 src/
-├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar、
+├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar_store（日 K 本機快取）、bar、
+│                net（對外連線數量控管、Mac 根憑證）、cache（記憶體快取）、
 │                trade_rules（海外手續費/每手股數）、finmind、finmind_store（FinMind 歷史本機快取）、chip_data（籌碼）、etf_data、etf_reference、
 │                chart_data、heatmap（股市熱力圖）、market_board（大盤籌碼頁：國際指數、台指期、法人、產業、台灣 50）、fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
@@ -210,7 +253,7 @@ src/
 ├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）
 ├── ai/          AI：ai_client（各家連線與串流）、ai_prompts（提示詞）、ai_text（數字核對、簡轉繁）、ai_context、
 │                llm_runner、anti_hallucination（防幻覺稽核）
-└── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、config、params、
+└── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、jobs（慢分析的背景工作）、config、params、
                  alert_engine（背景提醒檢查）、tray_icon（Win32 系統匣常駐）、notifier（Toast 通知）、
                  autostart（開機啟動）、env_settings、user_data（資料存檔與備份）、activity_log
 ```
@@ -218,10 +261,10 @@ src/
 前端 `web/`（React 18 + Tailwind，套件放在 `web/vendor/`，可離線使用）：
 
 - 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效；打包時 `build_web.py` 用 esbuild 預先編譯成 `app.bundle.js`。
-- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認與畫面縮放；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
+- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認、畫面縮放與背景工作（postJob）；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
 - `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
 - `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
-- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、multi_chart（多圖走勢）、savings_plan（存股計畫）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
+- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合與實際對帳）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 
 開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。

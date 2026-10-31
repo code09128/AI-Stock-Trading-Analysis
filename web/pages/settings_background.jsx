@@ -9,13 +9,17 @@
       return v === null ? true : v === 'true';
     });
     const [autostart, setAutostart] = useState(false);
+    const [supported, setSupported] = useState(true);
     const [checking, setChecking] = useState(false);
     const [checkResult, setCheckResult] = useState('');
 
     useEffect(() => {
       fetch('/api/autostart')
         .then((r) => r.json())
-        .then((d) => setAutostart(!!d.enabled))
+        .then((d) => {
+          setAutostart(!!d.enabled);
+          setSupported(d.supported !== false);
+        })
         .catch(() => {});
     }, []);
 
@@ -86,8 +90,13 @@
           桌面視窗版按右上角 X 時會詢問要「縮到系統匣」或「結束程式」。縮到系統匣後由後端服務持續檢查價格、漲跌幅（每 15
           秒）與 RSI（每 5 分鐘），達標時發送 Windows 桌面原生通知。
         </p>
+        {!supported && (
+          <p className="text-xs text-amber-300 leading-relaxed">
+            這台電腦不是 Windows：系統匣、背景通知與開機自動啟動都不能用。提醒只在程式開著時由頁面檢查，結束程式後就不會再提醒。
+          </p>
+        )}
 
-        <div className="space-y-2 text-xs">
+        <div className={`space-y-2 text-xs ${supported ? '' : 'hidden'}`}>
           <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
             <input
               type="checkbox"
@@ -118,7 +127,9 @@
           {checkResult && <span className="text-slate-300">{checkResult}</span>}
         </div>
 
-        <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-[11px] text-slate-400 space-y-1">
+        <div
+          className={`rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-[11px] text-slate-400 space-y-1 ${supported ? '' : 'hidden'}`}
+        >
           <div className="font-semibold text-slate-300">如何關閉背景服務：</div>
           <div>1. 右下角系統匣圖示按右鍵：點選「暫停提醒」或「結束程式」。</div>
           <div>2. 按視窗右上角 X，在詢問視窗選「結束程式」。</div>

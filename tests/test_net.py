@@ -53,5 +53,39 @@ class HostSlotTest(unittest.TestCase):
                 h.__exit__(None, None, None)
 
 
+class MacCertTest(unittest.TestCase):
+    """Mac 沒有憑證檔時改用系統根憑證；有憑證檔或不是 Mac 就不動。"""
+
+    def _run(self, platform, cafile, tmp):
+        import os
+        import subprocess
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        pem = b"-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n"
+        done = subprocess.CompletedProcess([], 0, stdout=pem)
+        env = {k: v for k, v in os.environ.items() if k != "SSL_CERT_FILE"}
+        with patch.object(net.sys, "platform", platform), patch.dict(net.os.environ, env, clear=True), \
+             patch.object(net.ssl, "get_default_verify_paths", return_value=SimpleNamespace(cafile=cafile)), \
+             patch.object(net.subprocess, "run", return_value=done) as run, \
+             patch.object(net.tempfile, "gettempdir", return_value=tmp):
+            changed = net.use_mac_system_certs()
+            return changed, net.os.environ.get("SSL_CERT_FILE"), run.called
+
+    def test_mac_without_cafile_exports_system_roots(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            changed, cert_file, _ = self._run("darwin", None, tmp)
+            self.assertTrue(changed)
+            self.assertEqual(Path(cert_file), Path(tmp) / "trading_mac_roots.pem")
+            self.assertIn(b"BEGIN CERTIFICATE", Path(cert_file).read_bytes())
+
+    def test_untouched_when_cafile_exists_or_not_mac(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run("darwin", __file__, tmp), (False, None, False))
+            self.assertEqual(self._run("win32", None, tmp), (False, None, False))
+
+
 if __name__ == "__main__":
     unittest.main()

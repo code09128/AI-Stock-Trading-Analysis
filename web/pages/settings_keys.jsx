@@ -68,7 +68,7 @@
           <div>
             <h3 className="font-bold text-white">
               版本與線上更新
-              <window.TA.Tip text="打包版（.exe）每次重新啟動時會自動檢查並下載新版本；也可以在這裡手動檢查、下載。更新只換程式本身，你的持股資料（data/）與金鑰（.env）不受影響。" />
+              <window.TA.Tip text="打包版（Windows .exe、Mac .app）每次重新啟動時會自動檢查並下載新版本；也可以在這裡手動檢查、下載。更新只換程式本身，你的持股資料（data/）與金鑰（.env）不受影響。" />
             </h3>
             <p className="text-xs text-slate-400 mt-1">
               打包版重新啟動時會自動檢查並下載最新正式版本；也可隨時手動檢查與下載（保留所有個人資料與金鑰）。

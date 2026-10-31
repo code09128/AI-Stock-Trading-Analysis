@@ -1,8 +1,10 @@
 """
-桌面版啟動（desktop.py）：用 Windows 內建的 Edge WebView2 開獨立視窗，不開瀏覽器、不顯示黑色主控台。
+桌面版啟動（desktop.py）：開獨立視窗，不開瀏覽器、不顯示黑色主控台。
+Windows 用內建的 Edge WebView2，Mac 用系統的 WebKit（WKWebView）。
 - 視窗一出現就顯示載入動畫（與 web/index.html 同一段），伺服器在背景啟動後切到看盤畫面
 - 8088 已經有本程式在跑（例如 start.bat 開著）就直接連過去；被其他程式佔用就往後找空的埠
-- 按 X 會詢問「縮到系統匣（背景繼續檢查提醒）／結束程式」；沒有主控台時，輸出與錯誤寫到 logs/desktop.log
+- Windows 按 X 會詢問「縮到系統匣（背景繼續檢查提醒）／結束程式」；Mac 沒有系統匣，只詢問是否結束
+- 沒有主控台時，輸出與錯誤寫到 logs/desktop.log
 需要 pywebview（pip install -r requirements-desktop.txt）；只想用瀏覽器開照舊執行 run.py。
 用法：python desktop.py [埠號] [--background]（--background：開機自動啟動用，直接縮在系統匣）
 """
@@ -45,6 +47,13 @@ def _setup_output(app_dir) -> None:
 
 def _message_box(text: str) -> None:
     try:
+        if sys.platform == "darwin":
+            import subprocess
+            # 文字用參數傳進 AppleScript，不拼進指令字串，避免引號跳脫問題
+            subprocess.run(["/usr/bin/osascript", "-e", "on run argv", "-e",
+                            "display alert (item 1 of argv) message (item 2 of argv) as critical",
+                            "-e", "end run", APP_NAME, text], timeout=120)
+            return
         import ctypes
         ctypes.windll.user32.MessageBoxW(0, text, APP_NAME, 0x10)
     except Exception:
@@ -72,8 +81,8 @@ def _error_html(err: str) -> str:
             '<div style="max-width:560px;padding:24px;line-height:1.7">'
             f'<h2 style="margin:0 0 8px;color:#f43f5e">{APP_NAME}無法啟動</h2>'
             f'<pre style="white-space:pre-wrap;color:#9aa4b2;font-size:13px">{esc}</pre>'
-            '<p style="font-size:13px;color:#9aa4b2">詳細錯誤記錄在程式資料夾的 logs\\desktop.log。'
-            '也可以改用 start.bat（瀏覽器版）開啟。</p></div></body></html>')
+            f'<p style="font-size:13px;color:#9aa4b2">詳細錯誤記錄在 {get_app_dir() / "logs" / "desktop.log"}。'
+            '也可以改用瀏覽器版（start.bat 或 python run.py）開啟。</p></div></body></html>')
 
 
 def _listening(port: int) -> bool:
@@ -162,7 +171,11 @@ def _boot(window, state: dict, port: int) -> None:
 
 
 def _start_background(window, state: dict) -> None:
-    """背景提醒引擎＋系統匣。引擎只在視窗縮到系統匣時檢查（視窗開著時由頁面檢查），避免同一則提醒觸發兩次。"""
+    """背景提醒引擎＋系統匣。引擎只在視窗縮到系統匣時檢查（視窗開著時由頁面檢查），避免同一則提醒觸發兩次。
+    系統匣只有 Windows 版（tray_icon 是 Win32）：其他系統不啟動，關閉時就只會詢問是否結束，視窗不會縮到找不回來。
+    之後要支援 Mac 的選單列圖示，得另外用 AppKit 的 NSStatusItem 實作再接到這裡。"""
+    if sys.platform != "win32":
+        return
     try:
         from src.server.alert_engine import ALERT_ENGINE
         from src.server.tray_icon import TrayIcon
@@ -306,6 +319,8 @@ class DesktopApi:
             f = max(0.5, min(2.0, float(factor)))
         except (TypeError, ValueError):
             return False
+        if sys.platform == "darwin":
+            return self._set_zoom_mac(f)
         form = getattr(self._window, "native", None)
         control = getattr(getattr(form, "browser", None), "webview", None)
         if control is None:
@@ -316,6 +331,16 @@ class DesktopApi:
             control.ZoomFactor = f
 
         form.Invoke(Func[Type](apply))  # WinForms 控制項只能在視窗執行緒上改
+        return True
+
+    def _set_zoom_mac(self, f: float) -> bool:
+        """Mac：pywebview 的 window.native 是 NSWindow，內容就是 WKWebView；pageZoom 需要 macOS 11 以上。"""
+        ns_window = getattr(self._window, "native", None)
+        view = ns_window.contentView() if ns_window is not None else None
+        if view is None or not view.respondsToSelector_("setPageZoom:"):
+            return False
+        from PyObjCTools import AppHelper  # pywebview 在 Mac 上已安裝 pyobjc
+        AppHelper.callAfter(view.setPageZoom_, f)  # AppKit 物件只能在主執行緒上改
         return True
 
 
@@ -329,7 +354,13 @@ def _on_closing(window, state: dict):
 
 def main() -> int:
     app_dir = get_app_dir()
+    try:
+        app_dir.mkdir(parents=True, exist_ok=True)  # Mac 版第一次開啟時 Application Support 裡還沒有這個資料夾
+    except OSError:
+        pass
     _setup_output(app_dir)
+    from src.market import net
+    net.use_mac_system_certs()  # 要在檢查更新、抓報價之前；其他系統不動
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     port = int(args[0]) if args else DEFAULT_PORT
     start_hidden = "--background" in sys.argv  # 開機自動啟動：直接縮在系統匣
@@ -372,8 +403,9 @@ if __name__ == "__main__":
         rc = main()
     except Exception as exc:
         traceback.print_exc()
-        _message_box(f"{APP_NAME}啟動失敗：\n{type(exc).__name__}: {exc}\n\n"
-                     "若是缺少 WebView2，請安裝 Microsoft Edge WebView2 Runtime，或改用 start.bat（瀏覽器版）。")
+        hint = ("若是缺少 WebView2，請安裝 Microsoft Edge WebView2 Runtime，或改用 start.bat（瀏覽器版）。"
+                if sys.platform == "win32" else "可以改用瀏覽器版：python3 run.py。")
+        _message_box(f"{APP_NAME}啟動失敗：\n{type(exc).__name__}: {exc}\n\n{hint}")
         rc = 1
     # 直接結束：不等還在抓報價／新聞的背景執行緒逾時（否則視窗關了程式還會多留 5～8 秒）。
     # 存檔在請求內同步完成且是原子寫入（暫存檔＋置換），關閉前也已先送出最後的修改。
