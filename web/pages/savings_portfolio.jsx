@@ -1,7 +1,7 @@
 // 存股計畫頁的兩個分頁（共用元件在 savings_plan.jsx 的 window.TA.savingsUI）：
 // - 投資組合：多檔 ETF 照比例定期定額，算組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、
 //   過去 N 年實際回測（每月照比例投入、不賣出），可存多組並排比較、一鍵帶入我的持股
-// - 實際對帳：像奈米投「投資現況」那樣填投資金額、參考市值、已入帳配息，算報酬率、含息報酬率與年化（XIRR）
+// - 實際對帳：像銀行 App 的「投資現況」那樣填投資金額、參考市值、已入帳配息，算報酬率、含息報酬率與年化（XIRR）
 // 公式都在後端 src/portfolio/savings_plan.py（/api/savings/portfolio、/api/savings/calc kind=ledger）
 (() => {
   const { useState, useEffect, useRef } = React;
@@ -615,7 +615,7 @@
 
   // ---------- 實際對帳 ----------
   const LEDGER_DEFAULTS = {
-    rows: [{ id: 'l1', name: '奈米投', start: '', invested: 0, value: 0, dividends: 0 }],
+    rows: [{ id: 'l1', name: '計畫 1', start: '', invested: 0, value: 0, dividends: 0 }],
   };
 
   function LedgerTab() {

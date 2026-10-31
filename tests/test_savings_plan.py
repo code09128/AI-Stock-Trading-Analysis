@@ -195,9 +195,9 @@ class PortfolioTests(unittest.TestCase):
         self.assertAlmostEqual(g["xirr_pct"], 10, delta=0.3)
         self.assertIsNone(sp.dca_backtest({"A": flat}, {"A": 1.0}, 0, 0, 1000, 10))  # 期間開始時還沒上市
 
-    def test_ledger_matches_nanotou(self):
-        """奈米投畫面：投資 123,500、市值 193,255、配息 10,656 → 56.48% 與 65.11%。"""
-        r = sp.ledger([{"name": "奈米投", "invested": 123500, "value": 193255, "dividends": 10656,
+    def test_ledger_matches_bank_app_example(self):
+        """銀行 App「投資現況」範例：投資 123,500、市值 193,255、配息 10,656 → 56.48% 與 65.11%。"""
+        r = sp.ledger([{"name": "計畫 1", "invested": 123500, "value": 193255, "dividends": 10656,
                         "start": "2022-01-05"}], today=date(2026, 10, 31))
         row = r["rows"][0]
         self.assertEqual((row["return_pct"], row["return_with_div_pct"]), (56.48, 65.11))
