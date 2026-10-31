@@ -188,7 +188,7 @@
     const { m2Data, m2Form, m2Loading, runMod2, setM2Form } = ctx;
     const { NEWS_PRESETS, baseCode, normSym } = window.TA;
     const { holdings } = window.TA.usePortfolio();
-    const heldSymbols = [...new Set(holdings.map((h) => h.symbol))];
+    const heldSymbols = window.TA.uniqueSymbols(holdings.map((h) => h.symbol));
     const { useState } = React;
     const [news, setNews] = useState(null);
     const [newsKind, setNewsKind] = useState('全部');

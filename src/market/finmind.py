@@ -13,6 +13,7 @@ FinMind API 共用呼叫 (finmind.py)
 from collections import deque
 from datetime import datetime
 from typing import Any, Deque, Dict, List, Optional
+import json
 import os
 import threading
 import time
@@ -106,6 +107,14 @@ def reset_pause() -> None:
         _SENT.clear()
 
 
+def _error_msg(e: urllib.error.HTTPError) -> str:
+    """錯誤回應內容的 msg 欄位（只取 msg：內容另有 token_tail，不能顯示或記錄）。"""
+    try:
+        return str(json.loads(e.read().decode("utf-8", errors="replace")).get("msg") or "")
+    except Exception:
+        return ""
+
+
 def get_data(dataset: str, data_id: str, start_date: str, token: Optional[str] = None,
              timeout: int = 20) -> List[Dict[str, Any]]:
     """查詢 /api/v4/data，回傳 data 陣列；暫停中、402/403 或其他錯誤都會拋例外。"""
@@ -126,6 +135,10 @@ def get_data(dataset: str, data_id: str, start_date: str, token: Optional[str] =
     except urllib.error.HTTPError as e:
         if e.code in (402, 403):
             _pause(e.code, str(e.reason))
+        msg = _error_msg(e) if e.code == 400 else ""
+        if "token" in msg.lower():  # 400「Token is illegal.」：Token 打錯、過期或被重設
+            raise RuntimeError(f"FinMind Token 無效（{msg}），請到「設定 → API 金鑰」重新貼上 Token 並按測試，"
+                               "或清空改用免費額度") from None
         raise
     code = payload.get("status")
     if code in (402, 403):  # 有些情況錯誤碼放在 JSON 內容裡

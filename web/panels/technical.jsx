@@ -320,7 +320,7 @@
                     runMod1({ simulateTick: false });
                   }
                 }}
-                placeholder="例如: 2330.TW 或 NVDA"
+                placeholder="例如：2330、0050 或 NVDA"
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:border-sky-400 focus:outline-none"
               />
               <TickerName ticker={m1Ticker} />

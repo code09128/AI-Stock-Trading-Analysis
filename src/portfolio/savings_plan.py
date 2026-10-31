@@ -393,12 +393,17 @@ def ledger(rows: List[Dict[str, Any]], today: Optional[date] = None) -> Dict[str
     today = today or date.today()
     out, all_flows = [], []
     tot = {"invested": 0.0, "value": 0.0, "dividends": 0.0}
+    dated_back = 0.0  # 有開始日的計畫今天的市值＋配息：合計年化只能拿它們的投入對它們的取回
+    excluded = 0  # 有投入金額但沒有開始日（或日期在未來）的計畫數，合計年化不含它們
     for r in rows:
         a, b, c = (float(r.get(k) or 0) for k in ("invested", "value", "dividends"))
         flows = _monthly_flows(r.get("start"), a, today)
         if flows:
             all_flows += flows
+            dated_back += b + c
             flows = flows + [(today.isoformat(), b + c)]
+        elif a > 0:
+            excluded += 1
         out.append({"name": r.get("name") or "", "invested": a, "value": b, "dividends": c,
                     "pnl": round(b - a), "return_pct": round((b - a) / a * 100, 2) if a else None,
                     "return_with_div_pct": round((b - a + c) / a * 100, 2) if a else None,
@@ -409,7 +414,8 @@ def ledger(rows: List[Dict[str, Any]], today: Optional[date] = None) -> Dict[str
     total = {**{k: round(v) for k, v in tot.items()}, "pnl": round(b - a),
              "return_pct": round((b - a) / a * 100, 2) if a else None,
              "return_with_div_pct": round((b - a + c) / a * 100, 2) if a else None,
-             "xirr_pct": xirr(all_flows + [(today.isoformat(), b + c)]) if all_flows else None}
+             "xirr_pct": xirr(all_flows + [(today.isoformat(), dated_back)]) if all_flows else None,
+             "xirr_excluded": excluded}
     return {"rows": out, "total": total}
 
 

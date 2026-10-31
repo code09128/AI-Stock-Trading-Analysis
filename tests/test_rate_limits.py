@@ -61,6 +61,23 @@ class FinMindPauseTests(unittest.TestCase):
                 finmind.get_data("TaiwanStockPrice", "2330", "2026-10-01")
         self.assertFalse(finmind.pause_status()["paused"])
 
+    def test_illegal_token_400_explains_and_hides_token_tail(self):
+        body = io.BytesIO(json.dumps({"msg": "Token is illegal.", "status": 400, "token_tail": "....hFJc"}).encode())
+
+        def raise_(*a, **k):
+            raise urllib.error.HTTPError("https://api.finmindtrade.com", 400, "Bad Request", {}, body)
+        with patch("urllib.request.urlopen", side_effect=raise_):
+            with self.assertRaises(RuntimeError) as cm:
+                finmind.get_data("TaiwanStockShareholding", "2330", "2026-10-01")
+        self.assertIn("Token 無效", str(cm.exception))
+        self.assertNotIn("hFJc", str(cm.exception))
+        self.assertFalse(finmind.pause_status()["paused"])
+
+    def test_other_400_keeps_http_error(self):
+        with patch("urllib.request.urlopen", side_effect=_http_error(400)):
+            with self.assertRaises(urllib.error.HTTPError):
+                finmind.get_data("TaiwanStockPrice", "2330", "2026-10-01")
+
     def test_resumes_after_pause_expires(self):
         with patch.object(finmind, "PAUSE_402_SEC", 0), \
                 patch("urllib.request.urlopen", side_effect=_http_error(402)):

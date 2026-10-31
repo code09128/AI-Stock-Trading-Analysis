@@ -244,7 +244,7 @@
                       ...m5Entries,
                       {
                         trade_id: window.TA.nextTradeId(m5Entries),
-                        symbol: '2330.TW',
+                        symbol: '2330',
                         entry_time: '09:03',
                         exit_time: '10:15',
                         entry_price: 1060.0,

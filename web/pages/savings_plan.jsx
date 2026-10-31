@@ -5,7 +5,8 @@
 // 公式都在後端 src/portfolio/savings_plan.py（/api/savings/calc），這裡只負責輸入與顯示
 (() => {
   const { useState, useEffect, useRef } = React;
-  const { fmt, readLS, writeLS, normSym, baseCode, marketOf, Tip, LS_CART, twFee, orderLabel } = window.TA;
+  const { fmt, readLS, writeLS, normSym, baseCode, marketOf, currencyOf, Tip, LS_CART, twFee, orderLabel } =
+    window.TA;
 
   const LS_KEY = 'tw_us_savings_plan_v1';
   const DEFAULTS = {
@@ -356,12 +357,19 @@
     const addToCart = () => {
       if (!d?.price || !(s.monthly > 0)) return;
       const tw = marketOf(d.symbol) === 'TW';
-      const qty = tw ? Math.floor(s.monthly / d.price) : Math.floor((s.monthly / d.price) * 1e4) / 1e4;
+      // 每月金額是台幣、外幣標的現價是原幣：先換成台幣價格再算股數
+      const rate = tw ? 1 : d.fx_to_twd;
+      if (!rate) {
+        window.TA.toast?.(`⚠️ 取不到 ${d.currency || '外幣'} 兌台幣匯率，無法換算 ${d.name} 的股數`);
+        return;
+      }
+      const twdPrice = d.price * rate;
+      const qty = tw ? Math.floor(s.monthly / twdPrice) : Math.floor((s.monthly / twdPrice) * 1e4) / 1e4;
       if (!(qty > 0)) {
         window.TA.toast?.(`⚠️ 每月 ${fmt(s.monthly, 0)} 元買不到 1 股 ${d.name}（現價 ${fmt(d.price, 2)}）`);
         return;
       }
-      const amount = qty * d.price;
+      const amount = qty * d.price; // 委託金額用原幣（跟看盤頁暫存匣其他委託一致）
       const item = {
         id: Date.now(),
         symbol: tw ? baseCode(d.symbol) : normSym(d.symbol),
@@ -378,7 +386,7 @@
       };
       writeLS(LS_CART, [item, ...readLS(LS_CART, [])]);
       window.TA.notifySaved(
-        `已把 ${d.name} 買進 ${qty} 股（約 ${fmt(amount, 0)} 元）加入下單暫存匣（模擬，不會真的下單）`,
+        `已把 ${d.name} 買進 ${qty} 股（約 ${fmt(qty * twdPrice, 0)} 元${tw ? '' : `，${d.currency} ${fmt(amount, 2)}`}）加入下單暫存匣（模擬，不會真的下單）`,
       );
     };
 
@@ -648,27 +656,42 @@
     );
   }
 
-  // 「我的持股」每一筆的台幣市值（即時價 × 股數，外幣換成台幣；沒有即時價用成本價）。生命週期與投資組合分頁共用
+  // 「我的持股」每一筆的台幣市值（現價 × 股數，外幣換成台幣）。生命週期與投資組合分頁共用。
+  // 跟看盤頁「我的持股」同一套算法，總市值才對得起來：價格依那裡選的「即時價／昨收」，
+  // 計價幣別用報價的（沒有就由代號判斷），沒有報價時用成本價，取不到匯率的那筆不計入。
   async function holdingsValues() {
     const hs = readLS('tw_us_holdings_v1', []).filter((h) => h?.symbol && Number(h.shares) > 0);
-    if (!hs.length) return { rows: [], total: 0, missing: 0 };
-    const syms = [...new Set(hs.map((h) => h.symbol))].slice(0, 40);
+    if (!hs.length) return { rows: [], total: 0, missing: 0, basis: 'live' };
+    const basis = readLS('tw_us_hold_basis_v1', 'live');
+    const syms = [...new Set(hs.map((h) => normSym(h.symbol)))].slice(0, 40);
     const q = await post('/api/quotes', { symbols: syms });
     const bySym = Object.fromEntries((q.quotes || []).filter(Boolean).map((x) => [baseCode(x.symbol), x]));
-    const curs = [...new Set(Object.values(bySym).map((x) => x.currency).filter((c) => c && c !== 'TWD'))];
+    const curOf = (h) => bySym[baseCode(h.symbol)]?.currency || currencyOf(h.symbol);
+    const curs = [...new Set(hs.map(curOf).filter((c) => c && c !== 'TWD'))];
     const fx = curs.length ? (await post('/api/fx', { currencies: curs })).rates || {} : {};
     let total = 0;
     let missing = 0;
     const rows = hs.map((h) => {
       const x = bySym[baseCode(h.symbol)];
-      const price = x?.price || Number(h.price) || 0;
-      const rate = !x?.currency || x.currency === 'TWD' ? 1 : fx[x.currency]?.rate;
-      if (!x?.price || !rate) missing += 1;
-      const value = price * Number(h.shares) * (rate || 0);
+      const quoted = basis === 'prev' ? (x?.prev_close ?? x?.price) : x?.price;
+      const price = quoted || Number(h.cost) || 0;
+      const cur = curOf(h);
+      const rate = cur === 'TWD' ? 1 : fx[cur]?.rate;
+      if (!quoted || !rate) missing += 1;
+      const value = rate ? price * Number(h.shares) * rate : 0;
       total += value;
-      return { symbol: h.symbol, name: x?.name || h.name || h.symbol, value };
+      // 成本也換成台幣（外幣用目前匯率，不是買進當時的匯率）
+      const cost = rate ? (Number(h.cost) || 0) * Number(h.shares) * rate : 0;
+      return {
+        symbol: h.symbol,
+        key: baseCode(normSym(h.symbol)),
+        name: x?.name || h.name || h.symbol,
+        shares: Number(h.shares),
+        value,
+        cost,
+      };
     });
-    return { rows, total, missing };
+    return { rows, total, missing, basis };
   }
 
   // ---------- 生命週期 ----------
@@ -700,7 +723,7 @@
         set({ lifeInitial: Math.round(h.total) });
         setMv({
           loading: false,
-          note: `已帶入 ${h.rows.length} 筆持股市值 ${fmt(h.total, 0)} 元${h.missing ? `（${h.missing} 筆沒有即時價或匯率，用成本價或略過）` : ''}`,
+          note: `已帶入 ${h.rows.length} 筆持股市值 ${fmt(h.total, 0)} 元（${h.basis === 'prev' ? '昨收' : '即時價'}，跟看盤頁「我的持股」的設定相同）${h.missing ? `；${h.missing} 筆沒有報價或匯率，用成本價或不計入` : ''}`,
         });
       } catch (e) {
         setMv({ loading: false, note: `⚠️ ${e.message}` });

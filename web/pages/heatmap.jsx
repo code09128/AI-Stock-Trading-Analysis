@@ -181,7 +181,7 @@
     useEffect(() => writeLS('tw_us_heatmap_size_v1', sizeChoice), [sizeChoice]);
 
     const mine = useMemo(
-      () => [...new Set([...watch, ...holdings.map((h) => h.symbol)])],
+      () => window.TA.uniqueSymbols([...watch, ...holdings.map((h) => h.symbol)]),
       [watch, holdings],
     );
     const holdMap = useMemo(

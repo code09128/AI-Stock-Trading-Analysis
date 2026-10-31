@@ -221,7 +221,7 @@
   const NEWS_PRESETS = [
     {
       label: '台積電法說利多（檢驗是否已 Priced-in）',
-      target: '2330.TW',
+      target: '2330',
       headline: '法說會公布毛利率上修並擴大 CoWoS 產能，惟法說前股價已有一段漲幅',
       sentiment: 'POSITIVE',
       ret_5d_pct: '',
@@ -257,7 +257,7 @@
   const DEFAULT_JOURNAL = [
     {
       trade_id: '#01',
-      symbol: '2330.TW',
+      symbol: '2330',
       entry_time: '09:10',
       exit_time: '13:20',
       entry_price: 1000.0,
@@ -296,7 +296,7 @@
     },
     {
       trade_id: '#04',
-      symbol: '2330.TW',
+      symbol: '2330',
       entry_time: '09:02',
       exit_time: '09:35',
       entry_price: 1020.0,
@@ -341,7 +341,7 @@
 
   // 策略回測預設值：策略參數放在 params（依策略不同），風控設定一起送到後端
   const DEFAULT_BACKTEST = {
-    target_asset: '2330.TW',
+    target_asset: '2330',
     strategy: 'ma_cross',
     params: { fast_ma: 5, slow_ma: 20 },
     initial_capital: 1000000,

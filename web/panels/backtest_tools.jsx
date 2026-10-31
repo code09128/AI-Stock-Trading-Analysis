@@ -75,7 +75,7 @@
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState(null);
     const watch = readLS(LS_WATCH, DEFAULT_WATCH);
-    const held = [...new Set((loadPortfolio().holdings || []).map((h) => h.symbol))];
+    const held = window.TA.uniqueSymbols((loadPortfolio().holdings || []).map((h) => h.symbol));
     const list =
       source === 'watch'
         ? watch

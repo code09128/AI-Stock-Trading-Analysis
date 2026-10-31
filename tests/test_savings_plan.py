@@ -208,6 +208,17 @@ class PortfolioTests(unittest.TestCase):
         self.assertIsNone(none["xirr_pct"])
         self.assertEqual(sp._monthly_flows("2026-01-31", 300, date(2026, 3, 31))[1][0], "2026-02-28")
 
+    def test_ledger_total_xirr_only_uses_dated_plans(self):
+        """合計年化只能用有開始日的計畫：沒填日期的計畫市值不能算進「取回」，否則像憑空多賺一筆。"""
+        dated = {"name": "A", "invested": 123500, "value": 193255, "dividends": 10656, "start": "2022-01-05"}
+        undated = {"name": "B", "invested": 50000, "value": 48000}
+        today = date(2026, 10, 31)
+        alone = sp.ledger([dated], today=today)["total"]
+        both = sp.ledger([dated, undated], today=today)["total"]
+        self.assertEqual(both["xirr_pct"], alone["xirr_pct"])
+        self.assertEqual(both["xirr_excluded"], 1)
+        self.assertEqual(alone["xirr_excluded"], 0)
+
 
 class HandlerTests(unittest.TestCase):
     def setUp(self):
@@ -230,8 +241,10 @@ class HandlerTests(unittest.TestCase):
         rows = {x["symbol"]: x for x in r["items"]}
         self.assertEqual(r["raw_total_pct"], 100)
         self.assertEqual(rows["0050"]["monthly_amount"], 600)
-        self.assertEqual(rows["0050"]["est_shares"], 6)
-        self.assertEqual(rows["00697B"]["est_shares"], 5)
+        self.assertEqual(rows["0050"]["est_whole"], 6)
+        self.assertEqual(rows["0050"]["est_frac"], 6)
+        self.assertEqual((rows["00697B"]["est_whole"], rows["00697B"]["est_leftover"]), (5, 22))  # 200 − 5 × 35.5
+        self.assertEqual(rows["00697B"]["est_frac"], 5.6338)
         self.assertTrue(any("ZZZZ" in w for w in r["warnings"]))
         self.assertTrue(any("00697B 2019-01-07 起才有資料" in w for w in r["warnings"]))
         self.assertIsNotNone(r["stats"]["cagr"])
@@ -244,6 +257,55 @@ class HandlerTests(unittest.TestCase):
             self.d.handle_savings_portfolio({"items": [{"symbol": "", "weight": 50}]})
         with self.assertRaises(ValueError):
             self.d.handle_savings_portfolio({"items": [{"symbol": "0050", "weight": "abc"}]})
+
+    def test_portfolio_merges_same_symbol_and_converts_fx(self):
+        """0050 與 0050.TW 是同一檔要合併；外幣標的每月股數要先把現價換成台幣（每月金額是台幣）。"""
+        hist = {"0050": {"points": _series(6, 10), "source": "fake", "warning": None},
+                "AAPL": {"points": _series(6, 10), "source": "fake", "warning": None}}
+        quotes = [{"symbol": "0050.TW", "name": "元大台灣50", "price": 100.0, "currency": "TWD"},
+                  {"symbol": "AAPL", "name": "Apple", "price": 200.0, "currency": "USD"}]
+        with patch.object(savings.SavingsHandlers, "_points", side_effect=lambda self_, s: hist[s], autospec=True), \
+                patch.object(savings.SavingsHandlers, "_benchmark_points", return_value=_series(6, 5)), \
+                patch.object(savings.quote_provider, "get_quotes", return_value=quotes), \
+                patch.object(savings.fx, "rate_to_twd", side_effect=lambda c: {"rate": 1.0 if c == "TWD" else 32.0}):
+            r = self.d.handle_savings_portfolio({"items": [{"symbol": "0050", "weight": 30},
+                                                           {"symbol": "0050.TW", "weight": 20},
+                                                           {"symbol": "AAPL", "weight": 50}],
+                                                 "monthly": 10000})
+        rows = {x["symbol"]: x for x in r["items"]}
+        self.assertEqual(set(rows), {"0050", "AAPL"})
+        self.assertEqual(rows["0050"]["weight_pct"], 50)
+        self.assertEqual(rows["0050"]["est_whole"], 50)  # 5000 元 ÷ 100 元
+        self.assertEqual(rows["AAPL"]["est_frac"], 0.7812)  # 5000 元 ÷ (200 美元 × 32)
+        self.assertEqual((rows["AAPL"]["est_whole"], rows["AAPL"]["est_leftover"]), (0, 5000))
+        self.assertTrue(any("0050、0050.TW 是同一檔" in w for w in r["warnings"]))
+
+    def test_portfolio_usd_input(self):
+        """期初投入與每月定額可以用美元：金額回傳美元，股數經匯率換算（台股 100 元、美股 200 美元、1 美元 = 32 元）。"""
+        hist = {"0050": {"points": _series(6, 10), "source": "fake", "warning": None},
+                "AAPL": {"points": _series(6, 10), "source": "fake", "warning": None}}
+        quotes = [{"symbol": "0050.TW", "name": "元大台灣50", "price": 100.0, "currency": "TWD"},
+                  {"symbol": "AAPL", "name": "Apple", "price": 200.0, "currency": "USD"}]
+
+        def rate(cur):
+            return {"rate": {"TWD": 1.0, "USD": 32.0}.get(cur)}
+
+        with patch.object(savings.SavingsHandlers, "_points", side_effect=lambda self_, s: hist[s], autospec=True), \
+                patch.object(savings.SavingsHandlers, "_benchmark_points", return_value=_series(6, 5)), \
+                patch.object(savings.quote_provider, "get_quotes", return_value=quotes), \
+                patch.object(savings.fx, "rate_to_twd", side_effect=rate):
+            r = self.d.handle_savings_portfolio({"items": [{"symbol": "0050", "weight": 50},
+                                                           {"symbol": "AAPL", "weight": 50}],
+                                                 "monthly": 500, "currency": "USD"})
+            with self.assertRaises(ValueError):
+                self.d.handle_savings_portfolio({"items": [{"symbol": "0050", "weight": 50}], "currency": "JPY"})
+        rows = {x["symbol"]: x for x in r["items"]}
+        self.assertEqual(r["input_currency"], "USD")
+        self.assertEqual(rows["AAPL"]["monthly_amount"], 250)
+        self.assertEqual((rows["AAPL"]["est_whole"], rows["AAPL"]["est_leftover"]), (1, 50))  # 250 美元買 1 股剩 50
+        self.assertEqual(rows["AAPL"]["est_frac"], 1.25)
+        self.assertEqual(rows["0050"]["est_whole"], 80)  # 250 美元 × 32 ÷ 100 元
+        self.assertTrue(any("跟輸入幣別（USD）不同市場" in w for w in r["warnings"]))
 
     def test_ledger_kind(self):
         r = self.d.handle_savings_calc({"kind": "ledger", "rows": [{"name": "A", "invested": 100, "value": 150}]})

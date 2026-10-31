@@ -50,9 +50,7 @@
       ...window.TA.BT.customStrategies(),
     ];
     const labelOf = (k) => catalog.find((s) => s.key === k)?.label || k;
-    const heldSyms = [
-      ...new Set((window.TA.loadPortfolio?.().holdings || []).map((h) => h.symbol)),
-    ];
+    const heldSyms = window.TA.uniqueSymbols((window.TA.loadPortfolio?.().holdings || []).map((h) => h.symbol));
     const defaultLegs =
       heldSyms.length >= 2
         ? heldSyms.slice(0, 4).map((s) => ({ target_asset: s, strategy: 'ma_cross', params: {} }))

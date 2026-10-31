@@ -8,7 +8,7 @@ import math
 import urllib.parse
 
 from src.company import stock_info
-from src.market import etf_data, finmind_store, quote_provider
+from src.market import etf_data, finmind_store, fx, quote_provider
 from src.market.data_adapter import DualMarketDataAdapter
 from src.market.etf_reference import HIGH_DIVIDEND_POOL
 from src.portfolio import savings_plan
@@ -113,7 +113,10 @@ class SavingsHandlers:
         avg = savings_plan.avg_yield(divs, price, stats.get("first_date"))
         analysis = stock_info.analyze_dividends(divs, price)
         ttm = analysis["ttm_yield_pct"] if price else None
+        currency = quote.get("currency") or ""
         row = {"symbol": symbol, "name": quote.get("name") or symbol, "price": price,
+               # 定期定額換算股數要用台幣價格：1 單位計價幣別＝幾台幣（取不到為 None）
+               "currency": currency, "fx_to_twd": fx.rate_to_twd(currency)["rate"] if currency else None,
                "error": quote.get("error") if not price else None, "frequency": analysis["frequency"],
                "ttm_yield_pct": ttm, "avg_yield_pct": avg["yield_pct"] if avg else None,
                "avg_yield_years": avg["years"] if avg else None, **stats}
@@ -213,18 +216,32 @@ class SavingsHandlers:
     def handle_savings_portfolio(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """多標的組合：items = [{symbol, weight}]、cash = 現金比例（%）；initial／monthly 用於每月投入金額與歷史回測。"""
         items = []
+        display: Dict[str, str] = {}  # 正規代號 → 畫面上第一次出現的寫法（回傳用，畫面靠它對回每一列）
+        merged: Dict[str, List[str]] = {}
         for it in (payload.get("items") or [])[:MAX_PORTFOLIO_ITEMS]:
             sym = str(it.get("symbol") or "").strip().upper() if isinstance(it, dict) else ""
             if not sym:
                 continue  # 畫面上還沒填完的空白列
             w = arg_num(it, "weight", 0, f"{sym} 的比例", lo=0, hi=100)
             if w > 0:
-                items.append((sym, w))
+                # 0050 與 0050.TW 是同一檔：用正規代號合併比例，不然會被當成兩檔各算一次
+                key = DualMarketDataAdapter.normalize_symbol(sym)["symbol"]
+                shown = display.setdefault(key, sym)
+                if sym != shown and sym not in merged.setdefault(key, [shown]):
+                    merged[key].append(sym)
+                items.append((shown, w))
         if not items:
             raise ValueError("請至少輸入一檔標的與比例")
         cash = arg_num(payload, "cash", 0, "現金比例", lo=0, hi=100)
         initial = arg_num(payload, "initial", 0, "期初投入", lo=0, hi=1e11)
         monthly = arg_num(payload, "monthly", 0, "每月投入", lo=0, hi=1e9)
+        # 期初投入與每月定額的幣別（畫面可切台幣／美元）；回傳的金額都用這個幣別，股數換算時再經過匯率
+        currency = str(payload.get("currency") or "TWD").upper()
+        if currency not in ("TWD", "USD"):
+            raise ValueError("幣別只能是 TWD 或 USD")
+        in_rate = fx.rate_to_twd(currency)["rate"]
+        if not in_rate:
+            raise ValueError(f"取不到 {currency} 兌台幣匯率，請稍後再試或改用台幣")
         raw_total = sum(w for _, w in items) + cash
         weights: Dict[str, float] = {}
         for sym, w in items:
@@ -240,6 +257,7 @@ class SavingsHandlers:
             bench = bench_f.result()
         series = {s: h.get("points") or [] for s, h in hist.items()}
         warnings = [f"{s}：{h['warning']}" for s, h in hist.items() if h.get("warning")]
+        warnings += [f"{'、'.join(names)} 是同一檔，比例已合併計算" for names in merged.values()]
         missing = [s for s in syms if not series[s]]
         if missing:
             warnings.append(f"{'、'.join(missing)} 取不到歷史資料，計算時當作不存在（比例分給其他標的）")
@@ -252,23 +270,38 @@ class SavingsHandlers:
         if late:
             warnings.append("、".join(f"{s} {d} 起才有資料" for d, s in late)
                             + "；在那之前它的比例依比例分給其他標的")
-        if any(DualMarketDataAdapter.normalize_symbol(s)["market"] != "TW" for s in syms):
-            warnings.append("外幣標的以原幣報酬計算，未含匯率變動")
+        home = {"TWD": "TW", "USD": "US"}[currency]
+        if any(DualMarketDataAdapter.normalize_symbol(s)["market"] != home for s in syms):
+            warnings.append(f"跟輸入幣別（{currency}）不同市場的標的以原幣報酬計算，未含匯率變動；"
+                            "股數換算用目前匯率")
 
         rows = []
         for s in syms:
             q = quotes.get(s.split(".")[0].upper()) or {}
             price = q.get("price")
-            amount = monthly * weights[s]
+            amount = monthly * weights[s]  # 輸入的幣別
+            amount_twd = amount * in_rate
             tw = DualMarketDataAdapter.normalize_symbol(s)["market"] == "TW"
-            est = (math.floor(amount / price) if tw else math.floor(amount / price * 1e4) / 1e4) if price else None
+            # 每月金額與標的現價可能是不同幣別：都換成台幣再算股數（取不到標的幣別的匯率就不估）
+            rate = 1.0 if tw else fx.rate_to_twd(q.get("currency") or "")["rate"]
+            twd_price = price * rate if price and rate else None
+            # 兩種買法：整股（券商零股定期定額，買不滿一股的錢留著）；碎股（銀行信託定期定額，金額全部買進，到小數 4 位）
+            whole = math.floor(amount_twd / twd_price) if twd_price else None
+            left = (amount_twd - whole * twd_price) / in_rate if twd_price else None
+            dp = 0 if currency == "TWD" else 2  # 美元金額留到美分
             rows.append({"symbol": s, "name": q.get("name") or s, "price": price,
-                         "weight_pct": round(weights[s] * 100, 2), "monthly_amount": round(amount),
-                         "est_shares": est, "first_date": starts.get(s),
+                         "currency": q.get("currency") or ("TWD" if tw else None),
+                         "weight_pct": round(weights[s] * 100, 2), "monthly_amount": round(amount, dp),
+                         "est_whole": whole,
+                         "est_leftover": round(left, dp) if left is not None else None,
+                         "est_frac": math.floor(amount_twd / twd_price * 1e4) / 1e4 if twd_price else None,
+                         "first_date": starts.get(s),
                          "source": hist[s].get("source")})
         stats = savings_plan.portfolio_stats(blended["points"])
         return {
             "items": rows,
+            "input_currency": currency,
+            "input_fx_to_twd": in_rate,
             "cash_pct": round(cash_w * 100, 2),
             "raw_total_pct": round(raw_total, 2),
             "stats": stats,

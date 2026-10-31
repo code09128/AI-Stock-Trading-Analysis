@@ -38,7 +38,7 @@ STOCK_DAY_ALL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 
 # 產業排行只列細分類；這幾個是多個類股加總的「大類」指數，會重複計算
 AGGREGATE_SECTORS = {"水泥窯製類指數", "塑膠化工類指數", "機電類指數", "化學生技醫療類指數", "電子工業類指數", "電子類指數"}
-SECTOR_ALIAS = {"電子類指數": "電子工業類指數"}  # BFIAMU 與 MI_INDEX 名稱不同
+SECTOR_ALIAS = {"電子類指數": "電子工業類指數", "航運業類指數": "航運類指數"}  # BFIAMU 與 MI_INDEX 名稱不同
 
 LIVE_TTL = 15
 DAILY_TTL = 600
@@ -169,7 +169,9 @@ def _twse_day(path: str, params: Dict[str, str], day: date) -> Optional[Dict[str
                 payload = qp._http_json(f"{TWSE_RWD}/{path}?{urllib.parse.urlencode({**q, 'response': 'json'})}", timeout=15)
             finally:
                 _TWSE_LAST[0] = time.time()
-        return payload if payload.get("stat", "OK") == "OK" and (payload.get("data") or payload.get("tables")) else None
+        # 假日證交所也回 stat OK，只是 tables 每張表都是空的：要看表格裡真的有資料才算有交易
+        has_rows = payload.get("data") or any(t.get("data") for t in payload.get("tables") or [])
+        return payload if payload.get("stat", "OK") == "OK" and has_rows else None
 
     return _cached(key, None if day < today else DAILY_TTL, load)
 

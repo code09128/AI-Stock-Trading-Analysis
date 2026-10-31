@@ -69,6 +69,16 @@
     const s = String(sym || '').toUpperCase();
     return isTW(s) ? s.split('.')[0] : s;
   };
+  // 代號清單去重：0050 與 0050.TW、不同券商的同一檔只留第一個寫法（持股快捷鈕、熱力圖、訊號掃描共用）
+  const uniqueSymbols = (syms) => {
+    const seen = new Set();
+    return (syms || []).filter((s) => {
+      const k = s ? baseCode(normSym(String(s))) : '';
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
 
   const fmt = (n, d = 2) =>
     n === null || n === undefined || Number.isNaN(n)
@@ -247,6 +257,7 @@
     twSellTaxRate,
     normSym,
     baseCode,
+    uniqueSymbols,
     fmt,
     signed,
     colorOf,

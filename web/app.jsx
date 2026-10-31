@@ -19,7 +19,7 @@ function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // 技術分析 狀態與動態看盤控制
-  const [m1Ticker, setM1Ticker] = useState('2330.TW');
+  const [m1Ticker, setM1Ticker] = useState('2330');
   const [m1BarCount, setM1BarCount] = useState(30);
   const [m1Timeframe, setM1Timeframe] = useState('D');
   const [m1Context, setM1Context] = useState(null);
@@ -535,7 +535,7 @@ function App() {
     setActiveTab(tabId);
     if (tabId === 'mod1') {
       const watchQuote = window.TA._watchSelected;
-      if (watchQuote?.symbol && m1Ticker === '2330.TW' && watchQuote.symbol !== '2330') {
+      if (watchQuote?.symbol && m1Ticker === '2330' && watchQuote.symbol !== '2330') {
         setM1Ticker(watchQuote.symbol);
         setM1Context(watchQuote);
         prevPriceRef.current = null;
@@ -606,7 +606,7 @@ function App() {
   };
 
   const confirmResetAll = () => {
-    setM1Ticker('2330.TW');
+    setM1Ticker('2330');
     setM1BarCount(30);
     setM2Form(NEWS_PRESETS[0]);
     // 手續費折數是使用者的券商條件（與模擬下單共用），重置分析參數時保留
@@ -620,7 +620,7 @@ function App() {
     setIsResetModalOpen(false);
     // 不在技術分析頁就只清掉結果，等切過去再抓
     if (activeTab === 'mod1')
-      runMod1({ overrideTicker: '2330.TW', overrideBarCount: 30, simulateTick: false, quiet: true });
+      runMod1({ overrideTicker: '2330', overrideBarCount: 30, simulateTick: false, quiet: true });
     else setM1Data(null);
     showToast('已將各分頁參數重置為出廠預設值');
   };

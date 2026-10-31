@@ -20,7 +20,7 @@
   const clampSide = (v) => Math.max(1, Math.min(MAX_SIDE, Math.round(Number(v) || 1)));
   const myWatch = () => readLS(LS_WATCH, null) || DEFAULT_WATCH;
   const myHoldings = () =>
-    [...new Set(readLS('tw_us_holdings_v1', []).map((h) => h?.symbol).filter(Boolean))];
+    window.TA.uniqueSymbols(readLS('tw_us_holdings_v1', []).map((h) => h?.symbol));
 
   function loadState() {
     const saved = readLS(LS_KEY, null);

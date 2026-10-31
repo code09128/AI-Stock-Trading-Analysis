@@ -59,18 +59,31 @@ class TwseDailyTests(unittest.TestCase):
             ["發行量加權股價指數", "47,035.58", "+", "939", "2.04", ""],
             ["電子工業類指數", "2,938", "+", "71", "2.48", ""],
             ["半導體類指數", "1,564.79", "+", "34", "2.29", ""],
-            ["航運業類指數", "200", "-", "1", "-0.50", ""],
+            ["航運類指數", "200", "-", "1", "-0.50", ""],  # MI_INDEX 寫「航運類」、BFIAMU 寫「航運業類」
         ]}]}
         amu0 = {"stat": "OK", "data": [["電子類指數", "1", "500", "1", "0"], ["半導體類指數", "1", "300", "1", "0"],
                                        ["航運業類指數", "1", "100", "1", "0"]]}
         amu1 = {"stat": "OK", "data": [["半導體類指數", "1", "150", "1", "0"], ["航運業類指數", "1", "200", "1", "0"]]}
         out = self._run(mb.sectors, {("MI_INDEX", k0): idx, ("BFIAMU", k0): amu0, ("BFIAMU", k1): amu1})
         self.assertEqual(out["date"], d0.isoformat())
-        self.assertEqual([r["name"] for r in out["rows"]], ["半導體", "航運業"])  # 依漲跌排序、去掉大類與大盤
+        self.assertEqual([r["name"] for r in out["rows"]], ["半導體", "航運"])  # 依漲跌排序、去掉大類與大盤
         semi, ship = out["rows"]
         self.assertEqual(semi["turnover_share_pct"], 75.0)
         self.assertEqual(semi["turnover_ratio"], 2.0)
         self.assertEqual(ship["turnover_ratio"], 0.5)
+
+    def test_holiday_ok_with_empty_tables_falls_back_to_last_trading_day(self):
+        # 證交所假日也回 stat OK，只是表格沒有資料：要當成沒有交易，繼續往前找
+        k_today = date.today().strftime("%Y%m%d")
+        d1 = date.today() - timedelta(days=1)
+        k1 = d1.strftime("%Y%m%d")
+        empty = {"stat": "OK", "tables": [{"title": "價格指數(臺灣證券交易所)", "data": []}, {"data": []}]}
+        idx = {"stat": "OK", "tables": [{"title": "價格指數(臺灣證券交易所)", "data": [
+            ["半導體類指數", "1,564.79", "+", "34", "2.29", ""]]}]}
+        out = self._run(mb.sectors, {("MI_INDEX", k_today): empty, ("BFIAMU", k_today): {"stat": "OK", "data": []},
+                                     ("MI_INDEX", k1): idx})
+        self.assertEqual(out["date"], d1.isoformat())
+        self.assertEqual([r["name"] for r in out["rows"]], ["半導體"])
 
     def test_fund_flow_sums_dealer_and_foreign_in_hundred_millions(self):
         d0 = date.today()
