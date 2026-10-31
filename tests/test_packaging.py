@@ -21,9 +21,10 @@ class PackagingPathTests(unittest.TestCase):
             self.assertEqual(get_resource_dir(), Path("C:\\fake\\temp\\_MEI123"))
 
     def test_frozen_app_dir_path(self):
+        app = Path.home().resolve() / "Program Files" / "Trading"  # 絕對路徑：Windows 與 Mac 都能跑
         with patch.object(sys, "frozen", True, create=True), \
-             patch.object(sys, "executable", "C:\\Program Files\\Trading\\trading.exe"):
-            self.assertEqual(get_app_dir(), Path("C:\\Program Files\\Trading"))
+             patch.object(sys, "executable", str(app / "trading.exe")):
+            self.assertEqual(get_app_dir(), app)
 
     def test_frozen_exe_in_project_dist_shares_project_data(self):
         """從專案 dist\\ 直接執行打包版（單一檔案版與資料夾版）要讀專案的 data\\，不能各自一份。"""
@@ -58,10 +59,11 @@ class PackagingPathTests(unittest.TestCase):
                 self.assertEqual(get_app_dir(), root)
 
     def test_frozen_activity_log_dir(self):
+        app = Path.home().resolve() / "Apps" / "Trading"
         with patch.object(sys, "frozen", True, create=True), \
-             patch.object(sys, "executable", "D:\\Apps\\Trading\\trading.exe"):
+             patch.object(sys, "executable", str(app / "trading.exe")):
             log_dir = activity_log._get_app_dir() / "logs"
-            self.assertEqual(log_dir, Path("D:\\Apps\\Trading\\logs"))
+            self.assertEqual(log_dir, app / "logs")
 
     def test_classified_subpackages(self):
         """驗證四大分類模組（core, market, analysis, server）皆可正常導入且與頂層轉發完全一致"""
