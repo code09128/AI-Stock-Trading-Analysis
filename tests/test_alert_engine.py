@@ -66,17 +66,33 @@ class TestAlertEngine(unittest.TestCase):
             {"symbol": "2330.TW", "is_live": True, "price": 1080.0, "change_pct": 3.5}
         ]
 
+        import json
+        import tempfile
+        from pathlib import Path
+        from src.server import user_data
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = patch.object(user_data, "data_dir", return_value=Path(tmp.name) / "data")
+        p.start()
+        self.addCleanup(p.stop)
         engine = AlertEngine()
         test_alerts = [
             {"id": 1, "symbol": "2330.TW", "type": "price_above", "value": 1050.0, "active": True},
             {"id": 2, "symbol": "2330.TW", "type": "price_below", "value": 900.0, "active": True},
         ]
-        saved_alerts = []
+        user_data.save({"tw_us_alerts_v1": json.dumps(test_alerts)})
+        quotes = mock_quotes.return_value
 
-        engine.load_alerts = MagicMock(return_value=test_alerts)
-        engine.save_alerts = MagicMock(side_effect=lambda a: saved_alerts.extend(a))
+        def user_adds_alert_meanwhile(*_a, **_k):
+            """抓報價的這幾秒內，使用者在畫面上新增了一則提醒：引擎寫回時不能把它蓋掉。"""
+            user_data.save({"tw_us_alerts_v1": json.dumps(test_alerts + [
+                {"id": 3, "symbol": "2317.TW", "type": "price_above", "value": 1.0, "active": True}])})
+            return quotes
+        mock_quotes.side_effect = user_adds_alert_meanwhile
 
         fired = engine.check_once()
+        saved_alerts = json.loads(user_data.load()["values"]["tw_us_alerts_v1"])
 
         # id=1 達標（現價 1080 >= 1050），id=2 未達標
         self.assertEqual(len(fired), 1)
@@ -87,10 +103,10 @@ class TestAlertEngine(unittest.TestCase):
 
         # 驗證有發出桌面通知
         mock_notify.assert_called_once()
-        # 驗證有存回 userdata
-        engine.save_alerts.assert_called_once()
+        # 驗證有存回 userdata，而且使用者檢查期間新增的提醒還在
         self.assertFalse(saved_alerts[0]["active"])
         self.assertTrue(saved_alerts[1]["active"])
+        self.assertEqual([a["id"] for a in saved_alerts], [1, 2, 3])
 
 
 if __name__ == "__main__":

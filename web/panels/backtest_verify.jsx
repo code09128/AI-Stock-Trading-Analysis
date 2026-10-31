@@ -358,7 +358,9 @@
       setBusy(true);
       setErr(null);
       try {
-        save(await postJSON('/api/mod3/optimize', payloadFrom(m3Data)));
+        const d = await window.TA.postJob('/api/mod3/optimize', payloadFrom(m3Data));
+        if (d.error) throw new Error(d.error);
+        save(d);
       } catch (e) {
         setErr(e.message);
       } finally {

@@ -104,6 +104,43 @@
     };
   }
 
+  // 慢的分析（組合風控、回測、配息…）改用伺服器的背景工作：送出後反覆查結果（每次伺服器最多等 2 秒），
+  // 不會一個請求佔住瀏覽器連線半分鐘；同樣的請求正在跑時伺服器直接共用。回傳值跟 fetch(...).json() 一樣
+  const JOB_LIMIT_MS = 300000; // 跟原本慢請求的等待上限（240 秒）差不多，AI 交易檢討也夠
+  async function postJob(path, payload) {
+    const post = (url, body) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
+    const started = performance.now();
+    const job = await post('/api/jobs/start', { path, payload });
+    if (job.error) return job;
+    for (;;) {
+      if (performance.now() - started > JOB_LIMIT_MS) {
+        return { error: `等待超過 ${JOB_LIMIT_MS / 1000} 秒還沒算完（資料來源可能卡住），請稍後再試` };
+      }
+      const r = await post('/api/jobs/poll', { id: job.id, wait: 2 });
+      if (r.error) return r;
+      if (r.state === 'done') {
+        const res = r.result || {};
+        window.TA.logEvent?.(
+          'api',
+          {
+            path,
+            status: r.status,
+            ms: Math.round(performance.now() - started),
+            symbol: payload?.ticker || payload?.symbol || payload?.target_asset || undefined,
+            error: res.error ? String(res.error).slice(0, 300) : undefined,
+          },
+          res.error ? 'error' : 'info',
+        );
+        return res;
+      }
+    }
+  }
+
   // ---------- 畫面縮放（桌面版）----------
   // 用 WebView2 的 ZoomFactor（等同瀏覽器 Ctrl＋加減號）：字與介面一起放大，視窗的 CSS 寬度跟著變小，
   // 響應式版面會自動改排（例如放大後側欄收起、表格改成單欄），不會硬擠。瀏覽器版直接用瀏覽器的 Ctrl＋加減號。
@@ -283,6 +320,7 @@
     desktopHidden: false,
     pageAway,
     pollEvery,
+    postJob,
     ZoomControl,
     ZoomSettings,
   });

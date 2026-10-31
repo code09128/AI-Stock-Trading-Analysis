@@ -99,6 +99,8 @@ def _start_server(port: int):
                 return None, p
             continue
         from src.server.api_server import make_server  # 載入所有模組較久，放在視窗顯示之後
+        from src.market import bar_store
+        bar_store.enable(get_app_dir() / "data" / "bar_cache")  # 日 K 存本機；用本檔的 get_app_dir，測試腳本換掉它就不會寫到真的 data\
         return make_server(p), p
     raise RuntimeError(f"埠 {port}～{port + 19} 都被其他程式佔用")
 

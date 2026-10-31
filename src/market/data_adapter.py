@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import urllib.parse
 import os
 
-from src.market import finmind, fx, markets
+from src.market import bar_store, finmind, fx, markets
 from src.market.bar import Bar
 from src.market.cache import TTLCache
 from src.market.net import http_json
@@ -42,6 +42,7 @@ def is_partial_session(market: str, bar_date: str, now: Optional[datetime] = Non
 BAR_CACHE_TTL_SEC = 60
 _YAHOO_CURRENCY: Dict[str, str] = {}  # Yahoo 代號 -> 實際計價幣別
 _BAR_CACHE = TTLCache()
+STORE_YEARS_DAYS = 9 * 365  # Yahoo range=10y 的起點約在 10 年前；留一年餘裕，確定涵蓋 start
 
 
 def _cached_bars(key: Any, loader) -> List[Bar]:
@@ -51,6 +52,17 @@ def _cached_bars(key: Any, loader) -> List[Bar]:
 
 def clear_bar_cache() -> None:
     _BAR_CACHE.clear()
+
+
+def rows_to_bars(rows: List[list]) -> List[Bar]:
+    """Yahoo 原始日 K 列 → 還權 Bar：有還權收盤價就按比例調整 OHLC。"""
+    bars: List[Bar] = []
+    for d, o, h, l, c, v, adj in rows:
+        adj_c = adj or c
+        ratio = (adj_c / c) if c and c > 0 else 1.0
+        bars.append(Bar(timestamp=d, open=round(o * ratio, 2), high=round(h * ratio, 2), low=round(l * ratio, 2),
+                        close=round(float(adj_c), 2), volume=v))
+    return bars
 
 
 def classify_levels(candidates: List[float], price: float, atr: Optional[float], market: str,
@@ -204,18 +216,41 @@ class DualMarketDataAdapter:
 
     def _fetch_from_yahoo(self, symbol: str, days: int = 250) -> List[Bar]:
         range_str = "1y" if days <= 260 else "2y" if days <= 510 else "5y" if days <= 1270 else "10y"
-        bars = _cached_bars(("yahoo", symbol, range_str), lambda: self._load_yahoo(symbol, range_str))
+
+        def load() -> List[Bar]:
+            if not bar_store.enabled():
+                return self._load_yahoo(symbol, range_str)
+            got = bar_store.get(symbol, range_str, self._load_yahoo_raw)
+            if got.get("currency"):
+                _YAHOO_CURRENCY[symbol] = got["currency"]
+            return rows_to_bars(got["rows"])
+
+        bars = _cached_bars(("yahoo", symbol, range_str), load)
         return bars[-days:]
 
     def fetch_period(self, symbol: str, start: str, end: str) -> List[Bar]:
-        """只抓 start～end（YYYY-MM-DD）這一段日 K：歷史情境回放只需要特定幾個月，不用下載整整 10 年。"""
+        """只取 start～end（YYYY-MM-DD）這一段日 K（歷史情境回放）。
+        有本機快取時：start 在近 10 年內就把 10 年存進本機（之後重開程式不用再下載）；否則只下載這幾個月。"""
         def epoch(day: str) -> int:
             return int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp())
 
+        def load() -> List[Bar]:
+            if bar_store.enabled():
+                rows = bar_store.peek(symbol, start)
+                if rows is None and start >= (datetime.now() - timedelta(days=STORE_YEARS_DAYS)).strftime("%Y-%m-%d"):
+                    rows = bar_store.get(symbol, "10y", self._load_yahoo_raw)["rows"]
+                if rows is not None:  # 10 年資料的第一天比 start 晚＝那時還沒上市，跟只下載這段的結果一樣
+                    return rows_to_bars([r for r in rows if start <= r[0] <= end])
+            return self._load_yahoo(symbol, span=span)
+
         span = f"period1={epoch(start)}&period2={epoch(end) + 86400}"
-        return _cached_bars(("yahoo", symbol, span), lambda: self._load_yahoo(symbol, span=span))
+        return _cached_bars(("yahoo", symbol, span), load)
 
     def _load_yahoo(self, symbol: str, range_str: str = "", span: str = "") -> List[Bar]:
+        return rows_to_bars(self._load_yahoo_raw(symbol, range_str, span)["rows"])
+
+    def _load_yahoo_raw(self, symbol: str, range_str: str = "", span: str = "") -> Dict[str, Any]:
+        """Yahoo 日 K 原始資料：{rows: [[日期, 開, 高, 低, 收, 量, 還權收盤或 None]], currency}（未還權，本機快取存這份）。"""
         encoded_sym = urllib.parse.quote(symbol)
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_sym}?interval=1d&{span or f'range={range_str}'}"
         payload = http_json(url, timeout=self.timeout)
@@ -252,7 +287,7 @@ class DualMarketDataAdapter:
             if last < len(adj_close_list):
                 adj_close_list[last] = None  # 讓下方以收盤價計算（比例 1.0）
 
-        bars: List[Bar] = []
+        rows: List[list] = []
         for i, ts in enumerate(timestamps):
             o, h, l, c, v = (
                 opens[i],
@@ -263,21 +298,10 @@ class DualMarketDataAdapter:
             )
             if None in (o, h, l, c):
                 continue
-            # 若有還權收盤價則按比例調整 OHLC
-            adj_c = adj_close_list[i] if i < len(adj_close_list) and adj_close_list[i] else c
-            ratio = (adj_c / c) if c and c > 0 else 1.0
+            adj_c = adj_close_list[i] if i < len(adj_close_list) and adj_close_list[i] else None
             dt_str = datetime.utcfromtimestamp(ts + gmtoffset).strftime("%Y-%m-%d")  # 交易所當地日期
-            bars.append(
-                Bar(
-                    timestamp=dt_str,
-                    open=round(float(o) * ratio, 2),
-                    high=round(float(h) * ratio, 2),
-                    low=round(float(l) * ratio, 2),
-                    close=round(float(adj_c), 2),
-                    volume=float(v or 0),
-                )
-            )
-        return bars
+            rows.append([dt_str, float(o), float(h), float(l), float(c), float(v or 0), adj_c])
+        return {"rows": rows, "currency": meta.get("currency")}
 
     def _fetch_from_finmind(self, stock_id: str, days: int = 250) -> List[Bar]:
         start_date = (datetime.now() - timedelta(days=int(days * 1.6))).strftime("%Y-%m-%d")

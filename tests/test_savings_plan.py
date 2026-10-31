@@ -149,9 +149,107 @@ class ReturnStatsTests(unittest.TestCase):
         self.assertIsNone(sp.avg_yield(events, 20, "2026-03-01", today))
 
 
+class PortfolioTests(unittest.TestCase):
+    def test_blend_weights_and_cash(self):
+        """A 年化 10%、B 0%、現金 0%，各 50／30／20：組合每天報酬約是 A 的一半。"""
+        a, b = _series(6, 10), _series(6, 0)
+        res = sp.blend_index({"A": a, "B": b}, {"A": 0.5, "B": 0.3}, 0.2)
+        st = sp.portfolio_stats(res["points"])
+        self.assertAlmostEqual(st["cagr"], 4.88, delta=0.1)  # (1.1^(1/252) − 1) × 0.5 每天複利
+        self.assertEqual(res["starts"], {"A": a[0]["date"], "B": b[0]["date"]})
+        self.assertEqual(st["drawdown"]["pct"], 0)
+
+    def test_late_listing_is_filled_by_others(self):
+        """B 晚 3 年上市：上市前整個組合 = A；上市後才分一半。"""
+        a = _series(6, 10)
+        b = _series(3, 0, date(2019, 1, 7))
+        res = sp.blend_index({"A": a, "B": b}, {"A": 0.5, "B": 0.5})
+        pts = {p["date"]: p["close"] for p in res["points"]}
+        self.assertAlmostEqual(pts["2019-01-04"], 1.1 ** ((date(2019, 1, 4) - date(2016, 1, 4)).days / 365.25), places=3)
+        self.assertEqual(res["starts"]["B"], "2019-01-07")
+
+    def test_period_returns_and_volatility(self):
+        pts = _series(6, 10)
+        pr = sp.period_returns(pts)
+        self.assertAlmostEqual(pr["1y"], 10, delta=0.1)
+        self.assertAlmostEqual(pr["5y"], 61, delta=0.5)
+        self.assertLess(sp.volatility(pts), 0.5)  # 固定成長只剩每月天數不同造成的微小差異
+        self.assertIsNone(sp.period_returns(_series(0.5, 10))["1y"])
+        swing = [{"date": f"2020-{m:02d}-01", "close": 100 if m % 2 else 110} for m in range(1, 13)] + \
+                [{"date": f"2021-{m:02d}-01", "close": 100 if m % 2 else 110} for m in range(1, 13)]
+        self.assertGreater(sp.volatility(swing), 20)
+        dd = sp.max_drawdown(swing)
+        self.assertAlmostEqual(dd["pct"], 9.09, delta=0.01)
+
+    def test_xirr(self):
+        self.assertAlmostEqual(sp.xirr([("2020-01-01", -100), ("2021-01-01", 110)]), 10, delta=0.05)
+        self.assertIsNone(sp.xirr([("2020-01-01", -100)]))
+        self.assertIsNone(sp.xirr([]))
+
+    def test_dca_backtest_flat_and_growth(self):
+        flat = _series(4, 0)
+        r = sp.dca_backtest({"A": flat}, {"A": 1.0}, 0, 10000, 1000, 3)
+        self.assertEqual(r["invested"], r["value"])
+        self.assertEqual(r["invested"], 10000 + 1000 * 37)  # 第一天＋之後 36 個月初
+        g = sp.dca_backtest({"A": _series(4, 10)}, {"A": 1.0}, 0, 0, 1000, 3)
+        self.assertAlmostEqual(g["xirr_pct"], 10, delta=0.3)
+        self.assertIsNone(sp.dca_backtest({"A": flat}, {"A": 1.0}, 0, 0, 1000, 10))  # 期間開始時還沒上市
+
+    def test_ledger_matches_nanotou(self):
+        """奈米投畫面：投資 123,500、市值 193,255、配息 10,656 → 56.48% 與 65.11%。"""
+        r = sp.ledger([{"name": "奈米投", "invested": 123500, "value": 193255, "dividends": 10656,
+                        "start": "2022-01-05"}], today=date(2026, 10, 31))
+        row = r["rows"][0]
+        self.assertEqual((row["return_pct"], row["return_with_div_pct"]), (56.48, 65.11))
+        self.assertEqual(row["deposits"], 58)  # 2022-01 ～ 2026-10
+        self.assertGreater(row["xirr_pct"], 20)
+        self.assertEqual(r["total"]["pnl"], 69755)
+        none = sp.ledger([{"invested": 100, "value": 120}], today=date(2026, 10, 31))["rows"][0]
+        self.assertIsNone(none["xirr_pct"])
+        self.assertEqual(sp._monthly_flows("2026-01-31", 300, date(2026, 3, 31))[1][0], "2026-02-28")
+
+
 class HandlerTests(unittest.TestCase):
     def setUp(self):
         self.d = dispatcher.TradingEngineDispatcher()
+
+    def test_portfolio_endpoint(self):
+        """比例合計不是 100% 會換算；晚上市與取不到資料都要標示；每月投入照比例分配並估算零股。"""
+        hist = {"0050": {"points": _series(6, 10), "source": "fake", "warning": None},
+                "00697B": {"points": _series(3, 2, date(2019, 1, 7)), "source": "fake", "warning": None},
+                "ZZZZ": {}}
+        quotes = [{"symbol": "0050.TW", "name": "元大台灣50", "price": 100.0},
+                  {"symbol": "00697B.TW", "name": "元大美債7-10", "price": 35.5}]
+        with patch.object(savings.SavingsHandlers, "_points", side_effect=lambda self_, s: hist[s], autospec=True), \
+                patch.object(savings.SavingsHandlers, "_benchmark_points", return_value=_series(6, 5)), \
+                patch.object(savings.quote_provider, "get_quotes", return_value=quotes):
+            r = self.d.handle_savings_portfolio({"items": [{"symbol": "0050", "weight": 60},
+                                                           {"symbol": "00697b", "weight": 20},
+                                                           {"symbol": "ZZZZ", "weight": 10}, {"symbol": "", "weight": 5}],
+                                                 "cash": 10, "monthly": 1000, "initial": 10000})
+        rows = {x["symbol"]: x for x in r["items"]}
+        self.assertEqual(r["raw_total_pct"], 100)
+        self.assertEqual(rows["0050"]["monthly_amount"], 600)
+        self.assertEqual(rows["0050"]["est_shares"], 6)
+        self.assertEqual(rows["00697B"]["est_shares"], 5)
+        self.assertTrue(any("ZZZZ" in w for w in r["warnings"]))
+        self.assertTrue(any("00697B 2019-01-07 起才有資料" in w for w in r["warnings"]))
+        self.assertIsNotNone(r["stats"]["cagr"])
+        self.assertAlmostEqual(r["benchmark"]["periods"]["1y"], 5, delta=0.1)
+        self.assertEqual(set(r["chart"]), {"3m", "6m", "1y", "3y"})
+        self.assertLessEqual(len(r["chart"]["3y"]), savings.CHART_POINTS + 1)
+        self.assertEqual(r["chart"]["1y"][0]["port"], 0)
+        self.assertEqual([b["years"] for b in r["backtest"]], [1, 3, 5])
+        with self.assertRaises(ValueError):
+            self.d.handle_savings_portfolio({"items": [{"symbol": "", "weight": 50}]})
+        with self.assertRaises(ValueError):
+            self.d.handle_savings_portfolio({"items": [{"symbol": "0050", "weight": "abc"}]})
+
+    def test_ledger_kind(self):
+        r = self.d.handle_savings_calc({"kind": "ledger", "rows": [{"name": "A", "invested": 100, "value": 150}]})
+        self.assertEqual(r["total"]["return_pct"], 50)
+        with self.assertRaises(ValueError):
+            self.d.handle_savings_calc({"kind": "ledger", "rows": [{"invested": -1}]})
 
     def test_calc_kinds_and_validation(self):
         g = self.d.handle_savings_calc({"kind": "grow", "monthly": 5000, "rates": [14.7, 9.9], "years": 20})

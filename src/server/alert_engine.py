@@ -88,8 +88,30 @@ class AlertEngine:
         except Exception:
             return []
 
-    def save_alerts(self, alerts: List[Dict[str, Any]]) -> None:
-        user_data.save({"tw_us_alerts_v1": json.dumps(alerts, ensure_ascii=False)})
+    def mark_fired(self, fired: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """把觸發的提醒合併進最新的清單；回傳實際標記到的（已被刪除或關閉的就不通知）。"""
+        by_id = {f.get("id"): f for f in fired}
+        marked: List[Dict[str, Any]] = []
+
+        def merge(raw: Optional[str]) -> Optional[str]:
+            marked.clear()
+            try:
+                latest = json.loads(raw or "[]")
+            except ValueError:
+                return None
+            if not isinstance(latest, list):
+                return None
+            out = []
+            for a in latest:
+                f = by_id.get(a.get("id")) if isinstance(a, dict) else None
+                if f and a.get("active"):
+                    a = {**a, "active": False, "firedAt": f["firedAt"], "firedValue": f["firedValue"]}
+                    marked.append(a)
+                out.append(a)
+            return json.dumps(out, ensure_ascii=False) if marked else None
+
+        user_data.update("tw_us_alerts_v1", merge)
+        return marked
 
     def check_once(self) -> List[Dict[str, Any]]:
         """執行一輪檢查，回傳觸發的提醒清單。背景迴圈與「立即檢查」不能同時跑，否則同一則會通知兩次。"""
@@ -138,12 +160,10 @@ class AlertEngine:
 
         # 3. 逐一比對
         fired: List[Dict[str, Any]] = []
-        updated_alerts: List[Dict[str, Any]] = []
         has_changed = False
 
         for a in alerts:
             if not a.get("active"):
-                updated_alerts.append(a)
                 continue
 
             sym = a.get("symbol", "")
@@ -163,14 +183,12 @@ class AlertEngine:
                 fired_item["firedAt"] = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
                 fired_item["firedValue"] = metrics
                 fired.append(fired_item)
-                updated_alerts.append(fired_item)
                 has_changed = True
-            else:
-                updated_alerts.append(a)
 
-        # 4. 若有觸發，寫回 userdata 並送出通知
+        # 4. 若有觸發，寫回 userdata 並送出通知。檢查要花幾秒（抓報價、算 RSI），期間使用者可能新增或刪除提醒：
+        #    不能把開頭讀到的整份蓋回去，改成在存檔鎖裡讀最新的清單，只把這輪觸發的（依 id、仍啟用中）標成已觸發
         if has_changed:
-            self.save_alerts(updated_alerts)
+            fired = self.mark_fired(fired)
             for f in fired:
                 msg = format_alert_message(f)
                 notifier.send_notification("股票交易分析系統 - 提醒觸發", msg)

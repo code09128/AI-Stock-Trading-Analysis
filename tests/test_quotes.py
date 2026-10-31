@@ -37,6 +37,28 @@ class QuoteProviderTests(unittest.TestCase):
         self.assertIn("boom", q["error"])
         self.assertIsNone(q.get("price"))
 
+    def test_concurrent_requests_share_one_fetch(self):
+        """看盤頁與提醒同時要 2330：對外只抓一次；另一檔各自照抓；同一請求重複的代號也不會卡住。"""
+        import threading
+        import time
+        calls = []
+
+        def slow(url, timeout=8, **_):
+            calls.append(url)
+            time.sleep(0.3)
+            return {"msgArray": [MIS_ROW]}
+        out = {}
+        with patch.object(qp, "_http_json", side_effect=slow):
+            ts = [threading.Thread(target=lambda k=k: out.__setitem__(k, qp.get_quotes(["2330", "2330"], {})))
+                  for k in range(3)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(5)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(all(q["price"] == 2405.0 for qs in out.values() for q in qs))
+        self.assertEqual(qp._INFLIGHT, {})
+
 
 if __name__ == "__main__":
     unittest.main()

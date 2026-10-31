@@ -479,12 +479,7 @@
       if (!symbols.length) return undefined;
       let stop = false;
       setLoading(true);
-      fetch('/api/dividends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbols }),
-      })
-        .then((r) => r.json())
+      window.TA.postJob('/api/dividends', { symbols })
         .then((d) => {
           if (stop) return;
           const m = {};

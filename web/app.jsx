@@ -30,6 +30,10 @@ function App() {
   const [priceFlash, setPriceFlash] = useState(null); // "UP" | "DOWN" | null
   const prevPriceRef = useRef(null);
   const m1ReqRef = useRef(0);
+  // 回測／風控／交易檢討：前一次還沒算完又觸發（例如從技術分析帶另一檔來回測）時，只採用最後一次的結果
+  const m3ReqRef = useRef(0);
+  const m4ReqRef = useRef(0);
+  const m5ReqRef = useRef(0);
   const m1Busy = useRef(false);
   const toastTimer = useRef(null);
 
@@ -217,22 +221,19 @@ function App() {
 
   const runMod3 = useCallback(async () => {
     setM3Loading(true);
+    const mine = ++m3ReqRef.current;
     try {
-      const res = await fetch('/api/mod3/backtest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(m3Form),
-      });
-      const data = await res.json();
+      const data = await window.TA.postJob('/api/mod3/backtest', m3Form);
+      if (mine !== m3ReqRef.current) return;
       if (data.error) throw new Error(data.error);
       setM3Data(data);
       showToast(
         `✅ 回測完成：${m3Form.target_asset}，共 ${data.backtest_result?.total_trades ?? 0} 筆交易`,
       );
     } catch (err) {
-      showToast(`⚠️ 策略回測 回測失敗: ${err.message}`);
+      if (mine === m3ReqRef.current) showToast(`⚠️ 策略回測 回測失敗: ${err.message}`);
     } finally {
-      setM3Loading(false);
+      if (mine === m3ReqRef.current) setM3Loading(false);
     }
   }, [m3Form, showToast]);
 
@@ -243,34 +244,31 @@ function App() {
       return;
     }
     setM4Loading(true);
+    const mine = ++m4ReqRef.current;
     try {
       const targetWeights = { CASH: Number(m4CashPct) || 0 };
       for (const h of m4Holdings) {
         targetWeights[h.symbol] = Number(h.target_pct) || 0;
       }
-      const res = await fetch('/api/mod4/risk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          holdings: m4Holdings.map((h) => ({
-            symbol: h.symbol,
-            market: h.market,
-            shares: Number(h.shares),
-            price: Number(h.price),
-          })),
-          target_weights: targetWeights,
-          use_live_prices: m4Live,
-          portfolio_beta: m4Beta === '' ? null : Number(m4Beta),
-        }),
+      const data = await window.TA.postJob('/api/mod4/risk', {
+        holdings: m4Holdings.map((h) => ({
+          symbol: h.symbol,
+          market: h.market,
+          shares: Number(h.shares),
+          price: Number(h.price),
+        })),
+        target_weights: targetWeights,
+        use_live_prices: m4Live,
+        portfolio_beta: m4Beta === '' ? null : Number(m4Beta),
       });
-      const data = await res.json();
+      if (mine !== m4ReqRef.current) return;
       if (data.error) throw new Error(data.error);
       setM4Data(data);
       showToast(`✅ 組合風控計算完成（${m4Holdings.length} 檔持股）`);
     } catch (err) {
-      showToast(`⚠️ 組合風控 風控運算失敗: ${err.message}`);
+      if (mine === m4ReqRef.current) showToast(`⚠️ 組合風控 風控運算失敗: ${err.message}`);
     } finally {
-      setM4Loading(false);
+      if (mine === m4ReqRef.current) setM4Loading(false);
     }
   }, [m4Holdings, m4CashPct, m4Beta, m4Live, showToast]);
 
@@ -279,24 +277,21 @@ function App() {
       const usedEntries = Array.isArray(overrideEntries) ? overrideEntries : m5Entries;
       const usedSource = typeof overrideSource === 'string' ? overrideSource : m5Source;
       setM5Loading(true);
+      const mine = ++m5ReqRef.current;
       try {
-        const res = await fetch('/api/mod5/coach', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            entries: usedEntries,
-            mine: usedSource === 'mine', // 我的紀錄：沒有已平倉交易時也不要改用範例
-            // 持有中的部位（只顯示帳面損益，不算進勝率等統計）
-            holdings: usedSource === 'mine' ? window.TA.loadPortfolio().holdings : [],
-            ai: (() => {
-              const cfg = window.TA.loadAI();
-              return cfg.scope.mod5 === false
-                ? null
-                : window.TA.cleanProfile(window.TA.activeProfile(cfg));
-            })(),
-          }),
+        const data = await window.TA.postJob('/api/mod5/coach', {
+          entries: usedEntries,
+          mine: usedSource === 'mine', // 我的紀錄：沒有已平倉交易時也不要改用範例
+          // 持有中的部位（只顯示帳面損益，不算進勝率等統計）
+          holdings: usedSource === 'mine' ? window.TA.loadPortfolio().holdings : [],
+          ai: (() => {
+            const cfg = window.TA.loadAI();
+            return cfg.scope.mod5 === false
+              ? null
+              : window.TA.cleanProfile(window.TA.activeProfile(cfg));
+          })(),
         });
-        const data = await res.json();
+        if (mine !== m5ReqRef.current) return;
         if (data.error) throw new Error(data.error);
         setM5Data(data);
         if (data.entries_used) setM5Entries(data.entries_used);
@@ -310,9 +305,9 @@ function App() {
           showToast('✅ 交易診斷完成（範例資料，不會更新你的交易紀錄與規則）');
         }
       } catch (err) {
-        showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`);
+        if (mine === m5ReqRef.current) showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`);
       } finally {
-        setM5Loading(false);
+        if (mine === m5ReqRef.current) setM5Loading(false);
       }
     },
     [m5Entries, m5Source, showToast],

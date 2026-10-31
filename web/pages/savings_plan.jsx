@@ -45,13 +45,16 @@
   function useCalc(body) {
     const [res, setRes] = useState(null);
     const [err, setErr] = useState('');
+    const seq = useRef(0);
     const key = JSON.stringify(body);
     useEffect(() => {
       const req = JSON.parse(key);
       if (!req) return undefined;
       const t = setTimeout(() => {
+        const mine = ++seq.current; // 連續修改時，比較晚送出的請求可能比較早回來：只採用最後一次
         post('/api/savings/calc', req)
           .then((d) => {
+            if (mine !== seq.current) return;
             if (d.error) setErr(d.error);
             else {
               setErr('');
@@ -490,21 +493,24 @@
     const income = s.income || 0;
     const lump = s.lumpSum || 0;
     const amountKey = lumpMode ? `L${lump}` : `M${income}`;
+    const seq = useRef(0);
     // 停手 0.5 秒才重算；s.symbol 只影響比較清單，換代號不必重抓
     useEffect(() => {
       if (!((lumpMode ? lump : income) > 0)) return undefined;
       const t = setTimeout(() => {
+        const mine = ++seq.current; // 第一次要 30 秒，期間又改金額：舊的結果晚回來時不採用
         setLoading(true);
-        post(
+        window.TA.postJob(
           '/api/savings/dividends',
           lumpMode ? { lump_sum: lump, symbols: [s.symbol] } : { monthly_income: income, symbols: [s.symbol] },
         )
           .then((d) => {
+            if (mine !== seq.current) return;
             setErr(d.error || '');
             if (!d.error) setData(d);
           })
-          .catch((e) => setErr(e.message))
-          .finally(() => setLoading(false));
+          .catch((e) => mine === seq.current && setErr(e.message))
+          .finally(() => mine === seq.current && setLoading(false));
       }, 500);
       return () => clearTimeout(t);
     }, [amountKey]);
@@ -642,6 +648,29 @@
     );
   }
 
+  // 「我的持股」每一筆的台幣市值（即時價 × 股數，外幣換成台幣；沒有即時價用成本價）。生命週期與投資組合分頁共用
+  async function holdingsValues() {
+    const hs = readLS('tw_us_holdings_v1', []).filter((h) => h?.symbol && Number(h.shares) > 0);
+    if (!hs.length) return { rows: [], total: 0, missing: 0 };
+    const syms = [...new Set(hs.map((h) => h.symbol))].slice(0, 40);
+    const q = await post('/api/quotes', { symbols: syms });
+    const bySym = Object.fromEntries((q.quotes || []).filter(Boolean).map((x) => [baseCode(x.symbol), x]));
+    const curs = [...new Set(Object.values(bySym).map((x) => x.currency).filter((c) => c && c !== 'TWD'))];
+    const fx = curs.length ? (await post('/api/fx', { currencies: curs })).rates || {} : {};
+    let total = 0;
+    let missing = 0;
+    const rows = hs.map((h) => {
+      const x = bySym[baseCode(h.symbol)];
+      const price = x?.price || Number(h.price) || 0;
+      const rate = !x?.currency || x.currency === 'TWD' ? 1 : fx[x.currency]?.rate;
+      if (!x?.price || !rate) missing += 1;
+      const value = price * Number(h.shares) * (rate || 0);
+      total += value;
+      return { symbol: h.symbol, name: x?.name || h.name || h.symbol, value };
+    });
+    return { rows, total, missing };
+  }
+
   // ---------- 生命週期 ----------
   function LifeTab({ s, set, ret }) {
     const calc = useCalc({
@@ -661,31 +690,17 @@
 
     // 用「我的持股」目前市值當初期投入（報價 × 股數，外幣換成台幣）
     const fillFromHoldings = async () => {
-      const hs = readLS('tw_us_holdings_v1', []).filter((h) => h?.symbol && Number(h.shares) > 0);
-      if (!hs.length) {
-        setMv({ loading: false, note: '「我的持股」是空的' });
-        return;
-      }
       setMv({ loading: true, note: '' });
       try {
-        const syms = [...new Set(hs.map((h) => h.symbol))].slice(0, 40);
-        const q = await post('/api/quotes', { symbols: syms });
-        const bySym = Object.fromEntries((q.quotes || []).filter(Boolean).map((x) => [baseCode(x.symbol), x]));
-        const curs = [...new Set(Object.values(bySym).map((x) => x.currency).filter((c) => c && c !== 'TWD'))];
-        const fx = curs.length ? (await post('/api/fx', { currencies: curs })).rates || {} : {};
-        let total = 0;
-        let missing = 0;
-        for (const h of hs) {
-          const x = bySym[baseCode(h.symbol)];
-          const price = x?.price || Number(h.price) || 0;
-          const rate = !x?.currency || x.currency === 'TWD' ? 1 : fx[x.currency]?.rate;
-          if (!x?.price || !rate) missing += 1;
-          total += price * Number(h.shares) * (rate || 0);
+        const h = await holdingsValues();
+        if (!h.rows.length) {
+          setMv({ loading: false, note: '「我的持股」是空的' });
+          return;
         }
-        set({ lifeInitial: Math.round(total) });
+        set({ lifeInitial: Math.round(h.total) });
         setMv({
           loading: false,
-          note: `已帶入 ${hs.length} 筆持股市值 ${fmt(total, 0)} 元${missing ? `（${missing} 筆沒有即時價或匯率，用成本價或略過）` : ''}`,
+          note: `已帶入 ${h.rows.length} 筆持股市值 ${fmt(h.total, 0)} 元${h.missing ? `（${h.missing} 筆沒有即時價或匯率，用成本價或略過）` : ''}`,
         });
       } catch (e) {
         setMv({ loading: false, note: `⚠️ ${e.message}` });
@@ -802,6 +817,8 @@
 
   const TABS = [
     ['plan', '定期定額'],
+    ['portfolio', '投資組合'],
+    ['ledger', '實際對帳'],
     ['income', '股息試算'],
     ['life', '生命週期'],
   ];
@@ -850,6 +867,8 @@
             <PlanTab s={s} set={set} ret={ret} />
           </>
         )}
+        {s.tab === 'portfolio' && window.TA.SavingsPortfolioTab && <window.TA.SavingsPortfolioTab />}
+        {s.tab === 'ledger' && window.TA.SavingsLedgerTab && <window.TA.SavingsLedgerTab />}
         {s.tab === 'income' && <IncomeTab s={s} set={set} />}
         {s.tab === 'life' && <LifeTab s={s} set={set} ret={ret} />}
       </div>
@@ -863,5 +882,8 @@
     window.dispatchEvent(new CustomEvent('savings-action', { detail: { tab, symbol } }));
   };
 
-  window.TA = Object.assign(window.TA || {}, { SavingsPlanPage, openSavings });
+  // 投資組合／實際對帳分頁（savings_portfolio.jsx）共用的元件與工具
+  const savingsUI = { Card, Num, Btn, LineChart, useCalc, post, wan, pct, inputCls, copyText, holdingsValues };
+
+  window.TA = Object.assign(window.TA || {}, { SavingsPlanPage, openSavings, savingsUI });
 })();

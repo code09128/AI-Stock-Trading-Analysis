@@ -12,7 +12,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from src.server.config import get_app_dir
 
@@ -106,7 +106,6 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError(f"不支援的資料項目：{k}")
         if v is not None and (not isinstance(v, str) or len(v) > MAX_VALUE_CHARS):
             raise ValueError(f"{k} 的內容格式錯誤或太大")
-    path = data_file()
     with _LOCK:
         current = _read(strict=True)
         for k, v in values.items():
@@ -114,16 +113,36 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
                 current.pop(k, None)
             else:
                 current[k] = v
+        _write(current)
+    return {"saved": len(values), "path": str(data_file())}
+
+
+def update(key: str, fn: Callable[[Optional[str]], Optional[str]]) -> Optional[str]:
+    """讀取－修改－寫回一個鍵，整段在鎖裡完成：背景提醒引擎用它標記「已觸發」，
+    不會把使用者在檢查期間新增／刪除的提醒蓋掉。fn 回傳 None＝不用改。"""
+    if not allowed(key):
+        raise ValueError(f"不支援的資料項目：{key}")
+    with _LOCK:
+        current = _read(strict=True)
+        new = fn(current.get(key))
+        if new is not None and new != current.get(key):
+            current[key] = new
+            _write(current)
+        return new
+
+
+def _write(current: Dict[str, str]) -> None:
+    """呼叫端要持有 _LOCK。"""
+    path = data_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                _backup_today(path)
-            except OSError as e:  # 備份失敗不能擋住存檔
-                print(f"[user_data] 今日備份失敗：{e}")
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"version": 1, "saved_at": datetime.now().isoformat(timespec="seconds"),
-                                       "values": current}, ensure_ascii=False, indent=1), encoding="utf-8")
-            _retry(lambda: os.replace(tmp, path))
-        except OSError as e:
-            raise ValueError(f"無法寫入 {path}（{e.strerror or e}）。請把程式放到有寫入權限的資料夾。") from None
-    return {"saved": len(values), "path": str(path)}
+            _backup_today(path)
+        except OSError as e:  # 備份失敗不能擋住存檔
+            print(f"[user_data] 今日備份失敗：{e}")
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"version": 1, "saved_at": datetime.now().isoformat(timespec="seconds"),
+                                   "values": current}, ensure_ascii=False, indent=1), encoding="utf-8")
+        _retry(lambda: os.replace(tmp, path))
+    except OSError as e:
+        raise ValueError(f"無法寫入 {path}（{e.strerror or e}）。請把程式放到有寫入權限的資料夾。") from None

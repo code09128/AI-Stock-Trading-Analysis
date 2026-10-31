@@ -22,8 +22,8 @@ from typing import Any, Callable, Dict
 
 from src.ai import ai_client
 from src.company import fundamentals
-from src.market import quote_provider, trade_rules
-from src.server import activity_log, alert_engine, autostart, env_settings, updater, user_data
+from src.market import bar_store, quote_provider, trade_rules
+from src.server import activity_log, alert_engine, autostart, env_settings, jobs, updater, user_data
 from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, get_web_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
 
 from src.server.dispatcher import DISPATCHER, TradingEngineDispatcher  # noqa: F401
@@ -83,6 +83,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/savings/calc": D.handle_savings_calc,
     "/api/savings/returns": D.handle_savings_returns,
     "/api/savings/dividends": D.handle_savings_dividends,
+    "/api/savings/portfolio": D.handle_savings_portfolio,
     "/api/mod5/coach": D.handle_mod5_coach,
     # AI
     "/api/ai/test": lambda p: D.handle_ai("test", p),
@@ -106,7 +107,19 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
                                  "enabled": autostart.is_autostart_enabled()},
     "/api/alerts/check_now": lambda p: {"fired": alert_engine.ALERT_ENGINE.check_once()},
     "/api/tests/run": lambda p: D.handle_run_tests(),
+    # 背景工作：慢的分析送出後用 poll 查結果（見 jobs.py）
+    "/api/jobs/start": lambda p: _start_job(p),
+    "/api/jobs/poll": lambda p: jobs.poll(str(p.get("id") or ""), arg_num(p, "wait", 0, "等待秒數", lo=0, hi=10)),
 }
+
+
+def _start_job(p: Dict[str, Any]) -> Dict[str, Any]:
+    path = str(p.get("path") or "")
+    payload = p.get("payload") if isinstance(p.get("payload"), dict) else {}
+    if path not in ROUTES:
+        raise ValueError(f"沒有這個 API：{path}")
+    return {"id": jobs.start(path, payload, ROUTES[path],
+                             on_done=lambda status, started, res: _log_api(path, status, started, payload, res))}
 
 
 def refresh_routes() -> None:
@@ -119,6 +132,32 @@ def refresh_routes() -> None:
         name = getattr(v, "__name__", "")
         if name.startswith("handle_") and hasattr(D, name):
             ROUTES[k] = getattr(D, name)
+
+
+# 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤。
+# 背景工作的 start／poll 不記，工作結束時用原本的路徑記一筆（耗時＝實際計算時間）
+QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
+               "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles", "/api/jobs/")
+
+
+def _log_api(path: str, status: int, started: float, payload: Any = None, res: Any = None) -> None:
+    if status < 400 and (path.startswith(QUIET_PATHS) or path == "/api/mod1/analyze"):
+        return  # 技術分析每 5 秒自動刷新，成功的不記；失敗一定記
+    p = payload if isinstance(payload, dict) else {}
+    ev = {"type": "api", "path": path, "status": status, "ms": int((time.time() - started) * 1000),
+          "symbol": p.get("ticker") or p.get("symbol") or p.get("target_asset") or p.get("target"),
+          "module": p.get("module")}
+    if isinstance(res, dict):
+        if res.get("error"):
+            ev["level"], ev["error"] = "error", str(res["error"])[:300]
+        if res.get("ai_usage"):
+            ev["ai_tokens"] = [(u.get("model"), u.get("input_tokens"), u.get("output_tokens")) for u in res["ai_usage"]]
+    if status >= 400:
+        ev["level"] = "error"
+    try:
+        activity_log.write([{k: v for k, v in ev.items() if v not in (None, "", [])}], "server")
+    except Exception:
+        pass
 
 
 class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
@@ -181,29 +220,8 @@ class TradingAPIRequestHandler(SimpleHTTPRequestHandler):
         if ims != self.date_time_string(int(mtime)):
             del self.headers["If-Modified-Since"]
 
-    # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤
-    QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
-                   "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles")
-
     def _log_request(self, status: int, started: float, payload: Any = None, res: Any = None) -> None:
-        path = self.path.split("?")[0]
-        if status < 400 and (path.startswith(self.QUIET_PATHS) or path == "/api/mod1/analyze"):
-            return  # 技術分析每 5 秒自動刷新，成功的不記；失敗一定記
-        p = payload if isinstance(payload, dict) else {}
-        ev = {"type": "api", "path": path, "status": status, "ms": int((time.time() - started) * 1000),
-              "symbol": p.get("ticker") or p.get("symbol") or p.get("target_asset") or p.get("target"),
-              "module": p.get("module")}
-        if isinstance(res, dict):
-            if res.get("error"):
-                ev["level"], ev["error"] = "error", str(res["error"])[:300]
-            if res.get("ai_usage"):
-                ev["ai_tokens"] = [(u.get("model"), u.get("input_tokens"), u.get("output_tokens")) for u in res["ai_usage"]]
-        if status >= 400:
-            ev["level"] = "error"
-        try:
-            activity_log.write([{k: v for k, v in ev.items() if v not in (None, "", [])}], "server")
-        except Exception:
-            pass
+        _log_api(self.path.split("?")[0], status, started, payload, res)
 
     def _with_usage(self, res: Any) -> Any:
         """把這次請求呼叫 AI 的用量附在回應（ai_usage），前端據此記錄與估算費用。"""
@@ -284,6 +302,7 @@ def make_server(port: int = 8088) -> ThreadingHTTPServer:
 
 
 def run_server(port: int = 8088) -> None:
+    bar_store.enable()  # 日 K 存本機（data/bar_cache）；單元測試直接呼叫 make_server，不會寫檔
     make_server(port).serve_forever()
 
 

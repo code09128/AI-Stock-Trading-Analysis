@@ -20,6 +20,7 @@
     '/api/categories',
     '/api/candles',
     '/api/log',
+    '/api/jobs/', // 背景工作的 start／poll；結束時由 postJob 用原本的路徑記一筆
   ];
 
   let memory = readLS(LS_ACTIVITY, []);

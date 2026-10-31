@@ -33,6 +33,8 @@ class HostSlotTest(unittest.TestCase):
         self.assertEqual(net._kind(YAHOO_LIVE), "live")
         self.assertEqual(net._kind(YAHOO_BULK), "bulk")
         self.assertEqual(net._kind("https://query2.finance.yahoo.com/v10/finance/quoteSummary/0050.TW"), "bulk")
+        # 日 K 本機快取的補抓走大下載連線，不跟美股報價搶
+        self.assertEqual(net._kind("https://query1.finance.yahoo.com/v8/finance/chart/VTI?interval=1d&range=1mo"), "bulk")
         self.assertIsNot(net._slot(YAHOO_LIVE), net._slot(YAHOO_BULK))
         self.assertIs(net._slot(YAHOO_LIVE), net._slot(YAHOO_LIVE.replace("query1", "QUERY1")))
 

@@ -28,7 +28,7 @@ SLOT_WAIT_SEC = 12  # 排隊最久等多久；超過就丟 TimeoutError
 
 _LOCK = threading.Lock()
 _SLOTS: Dict[Tuple[str, str], threading.BoundedSemaphore] = {}
-_LIVE_RANGES = ("range=1d", "range=5d")
+_LIVE_RANGES = ("range=1d", "range=5d")  # 日 K 本機快取的補抓（range=1mo）算大下載：不跟報價搶即時連線
 
 
 def _kind(url: str) -> str:

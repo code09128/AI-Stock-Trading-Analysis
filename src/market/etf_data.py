@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 
 from src.market import quote_provider as qp
-from src.market import markets
+from src.market import bar_store, markets
 from src.market.data_adapter import DualMarketDataAdapter
 from src.market.cache import TTLCache
 from src.market.net import http_bytes
@@ -170,7 +170,8 @@ def top_holdings(symbol: str) -> Optional[Dict[str, Any]]:
             }
         return None
 
-    return _cached(f"holdings:{symbol}", load)
+    # 成分股約每月才調整：本機存一天（重開程式不用重抓），記憶體再快取 6 小時
+    return _cached(f"holdings:{symbol}", lambda: bar_store.daily("etf_holdings", symbol, load))
 
 
 def calc_beta(symbol: str) -> Optional[Dict[str, Any]]:

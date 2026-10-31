@@ -28,6 +28,8 @@ _LOCK = threading.Lock()
 _CACHE: Dict[str, Any] = {}
 CACHE_TTL_SEC = 3.0
 US_CACHE_TTL_SEC = 3.0
+_INFLIGHT: Dict[str, threading.Event] = {}  # 代號 → 正在抓它的那個請求（抓完會 set）
+INFLIGHT_WAIT_SEC = 12
 _http_json = http_json  # 其他模組習慣用 qp._http_json（帶 UA、受連線上限控管、寫入 FETCH_LOG；實作在 net.py）
 _num = to_num
 
@@ -187,40 +189,68 @@ def fetch_us_quote(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any
 
 
 def get_quotes(symbols: List[str], names: Dict[str, str]) -> List[Dict[str, Any]]:
-    """批次取得報價。逐檔快取 3 秒（台股與美股相同），避免同一秒內重複請求被來源端限流。"""
+    """批次取得報價。逐檔快取 3 秒（台股與美股相同），避免同一秒內重複請求被來源端限流。
+    證交所常要 1～4 秒才回，比快取還久：別的請求正在抓的代號就等它抓完共用結果（最多 INFLIGHT_WAIT_SEC 秒），
+    看盤頁、提醒檢查、技術分析同時要同一檔時只對外抓一次。"""
     norms = [DualMarketDataAdapter.normalize_symbol(s) for s in symbols if s and s.strip()]
     now = time.time()
     fresh: Dict[str, Dict[str, Any]] = {}
     need_tw: List[Dict[str, str]] = []
     need_us: List[Dict[str, str]] = []
+    waits: Dict[str, threading.Event] = {}
+    mine = threading.Event()
     with _LOCK:
         for n in norms:
-            hit = _CACHE.get(n["symbol"])
+            sym = n["symbol"]
+            hit = _CACHE.get(sym)
             ttl = CACHE_TTL_SEC if n["market"] == "TW" else US_CACHE_TTL_SEC
             if hit and now - hit["t"] < ttl:
-                fresh[n["symbol"]] = hit["data"]
+                fresh[sym] = hit["data"]
+            elif sym in _INFLIGHT:  # 別的請求正在抓（同一請求重複的代號也會走這裡，等的是自己）
+                waits[sym] = _INFLIGHT[sym]
             else:
+                _INFLIGHT[sym] = mine
                 (need_tw if n["market"] == "TW" else need_us).append(n)
 
     started = time.time()
     got: Dict[str, Dict[str, Any]] = {}
-    if need_tw:
-        got.update(fetch_tw_quotes(need_tw, names))
-    if need_us:  # 美股每檔一個請求，平行抓取縮短等待
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            for n, quote in zip(need_us, pool.map(lambda x: fetch_us_quote(x, names), need_us)):
-                got[n["symbol"]] = quote
+    try:
+        if need_tw:
+            got.update(fetch_tw_quotes(need_tw, names))
+        if need_us:  # 美股每檔一個請求，平行抓取縮短等待
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                for n, quote in zip(need_us, pool.map(lambda x: fetch_us_quote(x, names), need_us)):
+                    got[n["symbol"]] = quote
 
-    fetched_at = datetime.now().strftime("%H:%M:%S")
-    latency = int((time.time() - started) * 1000)
-    with _LOCK:
-        for sym, quote in got.items():
-            quote["fetched_at"] = fetched_at
-            quote["latency_ms"] = latency
-            old = _CACHE.get(sym)
-            if quote.get("error") and old and old["data"].get("is_live"):
-                continue  # 失敗時不覆蓋；下方會標示沿用舊資料
-            _CACHE[sym] = {"t": time.time(), "data": quote}
+        fetched_at = datetime.now().strftime("%H:%M:%S")
+        latency = int((time.time() - started) * 1000)
+        with _LOCK:
+            for sym, quote in got.items():
+                quote["fetched_at"] = fetched_at
+                quote["latency_ms"] = latency
+                old = _CACHE.get(sym)
+                if quote.get("error") and old and old["data"].get("is_live"):
+                    continue  # 失敗時不覆蓋；下方會標示沿用舊資料
+                _CACHE[sym] = {"t": time.time(), "data": quote}
+    finally:
+        with _LOCK:
+            for n in need_tw + need_us:
+                if _INFLIGHT.get(n["symbol"]) is mine:
+                    del _INFLIGHT[n["symbol"]]
+        mine.set()
+
+    if waits:
+        deadline = time.time() + INFLIGHT_WAIT_SEC
+        for ev in set(waits.values()):
+            ev.wait(max(0.0, deadline - time.time()))
+        with _LOCK:
+            shared = {s: _CACHE[s]["data"] for s in waits if s in _CACHE and _CACHE[s]["t"] >= now}
+        retry = [n for n in norms if n["symbol"] in waits and n["symbol"] not in shared]
+        fresh.update(shared)
+        if retry:  # 等太久或對方失敗：自己再抓一次（這時已不在抓取中，不會再等）
+            for n, q in zip(retry, get_quotes([n["symbol"] for n in retry], names)):
+                if q:
+                    got[n["symbol"]] = q
     out = []
     for n in norms:
         q = got.get(n["symbol"]) or fresh.get(n["symbol"])

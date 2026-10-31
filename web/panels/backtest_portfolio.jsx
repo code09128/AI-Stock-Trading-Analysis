@@ -74,24 +74,19 @@
       setBusy(true);
       setErr(null);
       try {
-        const res = await fetch('/api/mod3/portfolio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initial_capital: m3Form.initial_capital,
-            commission_discount: m3Form.commission_discount,
-            period_years: m3Form.period_years,
-            sizing_mode: m3Form.sizing_mode,
-            sizing_value: m3Form.sizing_value,
-            atr_mult: m3Form.atr_mult,
-            stop_loss_pct: m3Form.stop_loss_pct,
-            trailing_pct: m3Form.trailing_pct,
-            market_filter: m3Form.market_filter,
-            filter_ma: m3Form.filter_ma,
-            legs,
-          }),
+        const d = await window.TA.postJob('/api/mod3/portfolio', {
+          initial_capital: m3Form.initial_capital,
+          commission_discount: m3Form.commission_discount,
+          period_years: m3Form.period_years,
+          sizing_mode: m3Form.sizing_mode,
+          sizing_value: m3Form.sizing_value,
+          atr_mult: m3Form.atr_mult,
+          stop_loss_pct: m3Form.stop_loss_pct,
+          trailing_pct: m3Form.trailing_pct,
+          market_filter: m3Form.market_filter,
+          filter_ma: m3Form.filter_ma,
+          legs,
         });
-        const d = await res.json();
         if (d.error) throw new Error(d.error);
         setData(d);
       } catch (e) {

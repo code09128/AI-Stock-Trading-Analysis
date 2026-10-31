@@ -3,7 +3,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
-from datetime import datetime
+from datetime import datetime, timedelta
+import math
 import urllib.parse
 
 from src.company import stock_info
@@ -16,6 +17,11 @@ from src.server.params import arg_num, arg_ticker
 
 BARS_DAYS = 2600  # 備援：Yahoo 近 10 年還權日 K
 FULL_HISTORY_FROM = "1990-01-01"  # 從上市日開始（FinMind 只回有資料的部分）
+MAX_PORTFOLIO_ITEMS = 20
+BACKTEST_YEARS = [1, 3, 5, 10]
+CHART_RANGES = [("3m", 91), ("6m", 182), ("1y", 365), ("3y", 1096)]
+CHART_POINTS = 250
+BENCHMARK = ("^TWII", "加權指數（不含配息）")
 
 
 def _finmind_events(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -164,9 +170,125 @@ class SavingsHandlers:
             },
         }
 
+    def _points(self, symbol: str) -> Dict[str, Any]:
+        """含息還原的長期價格序列（6 小時快取）；抓不到回 {}。"""
+        return etf_data._cached(f"savings_pts:{symbol}", lambda: self._history_points(symbol)) or {}
+
+    @staticmethod
+    def _benchmark_points() -> List[Dict[str, Any]]:
+        """加權指數近 10 年日收盤（6 小時快取）；抓不到回 []。"""
+        def load():
+            url = f"{quote_provider.YAHOO_URL}{urllib.parse.quote(BENCHMARK[0])}?interval=1d&range=10y"
+            res = quote_provider._http_json(url, timeout=15)["chart"]["result"][0]
+            gmt = res["meta"].get("gmtoffset", 0)
+            closes = res["indicators"]["quote"][0]["close"]
+            return [{"date": datetime.utcfromtimestamp(t + gmt).strftime("%Y-%m-%d"), "close": c}
+                    for t, c in zip(res["timestamp"], closes) if c] or None
+        return etf_data._cached("savings_bench", load) or []
+
+    @staticmethod
+    def _chart(points: List[Dict[str, Any]], bench: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """各區間的累積報酬走勢（%），組合與大盤從同一天起算；每段最多 CHART_POINTS 點。"""
+        out = {}
+        if not points:
+            return out
+        b_dates = [p["date"] for p in bench]
+        last = points[-1]["date"]
+        for key, days in CHART_RANGES:
+            start = (datetime.fromisoformat(last) - timedelta(days=days)).date().isoformat()
+            seg = [p for p in points if p["date"] >= start]
+            if len(seg) < 2 or points[0]["date"] > start:
+                continue
+            step = max(1, -(-len(seg) // CHART_POINTS))
+            seg = seg[::step] + ([seg[-1]] if (len(seg) - 1) % step else [])
+            b0 = savings_plan._value_on(bench, b_dates, seg[0]["date"])
+            rows = []
+            for p in seg:
+                b = savings_plan._value_on(bench, b_dates, p["date"])
+                rows.append({"date": p["date"], "port": round((p["close"] / seg[0]["close"] - 1) * 100, 2),
+                             "bench": round((b / b0 - 1) * 100, 2) if b and b0 else None})
+            out[key] = rows
+        return out
+
+    def handle_savings_portfolio(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """多標的組合：items = [{symbol, weight}]、cash = 現金比例（%）；initial／monthly 用於每月投入金額與歷史回測。"""
+        items = []
+        for it in (payload.get("items") or [])[:MAX_PORTFOLIO_ITEMS]:
+            sym = str(it.get("symbol") or "").strip().upper() if isinstance(it, dict) else ""
+            if not sym:
+                continue  # 畫面上還沒填完的空白列
+            w = arg_num(it, "weight", 0, f"{sym} 的比例", lo=0, hi=100)
+            if w > 0:
+                items.append((sym, w))
+        if not items:
+            raise ValueError("請至少輸入一檔標的與比例")
+        cash = arg_num(payload, "cash", 0, "現金比例", lo=0, hi=100)
+        initial = arg_num(payload, "initial", 0, "期初投入", lo=0, hi=1e11)
+        monthly = arg_num(payload, "monthly", 0, "每月投入", lo=0, hi=1e9)
+        raw_total = sum(w for _, w in items) + cash
+        weights: Dict[str, float] = {}
+        for sym, w in items:
+            weights[sym] = weights.get(sym, 0) + w / raw_total
+        cash_w = cash / raw_total
+
+        syms = list(weights)
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            bench_f = ex.submit(self._benchmark_points)
+            hist = dict(zip(syms, ex.map(self._points, syms)))
+            quotes = {q["symbol"].split(".")[0].upper(): q
+                      for q in quote_provider.get_quotes(syms, WATCHLIST_NAMES) if q}
+            bench = bench_f.result()
+        series = {s: h.get("points") or [] for s, h in hist.items()}
+        warnings = [f"{s}：{h['warning']}" for s, h in hist.items() if h.get("warning")]
+        missing = [s for s in syms if not series[s]]
+        if missing:
+            warnings.append(f"{'、'.join(missing)} 取不到歷史資料，計算時當作不存在（比例分給其他標的）")
+        blended = savings_plan.blend_index(series, weights, cash_w)
+        if len(blended["points"]) < 2:
+            raise ValueError("所有標的都取不到歷史資料，無法計算")
+        starts = blended["starts"]
+        first = min(starts.values())
+        late = sorted((d, s) for s, d in starts.items() if d > first)
+        if late:
+            warnings.append("、".join(f"{s} {d} 起才有資料" for d, s in late)
+                            + "；在那之前它的比例依比例分給其他標的")
+        if any(DualMarketDataAdapter.normalize_symbol(s)["market"] != "TW" for s in syms):
+            warnings.append("外幣標的以原幣報酬計算，未含匯率變動")
+
+        rows = []
+        for s in syms:
+            q = quotes.get(s.split(".")[0].upper()) or {}
+            price = q.get("price")
+            amount = monthly * weights[s]
+            tw = DualMarketDataAdapter.normalize_symbol(s)["market"] == "TW"
+            est = (math.floor(amount / price) if tw else math.floor(amount / price * 1e4) / 1e4) if price else None
+            rows.append({"symbol": s, "name": q.get("name") or s, "price": price,
+                         "weight_pct": round(weights[s] * 100, 2), "monthly_amount": round(amount),
+                         "est_shares": est, "first_date": starts.get(s),
+                         "source": hist[s].get("source")})
+        stats = savings_plan.portfolio_stats(blended["points"])
+        return {
+            "items": rows,
+            "cash_pct": round(cash_w * 100, 2),
+            "raw_total_pct": round(raw_total, 2),
+            "stats": stats,
+            "benchmark": {"name": BENCHMARK[1], "periods": savings_plan.period_returns(bench) if bench else None},
+            "chart": self._chart(blended["points"], bench),
+            "backtest": [b for b in (savings_plan.dca_backtest(series, weights, cash_w, initial, monthly, y)
+                                     for y in BACKTEST_YEARS) if b],
+            "warnings": warnings,
+        }
+
     def handle_savings_calc(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """純計算（不連網）：kind = grow（S1）／target（S2）／life（S4）。"""
+        """純計算（不連網）：kind = grow（S1）／target（S2）／life（S4）／ledger（實際對帳）。"""
         kind = payload.get("kind")
+        if kind == "ledger":
+            rows = [r for r in (payload.get("rows") or [])[:MAX_PORTFOLIO_ITEMS] if isinstance(r, dict)]
+            return savings_plan.ledger([{
+                "name": str(r.get("name") or "")[:40], "start": r.get("start"),
+                **{k: arg_num(r, k, 0, label, lo=0, hi=1e12)
+                   for k, label in (("invested", "投資金額"), ("value", "參考市值"), ("dividends", "已入帳配息"))},
+            } for r in rows])
         rates = [arg_num({"v": r}, "v", 0, "報酬率", lo=-50, hi=100) for r in (payload.get("rates") or [])][:4]
         if kind in ("grow", "target") and not rates:
             raise ValueError("請至少提供一個報酬率")
