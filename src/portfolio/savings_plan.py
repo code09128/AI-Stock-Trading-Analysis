@@ -11,8 +11,6 @@
 - 組合指數：每天依目標比例加權各標的的報酬（等於每天調回目標比例）；現金報酬 0；
   還沒上市的標的，它的比例依比例分給其他已上市的標的，歷史才能拉長
 - 歷史回測：過去 N 年每月月初照比例投入、不賣出（還沒上市的標的同樣依比例分給其他標的），年化報酬用 XIRR
-- 實際對帳：報酬率 (B−A)/A、含息報酬率 (B−A+C)/A（A 投資金額、B 參考市值、C 已入帳現金配息）；
-  年化假設從開始扣款日起每月等額投入，用 XIRR 換算
 報酬率參考值用含配息再投入的還原價計算（台股：FinMind 上市以來日 K＋除權息自行還原；其他市場：Yahoo 完整歷史月資料）：
 - 歷史報酬率：上市以來（全部資料）的年化報酬（CAGR）
 - 穩定報酬率／較差報酬率：最近 15 年內任一天起持有 5 年的年化報酬，取中位數／第 20 百分位數；資料不足 5 年就回 None，不硬算
@@ -385,56 +383,3 @@ def portfolio_stats(points: List[Dict[str, Any]]) -> Dict[str, Any]:
     stats = return_stats(points)
     stats.update(periods=period_returns(points), volatility_pct=volatility(points), drawdown=max_drawdown(points))
     return stats
-
-
-def ledger(rows: List[Dict[str, Any]], today: Optional[date] = None) -> Dict[str, Any]:
-    """實際對帳。rows：[{name, invested(A), value(B), dividends(C), start: 開始扣款日}]。
-    年化：假設從 start 起每月同一天等額投入（共 n 次，合計 A），今天取回 B＋C，用 XIRR 換算；沒有開始日就不算年化。"""
-    today = today or date.today()
-    out, all_flows = [], []
-    tot = {"invested": 0.0, "value": 0.0, "dividends": 0.0}
-    dated_back = 0.0  # 有開始日的計畫今天的市值＋配息：合計年化只能拿它們的投入對它們的取回
-    excluded = 0  # 有投入金額但沒有開始日（或日期在未來）的計畫數，合計年化不含它們
-    for r in rows:
-        a, b, c = (float(r.get(k) or 0) for k in ("invested", "value", "dividends"))
-        flows = _monthly_flows(r.get("start"), a, today)
-        if flows:
-            all_flows += flows
-            dated_back += b + c
-            flows = flows + [(today.isoformat(), b + c)]
-        elif a > 0:
-            excluded += 1
-        out.append({"name": r.get("name") or "", "invested": a, "value": b, "dividends": c,
-                    "pnl": round(b - a), "return_pct": round((b - a) / a * 100, 2) if a else None,
-                    "return_with_div_pct": round((b - a + c) / a * 100, 2) if a else None,
-                    "xirr_pct": xirr(flows) if flows else None, "deposits": len(flows) - 1 if flows else 0})
-        for k, v in (("invested", a), ("value", b), ("dividends", c)):
-            tot[k] += v
-    a, b, c = tot["invested"], tot["value"], tot["dividends"]
-    total = {**{k: round(v) for k, v in tot.items()}, "pnl": round(b - a),
-             "return_pct": round((b - a) / a * 100, 2) if a else None,
-             "return_with_div_pct": round((b - a + c) / a * 100, 2) if a else None,
-             "xirr_pct": xirr(all_flows + [(today.isoformat(), dated_back)]) if all_flows else None,
-             "xirr_excluded": excluded}
-    return {"rows": out, "total": total}
-
-
-def _monthly_flows(start: Optional[str], invested: float, today: date) -> List[Tuple[str, float]]:
-    """從 start 起每月同一天（月底不足就用該月最後一天）投入，到今天為止，平均分攤 invested。"""
-    try:
-        s = date.fromisoformat(str(start)[:10])
-    except (TypeError, ValueError):
-        return []
-    if invested <= 0 or s > today:
-        return []
-    days = []
-    y, m = s.year, s.month
-    while True:
-        nxt_first = date(y + (m == 12), m % 12 + 1, 1)
-        d = min(date(y, m, 1) + timedelta(days=s.day - 1), nxt_first - timedelta(days=1))
-        if d > today:
-            break
-        days.append(d.isoformat())
-        y, m = nxt_first.year, nxt_first.month
-    each = invested / len(days)
-    return [(d, -each) for d in days]

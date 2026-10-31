@@ -313,15 +313,8 @@ class SavingsHandlers:
         }
 
     def handle_savings_calc(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """純計算（不連網）：kind = grow（S1）／target（S2）／life（S4）／ledger（實際對帳）。"""
+        """純計算（不連網）：kind = grow（S1）／target（S2）／life（S4）。"""
         kind = payload.get("kind")
-        if kind == "ledger":
-            rows = [r for r in (payload.get("rows") or [])[:MAX_PORTFOLIO_ITEMS] if isinstance(r, dict)]
-            return savings_plan.ledger([{
-                "name": str(r.get("name") or "")[:40], "start": r.get("start"),
-                **{k: arg_num(r, k, 0, label, lo=0, hi=1e12)
-                   for k, label in (("invested", "投資金額"), ("value", "參考市值"), ("dividends", "已入帳配息"))},
-            } for r in rows])
         rates = [arg_num({"v": r}, "v", 0, "報酬率", lo=-50, hi=100) for r in (payload.get("rates") or [])][:4]
         if kind in ("grow", "target") and not rates:
             raise ValueError("請至少提供一個報酬率")

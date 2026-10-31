@@ -841,13 +841,16 @@
   const TABS = [
     ['plan', '定期定額'],
     ['portfolio', '投資組合'],
-    ['ledger', '實際對帳'],
     ['income', '股息試算'],
     ['life', '生命週期'],
   ];
 
   function SavingsPlanPage() {
-    const [s, setS] = useState(() => ({ ...DEFAULTS, ...readLS(LS_KEY, {}) }));
+    const [s, setS] = useState(() => {
+      const saved = { ...DEFAULTS, ...readLS(LS_KEY, {}) };
+      // 上次停在已移除的分頁（例如舊版的實際對帳）時回到第一個分頁，不然整頁空白
+      return TABS.some(([id]) => id === saved.tab) ? saved : { ...saved, tab: TABS[0][0] };
+    });
     const first = useRef(true);
     useEffect(() => {
       if (first.current) {
@@ -891,7 +894,6 @@
           </>
         )}
         {s.tab === 'portfolio' && window.TA.SavingsPortfolioTab && <window.TA.SavingsPortfolioTab />}
-        {s.tab === 'ledger' && window.TA.SavingsLedgerTab && <window.TA.SavingsLedgerTab />}
         {s.tab === 'income' && <IncomeTab s={s} set={set} />}
         {s.tab === 'life' && <LifeTab s={s} set={set} ret={ret} />}
       </div>
@@ -905,7 +907,7 @@
     window.dispatchEvent(new CustomEvent('savings-action', { detail: { tab, symbol } }));
   };
 
-  // 投資組合／實際對帳分頁（savings_portfolio.jsx）共用的元件與工具
+  // 投資組合分頁（savings_portfolio.jsx）共用的元件與工具
   const savingsUI = { Card, Num, Btn, LineChart, useCalc, post, wan, pct, inputCls, copyText, holdingsValues };
 
   window.TA = Object.assign(window.TA || {}, { SavingsPlanPage, openSavings, savingsUI });

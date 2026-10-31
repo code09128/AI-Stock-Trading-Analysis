@@ -195,30 +195,6 @@ class PortfolioTests(unittest.TestCase):
         self.assertAlmostEqual(g["xirr_pct"], 10, delta=0.3)
         self.assertIsNone(sp.dca_backtest({"A": flat}, {"A": 1.0}, 0, 0, 1000, 10))  # 期間開始時還沒上市
 
-    def test_ledger_matches_bank_app_example(self):
-        """銀行 App「投資現況」範例：投資 123,500、市值 193,255、配息 10,656 → 56.48% 與 65.11%。"""
-        r = sp.ledger([{"name": "計畫 1", "invested": 123500, "value": 193255, "dividends": 10656,
-                        "start": "2022-01-05"}], today=date(2026, 10, 31))
-        row = r["rows"][0]
-        self.assertEqual((row["return_pct"], row["return_with_div_pct"]), (56.48, 65.11))
-        self.assertEqual(row["deposits"], 58)  # 2022-01 ～ 2026-10
-        self.assertGreater(row["xirr_pct"], 20)
-        self.assertEqual(r["total"]["pnl"], 69755)
-        none = sp.ledger([{"invested": 100, "value": 120}], today=date(2026, 10, 31))["rows"][0]
-        self.assertIsNone(none["xirr_pct"])
-        self.assertEqual(sp._monthly_flows("2026-01-31", 300, date(2026, 3, 31))[1][0], "2026-02-28")
-
-    def test_ledger_total_xirr_only_uses_dated_plans(self):
-        """合計年化只能用有開始日的計畫：沒填日期的計畫市值不能算進「取回」，否則像憑空多賺一筆。"""
-        dated = {"name": "A", "invested": 123500, "value": 193255, "dividends": 10656, "start": "2022-01-05"}
-        undated = {"name": "B", "invested": 50000, "value": 48000}
-        today = date(2026, 10, 31)
-        alone = sp.ledger([dated], today=today)["total"]
-        both = sp.ledger([dated, undated], today=today)["total"]
-        self.assertEqual(both["xirr_pct"], alone["xirr_pct"])
-        self.assertEqual(both["xirr_excluded"], 1)
-        self.assertEqual(alone["xirr_excluded"], 0)
-
 
 class HandlerTests(unittest.TestCase):
     def setUp(self):
@@ -306,12 +282,6 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(rows["AAPL"]["est_frac"], 1.25)
         self.assertEqual(rows["0050"]["est_whole"], 80)  # 250 美元 × 32 ÷ 100 元
         self.assertTrue(any("跟輸入幣別（USD）不同市場" in w for w in r["warnings"]))
-
-    def test_ledger_kind(self):
-        r = self.d.handle_savings_calc({"kind": "ledger", "rows": [{"name": "A", "invested": 100, "value": 150}]})
-        self.assertEqual(r["total"]["return_pct"], 50)
-        with self.assertRaises(ValueError):
-            self.d.handle_savings_calc({"kind": "ledger", "rows": [{"invested": -1}]})
 
     def test_calc_kinds_and_validation(self):
         g = self.d.handle_savings_calc({"kind": "grow", "monthly": 5000, "rates": [14.7, 9.9], "years": 20})

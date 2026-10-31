@@ -16,7 +16,7 @@
 | **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
 | **策略回測** | 9 種策略：技術面 6 種（雙均線、KD 低檔黃金交叉、均線多頭排列、量價突破、乖離率回歸、跳空缺口）＋台股籌碼／基本面 3 種（法人連買、月營收創新高、融資減少；FinMind 歷史存在本機只補抓最新幾天），另可用 🧱 條件積木自訂策略（5 個範本）；訊號隔日開盤成交、含各市場手續費與法定稅；部位模型（資金比例／固定金額／ATR 風險定額）、單筆停損與移動停利、大盤均線濾網（統計擋下次數）、成交量 0 視同暫停交易；最大回撤以每日收盤市值計算；1／3／5／10 年、多空盤整環境拆解、前後段驗證；參數熱力圖（★ 穩定高原、對照買進持有）、滾動前進分析（WFE）、蒙地卡羅（打亂順序／重抽樣 500～3,000 次）；📡 今日訊號（自選股／持股／自訂清單 × 策略，匯出 CSV）、📤 匯出 TradingView Pine v5（附使用說明與差異說明）、🖨️ PDF 報告、🧩 策略組合（等權重／波動率倒數／夏普值加權、相關係數矩陣、績效貢獻）、▶ K 線回放教學（逐根播放、買賣點自動暫停說明、語音解說）；台股證交稅依股票 0.3%／ETF 0.1%／債券 ETF 停徵自動套用 |
 | **組合風控** | 集中度、ETF 穿透曝險、Beta、相關係數、大盤下跌情境、歷史回落重演（2020 疫情、2022 升息） |
-| **存股計畫** | 定期定額**正推**（每月存多少 → 未來資產）與**反推**（目標金額 → 每月要存）；三種參考報酬率用含息還原的上市以來資料算（歷史＝上市以來年化；穩定／較差＝近 15 年持有 5 年的中位數與第 20 百分位，0050 與 CMoney 相符）；**股息試算**（每月想領多少 → 各高股息 ETF 需要的本金，附近 3 年平均殖利率、總報酬與規模）；**生命週期**（存到退休、退休後每月可領，並換算成今天的錢）；**投資組合**（多檔 ETF 照比例定期定額：組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、過去 1／3／5／10 年每月照比例投入的實際回測與 XIRR，每月金額換算預估股數；可存多組並排比較、一鍵用持股市值當比例；晚上市的標的在上市前依比例分給其他標的）；**實際對帳**（像銀行 App 的「投資現況」那樣填投資金額、參考市值、已入帳配息，算報酬率、含息報酬率與年化，多個計畫加總）；可把每月金額換成零股加入下單暫存匣、用目前持股市值當初期投入 |
+| **存股計畫** | 定期定額**正推**（每月存多少 → 未來資產）與**反推**（目標金額 → 每月要存）；三種參考報酬率用含息還原的上市以來資料算（歷史＝上市以來年化；穩定／較差＝近 15 年持有 5 年的中位數與第 20 百分位，0050 與 CMoney 相符）；**股息試算**（每月想領多少 → 各高股息 ETF 需要的本金，附近 3 年平均殖利率、總報酬與規模）；**生命週期**（存到退休、退休後每月可領，並換算成今天的錢）；**投資組合**（多檔 ETF 照比例定期定額：組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、過去 1／3／5／10 年每月照比例投入的實際回測與 XIRR，每月金額換算預估股數；可存多組並排比較、一鍵用持股市值當比例；晚上市的標的在上市前依比例分給其他標的）；可把每月金額換成零股加入下單暫存匣、用目前持股市值當初期投入 |
 | **交易檢討** | 分析交易紀錄的勝率、賺賠比、處置效應、報復性交易，產生 3 條個人規則，並成為下單前的勾選清單 |
 | **AI 解讀** | 每頁底部，研究主管／交易員口吻的報告格式（表格與段落），依你的持股給建議，回答中的數字自動與資料核對 |
 | **設定** | 雲端 AI（Gemini／OpenAI／Claude／OpenRouter）或本地模型（Ollama／LM Studio 自動偵測）；常駐背景提醒與 Windows 開機自動啟動；畫面縮放；金鑰與資料額度直接在畫面填寫 |
@@ -285,7 +285,7 @@ src/
 - `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認、畫面縮放與背景工作（postJob）；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
 - `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
 - `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
-- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合與實際對帳）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
+- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 
 開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。

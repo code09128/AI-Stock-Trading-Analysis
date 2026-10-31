@@ -1,14 +1,12 @@
-// 存股計畫頁的兩個分頁（共用元件在 savings_plan.jsx 的 window.TA.savingsUI）：
-// - 投資組合：多檔 ETF 照比例定期定額，算組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、
-//   過去 N 年實際回測（每月照比例投入、不賣出），可存多組並排比較、一鍵帶入我的持股
-// - 實際對帳：像銀行 App 的「投資現況」那樣填投資金額、參考市值、已入帳配息，算報酬率、含息報酬率與年化（XIRR）
-// 公式都在後端 src/portfolio/savings_plan.py（/api/savings/portfolio、/api/savings/calc kind=ledger）
+// 存股計畫頁的投資組合分頁（共用元件在 savings_plan.jsx 的 window.TA.savingsUI）：
+// 多檔 ETF 照比例定期定額，算組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、
+// 過去 N 年實際回測（每月照比例投入、不賣出），可存多組並排比較、一鍵帶入我的持股
+// 公式都在後端 src/portfolio/savings_plan.py（/api/savings/portfolio）
 (() => {
   const { useState, useEffect, useRef } = React;
   const { fmt, readLS, writeLS, signed } = window.TA;
 
   const LS_PORT = 'tw_us_savings_portfolios_v1';
-  const LS_LEDGER = 'tw_us_savings_ledger_v1';
   const PORT_DEFAULTS = {
     list: [
       {
@@ -380,24 +378,6 @@
       }
     };
 
-    // 帶到實際對帳：有帶入持股就填投資金額（成本）與市值，並記下對應的組合，對帳頁可以點回來
-    const toLedger = () => {
-      const held = p.items.filter((it) => it.held);
-      const sum = (k) => Math.round(held.reduce((a, it) => a + (Number(it.held[k]) || 0), 0));
-      const old = { ...LEDGER_DEFAULTS, ...readLS(LS_LEDGER, {}) };
-      const row = {
-        id: newId(),
-        name: p.name,
-        start: '',
-        invested: held.length ? sum('cost') : 0,
-        value: held.length ? sum('value') : 0,
-        dividends: 0,
-        portfolio: p.id,
-      };
-      writeLS(LS_LEDGER, { ...old, rows: [...old.rows, row] });
-      window.dispatchEvent(new CustomEvent('savings-action', { detail: { tab: 'ledger' } }));
-    };
-
     const removeP = () => {
       if (s.list.length <= 1) return;
       set((old) => {
@@ -429,7 +409,6 @@
           extra={
             <>
               <Btn onClick={() => setPickBasis((v) => !v)}>帶入我的持股</Btn>
-              <Btn onClick={toLedger}>帶到實際對帳</Btn>
               <Btn
                 onClick={() =>
                   addPortfolio({
@@ -894,188 +873,5 @@
     );
   }
 
-  // ---------- 實際對帳 ----------
-  const LEDGER_DEFAULTS = {
-    rows: [{ id: 'l1', name: '計畫 1', start: '', invested: 0, value: 0, dividends: 0 }],
-  };
-
-  function LedgerTab() {
-    const { Card, Btn, useCalc, inputCls, copyText } = window.TA.savingsUI;
-    const [s, set] = usePersist(LS_LEDGER, LEDGER_DEFAULTS);
-    const calc = useCalc({
-      kind: 'ledger',
-      rows: s.rows.map(({ name, start, invested, value, dividends }) => ({
-        name,
-        start: start || null,
-        invested: invested || 0,
-        value: value || 0,
-        dividends: dividends || 0,
-      })),
-    });
-    const r = calc.err ? null : calc.res;
-    const patchRow = (id, patch) => set((old) => ({ rows: old.rows.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
-    // 對應的投資組合：投資組合頁「帶到實際對帳」會自動填；也可以自己選，按「看組合」切過去
-    const ports = { ...PORT_DEFAULTS, ...readLS(LS_PORT, {}) }.list;
-    const goPortfolio = (id) => {
-      writeLS(LS_PORT, { ...PORT_DEFAULTS, ...readLS(LS_PORT, {}), active: id });
-      window.dispatchEvent(new CustomEvent('savings-action', { detail: { tab: 'portfolio' } }));
-    };
-    const num = (row, key) => (
-      <input
-        type="number"
-        value={row[key]}
-        onChange={(e) => patchRow(row.id, { [key]: e.target.value === '' ? '' : Number(e.target.value) })}
-        className={`${inputCls} w-28 text-right`}
-      />
-    );
-    const cells = (x) => [
-      <td key="pnl" className={`text-right ${upDown(x?.pnl)}`}>
-        {x ? signed(x.pnl, 0) : '--'}
-      </td>,
-      <td key="ret" className={`text-right ${upDown(x?.return_pct)}`}>
-        {x?.return_pct == null ? '--' : signed(x.return_pct, 2, '%')}
-      </td>,
-      <td key="div" className={`text-right ${upDown(x?.return_with_div_pct)}`}>
-        {x?.return_with_div_pct == null ? '--' : signed(x.return_with_div_pct, 2, '%')}
-      </td>,
-      <td key="irr" className={`text-right ${upDown(x?.xirr_pct)}`}>
-        {x?.xirr_pct == null ? '--' : signed(x.xirr_pct, 2, '%')}
-      </td>,
-    ];
-    const summary = () =>
-      r
-        ? [
-            ...r.rows.map(
-              (x) =>
-                `${x.name || '未命名'}：投資 ${fmt(x.invested, 0)}、市值 ${fmt(x.value, 0)}、配息 ${fmt(x.dividends, 0)} → 報酬率 ${signed(x.return_pct, 2, '%')}、含息 ${signed(x.return_with_div_pct, 2, '%')}、年化 ${signed(x.xirr_pct, 2, '%')}`,
-            ),
-            `合計：投資 ${fmt(r.total.invested, 0)}、市值 ${fmt(r.total.value, 0)}、配息 ${fmt(r.total.dividends, 0)} → 報酬率 ${signed(r.total.return_pct, 2, '%')}、含息 ${signed(r.total.return_with_div_pct, 2, '%')}、年化 ${signed(r.total.xirr_pct, 2, '%')}${r.total.xirr_excluded ? `（年化不含 ${r.total.xirr_excluded} 個沒填開始日的計畫）` : ''}`,
-          ].join('\n')
-        : '';
-
-    return (
-      <Card
-        title="實際對帳（多個存股計畫加總）"
-        tip="照銀行或券商 App 的「投資現況」填：投資金額 A、參考市值 B、已入帳現金配息 C。報酬率＝(B−A)÷A，含息報酬率＝(B−A+C)÷A。"
-        extra={
-          <Btn
-            onClick={() =>
-              set((old) => ({
-                rows: [
-                  ...old.rows,
-                  { id: newId(), name: `計畫 ${old.rows.length + 1}`, start: '', invested: 0, value: 0, dividends: 0 },
-                ],
-              }))
-            }
-          >
-            ＋ 加一個計畫
-          </Btn>
-        }
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs mono">
-            <thead className="text-slate-400">
-              <tr className="border-b border-slate-800 font-sans">
-                <th className="text-left py-1.5 font-normal">名稱</th>
-                <th className="text-left font-normal">開始扣款日</th>
-                <th className="text-right font-normal">投資金額 A</th>
-                <th className="text-right font-normal">參考市值 B</th>
-                <th className="text-right font-normal">已入帳配息 C</th>
-                <th className="text-right font-normal">參考損益</th>
-                <th className="text-right font-normal">報酬率</th>
-                <th className="text-right font-normal">含息報酬率</th>
-                <th className="text-right font-normal">年化（估）</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {s.rows.map((row, i) => (
-                <tr key={row.id} className="border-b border-slate-800/60">
-                  <td className="py-1 pr-2">
-                    <input
-                      value={row.name}
-                      onChange={(e) => patchRow(row.id, { name: e.target.value })}
-                      className={`${inputCls} w-28 font-sans`}
-                      aria-label="計畫名稱"
-                    />
-                    <div className="flex items-center gap-1 mt-1 font-sans">
-                      <select
-                        value={ports.some((x) => x.id === row.portfolio) ? row.portfolio : ''}
-                        onChange={(e) => patchRow(row.id, { portfolio: e.target.value })}
-                        className="bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-slate-300 w-24"
-                        aria-label="對應的投資組合"
-                      >
-                        <option value="">不對應組合</option>
-                        {ports.map((x) => (
-                          <option key={x.id} value={x.id}>
-                            {x.name}
-                          </option>
-                        ))}
-                      </select>
-                      {ports.some((x) => x.id === row.portfolio) && (
-                        <button
-                          type="button"
-                          onClick={() => goPortfolio(row.portfolio)}
-                          className="text-[10px] text-sky-300 underline cursor-pointer"
-                        >
-                          看組合
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="pr-2">
-                    <input
-                      type="date"
-                      value={row.start}
-                      onChange={(e) => patchRow(row.id, { start: e.target.value })}
-                      className={`${inputCls} w-36`}
-                    />
-                  </td>
-                  <td className="text-right">{num(row, 'invested')}</td>
-                  <td className="text-right">{num(row, 'value')}</td>
-                  <td className="text-right">{num(row, 'dividends')}</td>
-                  {cells(r?.rows[i])}
-                  <td className="text-right">
-                    <button
-                      type="button"
-                      onClick={() => set((old) => ({ rows: old.rows.filter((x) => x.id !== row.id) }))}
-                      className="text-slate-500 hover:text-rose-300 cursor-pointer px-1"
-                      title="刪除這個計畫"
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {r && s.rows.length > 1 && (
-                <tr className="font-bold">
-                  <td className="py-1.5 font-sans text-white" colSpan={2}>
-                    合計
-                  </td>
-                  <td className="text-right text-white">{fmt(r.total.invested, 0)}</td>
-                  <td className="text-right text-white">{fmt(r.total.value, 0)}</td>
-                  <td className="text-right text-white">{fmt(r.total.dividends, 0)}</td>
-                  {cells(r.total)}
-                  <td />
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {calc.err && <div className="text-xs text-rose-300">⚠️ {calc.err}</div>}
-        {r?.total?.xirr_excluded > 0 && s.rows.length > 1 && (
-          <div className="text-[11px] text-amber-300">
-            合計的年化（估）不含 {r.total.xirr_excluded} 個沒填開始扣款日的計畫（不知道從哪天開始存，無法換算年化）。
-          </div>
-        )}
-        <div className="text-[11px] text-slate-400 leading-relaxed">
-          報酬率是「累積」報酬，存的時間不同就不能直接比較；<b>年化（估）</b>假設從開始扣款日起每月同一天等額投入、配息在今天入帳，
-          用 XIRR 換算成每年報酬，可以拿來和其他計畫或定存比較。實際金額以銀行或券商對帳單為準。
-        </div>
-        {r && <Btn onClick={() => copyText(summary())}>📋 複製對帳結果</Btn>}
-      </Card>
-    );
-  }
-
-  window.TA = Object.assign(window.TA || {}, { SavingsPortfolioTab: PortfolioTab, SavingsLedgerTab: LedgerTab });
+  window.TA = Object.assign(window.TA || {}, { SavingsPortfolioTab: PortfolioTab });
 })();
