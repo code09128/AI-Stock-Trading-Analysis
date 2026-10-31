@@ -1,0 +1,81 @@
+# 在 GitHub 的 Mac 主機上打包 Mac 版（.app＋.dmg），不需要自己有 Mac。
+# - 發布 Release 時自動執行，把 .dmg 附加到那個 Release
+# - 也可以在 GitHub 網頁 Actions → Build macOS app → Run workflow 手動執行；填 release_tag 就附加到那個 Release
+# macos-latest 是 Apple 晶片，產出的程式只能在 Apple 晶片（M1 以後）的 Mac 執行；Intel Mac 版要另外加 macos-13 的工作。
+name: Build macOS app
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "附加到哪個 Release（例如 v1.0.7，空白就只上傳成 Actions 產出檔）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+      TRADING_NO_AUTO_UPDATE: "1"
+      ASSET: AI-Stock-Trading-Analysis-mac-arm64.dmg # Release 附件名稱用英文，中文檔名會被 GitHub 改掉
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安裝打包工具
+        run: pip install -r requirements-desktop.txt pillow
+
+      - name: 單元測試
+        run: python -m unittest discover tests
+
+      - name: 打包 .app 與 .dmg
+        run: python build_app.py
+
+      - name: 試開程式（伺服器有起來、抓得到報價）
+        run: |
+          APP_BIN="dist/股票交易分析系統.app/Contents/MacOS/股票交易分析系統"
+          "$APP_BIN" &
+          PID=$!
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8088/ -o /dev/null; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8088/ | grep -q "股票交易分析系統"
+          echo "--- 報價（驗證 HTTPS 憑證）---"
+          RES=$(curl -sf -X POST -H "Content-Type: application/json" -d '{"symbols":["AAPL","2330"]}' http://127.0.0.1:8088/api/quotes)
+          echo "$RES" | head -c 600; echo
+          echo "$RES" | python -c "import json,sys; q=[x for x in json.load(sys.stdin)['quotes'] if x and x.get('price')]; assert q, 'no quotes'; print('報價筆數', len(q))"
+          kill $PID || true
+
+      - name: 程式紀錄
+        if: always()
+        run: cat logs/desktop.log 2>/dev/null | tail -60 || true
+
+      - name: 上傳產出檔
+        run: cp "dist/股票交易分析系統.dmg" "$ASSET"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: ${{ env.ASSET }}
+
+      - name: 附加到 Release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ASSET" --clobber
