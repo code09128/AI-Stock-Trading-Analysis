@@ -130,6 +130,8 @@ cd AI-Stock-Trading-Analysis
   gh release create v1.0.1 --title "v1.0.1" --notes "這一版的更新內容" manual_update.bat manual_update.ps1
   ```
 
+  發布後 GitHub 會自動打包 Mac 版並附加 `.dmg`（見「沒有 Mac：用 GitHub 的 Mac 主機打包」）。
+
 ## 設定（全部選填）
 
 不設定任何東西也能完整使用（AI 部分改用內建規則引擎）。需要時到程式的 **設定** 頁：
@@ -224,6 +226,21 @@ python3 build_app.py
 - Mac 版沒有系統匣、背景通知與開機自動啟動（設定頁會註明）；其他功能與 Windows 版相同。
 - 程式沒有 Apple 簽章與公證：別人第一次開啟要按右鍵 →「打開」（見上方「A. 直接執行」）。要讓別人雙擊就能開，需要 Apple 開發者帳號簽章並公證。
 
+### 沒有 Mac：用 GitHub 的 Mac 主機打包
+
+`.github/workflows/mac-build.yml` 會在 GitHub 提供的 Mac 主機上做同樣的事：安裝套件 → 跑單元測試 → 打包 `.app` 與 `.dmg` → 實際開啟一次，確認伺服器有起來、抓得到 AAPL 與 2330 的報價 → 上傳 `.dmg`。
+
+- **自動**：每次在 GitHub 發布 Release，約 2～5 分鐘後該 Release 會多一個 `AI-Stock-Trading-Analysis-mac-arm64.dmg`（附件名稱用英文，中文檔名會被 GitHub 改掉）。
+- **手動**：GitHub 專案頁 → **Actions** → 左邊 **Build macOS app** → 右邊 **Run workflow**。`release_tag` 填版本（例如 `v1.0.8`）就會附加到那個 Release；空白則只放在該次執行頁面最下方的 **Artifacts**（下載是 zip，解開就是 `.dmg`）。也可以用指令：
+
+  ```bash
+  gh workflow run mac-build.yml -f release_tag=v1.0.8
+  ```
+
+- **看結果**：Actions 頁面點進該次執行，綠勾成功、紅叉失敗；點任一步可以看輸出，失敗原因通常在「單元測試」或「試開程式」那一步，程式自己的紀錄印在「程式紀錄」。
+- GitHub 的 `macos-latest` 是 Apple 晶片，產出的程式只能在 M1 以後的 Mac 執行；要給 Intel Mac 用，得在 workflow 另外加一個 `macos-13` 的工作。
+- 雲端只確認程式能開、能抓資料，沒有人看畫面；畫面與操作仍建議在真的 Mac 上確認一次。
+
 ## 程式碼架構
 
 根目錄的入口與工具：
@@ -234,6 +251,7 @@ python3 build_app.py
 | `desktop.py` | 桌面視窗版：獨立視窗（Windows WebView2／Mac WebKit）、關閉確認、系統匣（Windows）、畫面縮放，伺服器在背景執行（打包版的入口）；`--background` 直接縮在系統匣啟動 |
 | `build_app.py`／`package.bat`／`package.command` | 打包：Windows 產生資料夾版、安裝精靈與單一 exe；Mac 產生 .app 與 .dmg |
 | `manual_update.bat`／`manual_update.ps1` | Windows 打包版連不上 GitHub 時的手動更新 |
+| `.github/workflows/mac-build.yml` | 在 GitHub 的 Mac 主機打包 Mac 版，發布 Release 時自動附加 `.dmg` |
 | `build_web.py` | 前端預先編譯（esbuild），打包時自動呼叫 |
 | `requirements-desktop.txt` | 桌面版與打包需要的套件（pywebview、PyInstaller） |
 
