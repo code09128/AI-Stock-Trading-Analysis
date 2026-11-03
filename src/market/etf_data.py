@@ -4,7 +4,8 @@ ETF / 個股真實基本面資料層 (etf_data.py) — 取代原本人工維護�
 - 基金基本資料（發行單位數、類型、追蹤指數）：TWSE OpenAPI /opendata/t187ap47_L
 - 定期定額交易戶數排行（前 20 名 ETF）：TWSE OpenAPI /ETFReport/ETFRank
 - 近 12 個月配息 → 殖利率：Yahoo Finance Chart API (events=div) 的實際配息紀錄 ÷ 現價（自行計算）
-- ETF 前十大成分股：Yahoo Finance quoteSummary topHoldings（需 cookie + crumb）
+- ETF 成分股：元大投信的 ETF 每日申購買回清單（PCF，完整清單，只有元大發行的 ETF 有）；
+  其他 ETF 退回 Yahoo Finance quoteSummary topHoldings（僅前十大，需 cookie + crumb）
 - Beta：近 1 年日報酬 vs 該市場大盤（台 ^TWII、美 ^GSPC、港 ^HSI、日 ^N225…，見 markets.py）的 cov/var（自行計算）
 資料取不到時回傳 None，由呼叫端顯示「無資料」，不會填假數字。快取 6 小時。
 """
@@ -24,6 +25,12 @@ from src.market.cache import TTLCache
 from src.market.net import http_bytes
 
 TWSE_OPENAPI = "https://openapi.twse.com.tw/v1"
+# 元大投信網站自己用的 ETF 介面（沒有公開文件，可能改版）；抓不到就退回 Yahoo
+YUANTA_PCF = (
+    "https://etfapi.yuantaetfs.com/ectranslation/api/bridge?APIType=ETFAPI&CompanyName=YUANTAFUNDS"
+    "&PageName=%2FtradeInfo%2Fpcf%2F{code}&DeviceId=null&FuncId=PCF%2FDaily&AppName=ETF&Device=3&Platform=ETF&ticker={code}"
+)
+US_EXCHANGE_SUFFIX = {"UQ", "UN", "UW", "UA", "UP", "UR", "US"}  # 元大海外成分股代號格式「AAPL UQ」的美股交易所碼
 TTL = 6 * 3600
 _LOCK = threading.Lock()
 _CACHE = TTLCache()
@@ -138,10 +145,54 @@ def _yahoo_opener():
         return op, crumb
 
 
+def _yuanta_symbol(code: str) -> str:
+    """「AAPL UQ」→「AAPL」（才對得上你直接持有的美股）；其他海外交易所（如「7203 JT」）保留全稱，避免跟台股四碼代號撞號。"""
+    parts = code.split()
+    if len(parts) == 2 and parts[1].upper() in US_EXCHANGE_SUFFIX:
+        return parts[0]
+    return code.strip()
+
+
+def _yuanta_holdings(code: str) -> Optional[Dict[str, Any]]:
+    """元大 ETF 的完整股票成分與權重（%）；不是元大發行、債券型（沒有股票成分）或查無資料回 None。"""
+    norm = DualMarketDataAdapter.normalize_symbol(code)
+    if norm["market"] != "TW":
+        return None
+    fund = fund_registry().get(norm["raw_code"].upper())
+    if fund and not str(fund.get("基金簡稱", "")).startswith("元大"):
+        return None  # 基金清單查得到而且不是元大的就不必問元大（清單抓不到時才直接試）
+    data = qp._http_json(YUANTA_PCF.format(code=norm["raw_code"].upper()), timeout=12)
+    rows = (data.get("FundWeights") or {}).get("StockWeights") or []
+    items = [
+        {"symbol": _yuanta_symbol(str(r.get("code", ""))), "name": r.get("name") or "", "pct": round(float(r["weights"]), 2)}
+        for r in rows
+        if r.get("code") and float(r.get("weights") or 0) > 0
+    ]
+    if not items:
+        return None
+    items.sort(key=lambda i: -i["pct"])
+    d = str((data.get("PCF") or {}).get("trandate") or "")
+    as_of = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) == 8 else ""
+    return {
+        "holdings": items,
+        "covered_pct": round(sum(i["pct"] for i in items), 2),
+        "count": len(items),
+        "partial": False,
+        "as_of": as_of,
+        "source": f"元大投信 ETF 每日申購買回清單（PCF）{('，資料日 ' + as_of) if as_of else ''}；現金與期貨部位不在內",
+    }
+
+
 def top_holdings(symbol: str) -> Optional[Dict[str, Any]]:
-    """ETF 前十大成分股與權重（%）。"""
+    """ETF 成分股與權重（%）：元大 ETF 為完整清單，其他退回 Yahoo 的前十大（partial=True）。"""
 
     def load():
+        try:
+            full = _yuanta_holdings(symbol)
+        except Exception:
+            full = None  # 元大介面改版或暫時連不上：不影響，退回 Yahoo
+        if full:
+            return full
         op, crumb = _yahoo_opener()
         for ysym in _yahoo_candidates(symbol):
             url = (
@@ -166,6 +217,8 @@ def top_holdings(symbol: str) -> Optional[Dict[str, Any]]:
             return {
                 "holdings": items,
                 "covered_pct": round(sum(i["pct"] for i in items), 2),
+                "count": len(items),
+                "partial": True,
                 "source": "Yahoo Finance quoteSummary topHoldings（僅前十大，非全部成分股）",
             }
         return None

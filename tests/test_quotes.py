@@ -86,6 +86,64 @@ class EtfDataTests(unittest.TestCase):
         res = {"holdings": [{"symbol": "0050", "weight_pct": 40.0}]}
         self.assertEqual(mgr.calculate_lookthrough_exposure(res)["2330"], 20.0)
 
+    PCF = {
+        "PCF": {"trandate": "20261103"},
+        "FundWeights": {
+            "StockWeights": [
+                {"code": "2454", "name": "聯發科", "weights": 5.6},
+                {"code": "2330", "name": "台積電", "weights": 58.09},
+                {"code": "AAPL UQ", "name": "蘋果", "weights": 7.48},
+                {"code": "7203 JT", "name": "豐田", "weights": 1.0},
+                {"code": "9999", "name": "零權重", "weights": 0},
+            ],
+            "FutureWeights": [{"code": "TX", "weights": 0.18}],
+        },
+    }
+
+    def test_yuanta_full_holdings(self):
+        reg = {"0050": {"基金簡稱": "元大台灣50"}}
+        with patch.object(self.ed, "fund_registry", return_value=reg), patch.object(
+            self.ed.qp, "_http_json", return_value=self.PCF
+        ) as http:
+            th = self.ed.top_holdings("0050")
+        self.assertIn("ticker=0050", http.call_args[0][0])
+        self.assertEqual([h["symbol"] for h in th["holdings"]], ["2330", "AAPL", "2454", "7203 JT"])  # 依權重排序；美股去交易所碼；零權重與期貨不列入
+        self.assertFalse(th["partial"])
+        self.assertEqual(th["count"], 4)
+        self.assertEqual(th["covered_pct"], 72.17)
+        self.assertEqual(th["as_of"], "2026-11-03")
+
+    def test_yuanta_skips_other_issuers_and_bond_funds(self):
+        with patch.object(self.ed, "fund_registry", return_value={"00878": {"基金簡稱": "國泰永續高股息"}}), patch.object(
+            self.ed.qp, "_http_json"
+        ) as http:
+            self.assertIsNone(self.ed._yuanta_holdings("00878"))  # 不是元大發行：不連網
+            http.assert_not_called()
+        bond = {"PCF": {"trandate": "20261102"}, "FundWeights": {"StockWeights": [], "BondWeights": [{"code": "x"}]}}
+        with patch.object(self.ed, "fund_registry", return_value={"00679B": {"基金簡稱": "元大美債20年"}}), patch.object(
+            self.ed.qp, "_http_json", return_value=bond
+        ):
+            self.assertIsNone(self.ed._yuanta_holdings("00679B"))  # 債券型沒有股票成分
+        with patch.object(self.ed.qp, "_http_json") as http:
+            self.assertIsNone(self.ed._yuanta_holdings("QQQ"))  # 美股 ETF 不問元大
+            http.assert_not_called()
+
+    def test_top_holdings_falls_back_to_yahoo_when_yuanta_fails(self):
+        yahoo = {"quoteSummary": {"result": [{"topHoldings": {"holdings": [
+            {"symbol": "2330.TW", "holdingName": "台積電", "holdingPercent": {"raw": 0.5}}]}}]}}
+        with patch.object(self.ed, "_yuanta_holdings", side_effect=OSError("down")), patch.object(
+            self.ed, "_yahoo_opener", return_value=(None, "crumb")
+        ), patch.object(self.ed.qp, "_http_json", return_value=yahoo):
+            th = self.ed.top_holdings("0050")
+        self.assertTrue(th["partial"])
+        self.assertEqual(th["holdings"][0], {"symbol": "2330", "name": "台積電", "pct": 50.0})
+        self.ed._CACHE.clear()
+        full = {"holdings": [{"symbol": "2330", "name": "台積電", "pct": 50.0}], "partial": False}
+        with patch.object(self.ed, "_yuanta_holdings", return_value=full), patch.object(
+            self.ed, "_yahoo_opener", side_effect=AssertionError("元大有資料就不該去問 Yahoo")
+        ):
+            self.assertIs(self.ed.top_holdings("0050"), full)
+
 
 class ChartDataTests(unittest.TestCase):
     def test_intraday_parsing_and_failure(self):

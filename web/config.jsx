@@ -75,6 +75,14 @@
         <path d="M7 16v-3M11 16V9M15 16v-5M19 16V6" />
       </>
     ),
+    chain: (
+      <>
+        <circle cx="5" cy="6" r="2.2" />
+        <circle cx="19" cy="6" r="2.2" />
+        <circle cx="12" cy="18" r="2.2" />
+        <path d="M7 6.5h10M6.2 8l4.6 8.3M17.8 8l-4.6 8.3" />
+      </>
+    ),
     grid: (
       <>
         <rect width="7" height="7" x="3" y="3" rx="1" />
@@ -133,6 +141,14 @@
       title: '大盤籌碼',
       subtitle: '國際指數、台指期日夜盤、三大法人、產業漲跌排行與台灣 50',
       icon: 'board',
+    },
+    {
+      id: 'chains',
+      group: '行情',
+      short: '產業鏈',
+      title: '產業鏈地圖',
+      subtitle: '全部類股即時漲跌，點進去看上中下游環節與個股，可回放近 30 日',
+      icon: 'chain',
     },
     {
       id: 'multichart',

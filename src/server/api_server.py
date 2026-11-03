@@ -49,6 +49,7 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/board/sectors": lambda: D.handle_board("sectors"),
     "/api/board/flow": lambda: D.handle_board("flow"),
     "/api/board/tw50": lambda: D.handle_board("tw50"),
+    "/api/chains/map": D.handle_chain_map,
     "/api/update/status": updater.current_version,
     "/api/update/check": updater.check_update,
 }
@@ -67,6 +68,8 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/candles": D.handle_candles,
     "/api/sparks": D.handle_sparks,
     "/api/heatmap": D.handle_heatmap,
+    "/api/chains/detail": D.handle_chain_detail,
+    "/api/chains/history": D.handle_chain_history,
     "/api/trade_rules": lambda p: trade_rules.rules_for(arg_ticker(p, "symbol")),
     # 五個分析功能
     "/api/mod1/analyze": D.handle_mod1_analyze,
@@ -138,7 +141,8 @@ def refresh_routes() -> None:
 # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤。
 # 背景工作的 start／poll 不記，工作結束時用原本的路徑記一筆（耗時＝實際計算時間）
 QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
-               "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles", "/api/jobs/")
+               "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles", "/api/jobs/",
+               "/api/chains/")
 
 
 def _log_api(path: str, status: int, started: float, payload: Any = None, res: Any = None) -> None:

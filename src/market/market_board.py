@@ -227,6 +227,27 @@ def sectors() -> Dict[str, Any]:
     return _safe(lambda: _cached("sectors", DAILY_TTL, load), "證交所類股資料")
 
 
+SECTOR_MIS_CODES = [f"t{n:02d}" for n in range(1, 40)]  # MIS 類股指數代號：t01～t31 有資料（t19 與 t32 以後是空的）
+
+
+def sector_index_live() -> Dict[str, Dict[str, Any]]:
+    """MIS 即時類股指數：{類股名: {close, prev_close, change_pct, quote_time}}（盤中隨成交更新、收盤後是收盤值）。
+    開盤前沒有成交價、或 MIS 查無的類股（數位雲端、運動休閒…）不會出現在結果裡，呼叫端改用 sectors() 的盤後資料。"""
+    def load():
+        out: Dict[str, Dict[str, Any]] = {}
+        for r in _mis_rows([f"tse_{c}.tw" for c in SECTOR_MIS_CODES], timeout=10).values():
+            name = str(r.get("n") or "").strip()
+            if not name.endswith("類指數") or name in AGGREGATE_SECTORS:
+                continue
+            price, prev = _num(r.get("z")), _num(r.get("y"))
+            if price is None or not prev:
+                continue
+            out[name[:-3]] = {"close": price, "prev_close": prev, "change_pct": round((price - prev) / prev * 100, 2),
+                              "quote_time": f"{r.get('d', '')} {r.get('t', '')}".strip()}
+        return out
+    return _cached("sector_live", LIVE_TTL, load)
+
+
 INST_KEYS = [("自營商(自行買賣)", "dealer"), ("自營商(避險)", "dealer"), ("投信", "trust"),
              ("外資及陸資(不含外資自營商)", "foreign"), ("外資自營商", "foreign"), ("合計", "total")]
 

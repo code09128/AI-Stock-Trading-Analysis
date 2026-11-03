@@ -882,6 +882,7 @@ function App() {
               />
             )}
             {activeTab === 'board' && <window.TA.MarketBoardPage />}
+            {activeTab === 'chains' && <window.TA.IndustryChainPage />}
             {activeTab === 'multichart' && <window.TA.MultiChartPage />}
             {activeTab === 'savings' && <window.TA.SavingsPlanPage />}
             {activeTab === 'guide' && (

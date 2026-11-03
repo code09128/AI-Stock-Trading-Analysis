@@ -5,7 +5,7 @@ import time
 
 from src.market import quote_provider
 from src.market.etf_reference import ETF_POOL
-from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, market_board, markets
+from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
 from src.server.params import arg_num
@@ -78,6 +78,19 @@ class MarketDataHandlers:
         fn = {"world": market_board.world_indices, "sectors": market_board.sectors,
               "flow": market_board.fund_flow, "tw50": market_board.tw50}[part]
         return {**fn(), "timestamp": time.strftime("%H:%M:%S")}
+
+    def handle_chain_map(self) -> Dict[str, Any]:
+        """產業鏈地圖：全部類股的即時漲跌、各類股底下的產業鏈與結構。"""
+        return {**industry_map.overview(), "timestamp": time.strftime("%H:%M:%S")}
+
+    def handle_chain_detail(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """產業鏈地圖：一條鏈裡每檔個股的即時報價與環節漲跌。"""
+        return {**industry_map.chain_detail(str(payload.get("id") or "")), "timestamp": time.strftime("%H:%M:%S")}
+
+    def handle_chain_history(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """產業鏈地圖：一條鏈最近 N 個交易日的日報酬（回放用）。"""
+        days = int(arg_num(payload, "days", 30, "回放天數", integer=True, lo=5, hi=industry_map.HISTORY_MAX_DAYS))
+        return industry_map.chain_history(str(payload.get("id") or ""), days)
 
     def handle_sparks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:40]

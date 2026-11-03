@@ -445,10 +445,13 @@
         {info.holdings?.holdings?.length > 0 && (
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
             <div className="text-sm font-bold text-white mb-2">
-              前十大成分股（合計 {info.holdings.covered_pct}%）
+              {info.holdings.partial !== false
+                ? '前十大成分股'
+                : `成分股（共 ${info.holdings.count ?? info.holdings.holdings.length} 檔，列出前 ${Math.min(20, info.holdings.holdings.length)} 檔）`}
+              （{info.holdings.partial !== false ? '合計' : '全部合計'} {info.holdings.covered_pct}%）
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-              {info.holdings.holdings.map((h) => (
+              {info.holdings.holdings.slice(0, 20).map((h) => (
                 <div
                   key={h.symbol}
                   className="flex items-center gap-2 py-1 border-b border-slate-800/70 text-xs"

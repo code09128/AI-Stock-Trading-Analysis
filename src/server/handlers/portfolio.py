@@ -79,7 +79,7 @@ class PortfolioHandlers:
         for h in holdings:
             h["fx_rate"] = fx_rates[h["currency"]]["rate"]
 
-        # 預先平行抓取各持股的 Beta / 歷史日 K / 前十大成分股（結果會快取，下面再呼叫時是即時的）
+        # 預先平行抓取各持股的 Beta / 歷史日 K / ETF 成分股（結果會快取，下面再呼叫時是即時的）
         def _warm(fn):
             try:
                 fn()
@@ -96,7 +96,7 @@ class PortfolioHandlers:
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(_warm, warm_tasks))
 
-        # 真實 ETF 前十大成分股（Yahoo topHoldings）；抓不到才回退到程式內的概略表並標示
+        # 真實 ETF 成分股（元大 ETF 為完整清單，其他是 Yahoo topHoldings 前十大）；抓不到才回退到程式內的概略表並標示
         etf_holdings: Dict[str, Dict[str, float]] = {}
         lookthrough_sources: Dict[str, str] = {}
         for h in holdings:
@@ -110,7 +110,8 @@ class PortfolioHandlers:
             th = etf_data.top_holdings(code) if is_etf else None
             if th:
                 etf_holdings[code] = {i["symbol"]: i["pct"] / 100 for i in th["holdings"]}
-                lookthrough_sources[code] = f"{th['source']}，前十大合計 {th['covered_pct']}%"
+                scope = "前十大" if th.get("partial", True) else f"{th.get('count', len(th['holdings']))} 檔"
+                lookthrough_sources[code] = f"{th['source']}，{scope}合計 {th['covered_pct']}%"
             elif code in PortfolioRiskManager.ETF_HOLDINGS_LOOKTHROUGH:
                 lookthrough_sources[code] = "STATIC_FALLBACK 程式內概略值（即時來源抓取失敗，不可當真）"
         risk_mgr = PortfolioRiskManager(usd_twd_rate=usd_twd, etf_holdings=etf_holdings or None)

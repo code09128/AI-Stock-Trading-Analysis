@@ -290,7 +290,7 @@
               <h2 className="text-base font-semibold text-white">持股與目標權重</h2>
               <span className="block mt-1 text-xs text-slate-500">
                 資料狀態：匯率、即時價、ETF
-                前十大成分股、Beta（留空時）、歷史回落皆為真實資料；持股來源見上方
+                ETF 成分股、Beta（留空時）、歷史回落皆為真實資料；持股來源見上方
               </span>
               <p className="text-xs text-slate-400">
                 以即時價與匯率換算台幣市值，拆解 ETF 成分股曝險並執行壓力測試
@@ -618,8 +618,8 @@
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
               <div className="text-xs font-semibold text-slate-300">
-                實際押在哪些公司（穿透式曝險 Look-through：把 ETF 拆成前十大成分股）
-                <window.TA.Tip text="把 ETF 拆成它的前十大成分股，再加上你直接持有的個股，看你真正押在每一檔的比例。單一標的超過 30% 會標紅，代表高度集中。" />
+                實際押在哪些公司（穿透式曝險 Look-through：把 ETF 拆成成分股）
+                <window.TA.Tip text="把 ETF 拆成它的成分股，再加上你直接持有的個股，看你真正押在每一檔的比例。元大發行的 ETF 用完整成分股清單，其他 ETF 只有前十大，沒涵蓋的部分列為「其他成分股」。單一標的超過 30% 會標紅，代表高度集中。" />
               </div>
               <div className="text-[11px] text-slate-400 space-y-0.5">
                 {Object.entries(m4Data.price_sources || {}).map(([sym, src]) => (
@@ -639,9 +639,14 @@
                     .join('，')}
                 </div>
               </div>
-              {Object.entries(m4Data.lookthrough_exposure_pct || {})
-                .sort((x, y) => y[1] - x[1]) // 數字代號的鍵在 JS 物件裡會被排到前面，這裡依曝險重新排序
-                .map(([sym, pct]) => (
+              {(() => {
+                // 數字代號的鍵在 JS 物件裡會被排到前面，這裡依曝險重新排序；元大 ETF 的完整成分股可達幾百檔，只列前 30 檔
+                const all = Object.entries(m4Data.lookthrough_exposure_pct || {}).sort((x, y) => y[1] - x[1]);
+                const shown = all.filter(([sym], i) => i < 30 || sym.endsWith('其他成分股'));
+                const hidden = all.filter((e) => !shown.includes(e));
+                return (
+                  <>
+                    {shown.map(([sym, pct]) => (
                   <div key={sym} className="space-y-1">
                     <div className="flex justify-between text-xs font-mono">
                       <span className="text-slate-200 font-bold">
@@ -670,6 +675,14 @@
                     </div>
                   </div>
                 ))}
+                    {hidden.length > 0 && (
+                      <div className="text-[11px] text-slate-500">
+                        另有 {hidden.length} 檔較小的曝險未列出（合計 {hidden.reduce((s, e) => s + e[1], 0).toFixed(2)}%）
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

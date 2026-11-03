@@ -78,7 +78,7 @@ class PortfolioRiskManager:
     def calculate_lookthrough_exposure(self, holdings_result: Dict[str, Any]) -> Dict[str, float]:
         """
         穿透式曝險：ETF 拆成成分股後與直接持有的個股累加。
-        ETF 本身的權重會被拆掉（不重複計算）；沒拆到的部分（前十大以外）列為「<ETF> 其他成分股」。
+        ETF 本身的權重會被拆掉（不重複計算）；沒拆到的部分（成分股清單沒涵蓋的，例如前十大以外、現金、期貨）列為「<ETF> 其他成分股」。
         回傳依曝險由大到小排序，合計 = 100%（四捨五入誤差除外）。
         """
         direct_weights: Dict[str, float] = {}

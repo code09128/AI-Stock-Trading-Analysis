@@ -11,6 +11,7 @@
 |---|---|
 | **看盤** | 自選股、ETF 精選、我的持股（含碎股、帳戶現金、已領配息對帳）；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
 | **大盤籌碼** | 開盤前先看大環境：國際指數（美股、亞洲、美元指數、匯率）、美股期貨、**台指期日盤＋夜盤**與期現貨價差；三大法人近 5 日買賣超、類股成交比重；**產業漲跌排行**（證交所各類股，附成交金額、比重、量比）；**台灣 50**（上市市值前 50 大，盤中即時、量比、市值）。全部公開資料，不需金鑰 |
+| **產業鏈地圖** | 把證交所全部類股（約 32 個）攤成一張可拖曳縮放的互動地圖，漲跌用**即時類股指數**上色（盤中隨成交更新，少數沒有即時指數的類股用盤後資料），圓的大小是成交比重；有整理產業鏈的類股（半導體、AI 伺服器、通信網路、面板顯示、電腦與週邊、印刷電路板、被動元件、電動車、重電與綠能、石化塑膠）點進去展開**上中下游環節與個股**，環節漲跌是個股即時報價以成交值加權，光纖上的光點代表資金流向；可**回放近 30 日**看漲跌怎麼由上游傳到下游。環節分類是自行整理的示意（不是官方資料），更新方式見 `src/market/chain_data.py` 開頭 |
 | **多圖走勢** | 一次看 2×2／3×3／4×4 或自訂幾列幾欄（每邊 1～6）的分時走勢，每格自己輸入代號；版面可自行新增（最多 20 組）、改名、刪除，各自儲存（可一鍵帶入自選股或持股） |
 | **技術分析** | 還權日 K、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
 | **新聞判斷** | 多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
@@ -155,7 +156,7 @@ cd AI-Stock-Trading-Analysis
 | 證交所重大訊息存檔 | `data/announcements/`（每日一檔，保留 90 天） |
 | 桌面版視窗的瀏覽器資料（偏好設定、快取） | `data/webview/` |
 | Yahoo 日 K | `data/bar_cache/`（每檔一個檔，第一次整段下載，之後只補最近一個月；配息後自動調整還原價，對不起來就整段重抓；刪掉資料夾即可全部重抓） |
-| ETF 前十大成分股 | `data/etf_holdings/`（一天內直接用，過期才重抓；抓失敗沿用舊的） |
+| ETF 成分股（元大 ETF 為完整清單，其他為 Yahoo 前十大） | `data/etf_holdings/`（一天內直接用，過期才重抓；抓失敗沿用舊的） |
 | 報價、新聞 | 只暫存在記憶體，不存檔 |
 
 `data/`、`.env`、`logs/` 都已排除在 Git 之外，不會上傳。搬移程式資料夾時連同這些一起搬，資料就不會遺失。
@@ -262,7 +263,7 @@ src/
 ├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar_store（日 K 本機快取）、bar、
 │                net（對外連線數量控管、Mac 根憑證）、cache（記憶體快取）、
 │                trade_rules（海外手續費/每手股數）、finmind、finmind_store（FinMind 歷史本機快取）、chip_data（籌碼）、etf_data、etf_reference、
-│                chart_data、heatmap（股市熱力圖）、market_board（大盤籌碼頁：國際指數、台指期、法人、產業、台灣 50）、fx、markets、market_calendar、market_rules、tz
+│                chart_data、heatmap（股市熱力圖）、market_board（大盤籌碼頁：國際指數、台指期、法人、產業、台灣 50）、industry_map＋chain_data（產業鏈地圖的資料與自行整理的產業鏈定義）、fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
 ├── news/        新聞：news_feed（多來源抓取與去重）、announcement_store（重大訊息每日存檔與歷史）、
 │                news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
@@ -285,7 +286,7 @@ src/
 - `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認、畫面縮放與背景工作（postJob）；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
 - `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
 - `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
-- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
+- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、industry_chain＋chain_engine（產業鏈地圖與它的 Canvas 畫面引擎）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 
 開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。
