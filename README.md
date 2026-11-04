@@ -127,6 +127,12 @@ cd AI-Stock-Trading-Analysis
 
 > `git pull` 更新程式碼後，同樣要重開 `start.bat`／`desktop.py`。
 
+### 估值參考（看盤 → 基本資料與配息）
+- 台股個股會多一張「估值參考」卡：用**近四季 EPS（附基期季別）**與**同產業本益比分布**，直接標示「便宜／偏便宜／合理／偏貴／貴」。
+  分級依本檔本益比在同產業的百分位（<20 便宜、20～40 偏便宜、40～60 合理、60～80 偏貴、≥80 貴），另附 EPS × 同業 25～75 百分位的合理價區間當參考。AI 解讀也會拿到這段摘要。
+- 資料是整份檔案（上市／上櫃本益比、上市／上櫃產業分類，共 4 個請求、24 小時快取），同業分布在本機算，不逐檔查詢；股價用日 K 收盤，不打即時報價。
+- 限制：產業分類很粗（例如電子零組件什麼都有）；虧損公司、同業不足 8 家的產業不給結論；EPS 大增大減時會提示「基期效應」。只是相對比較，不是預測，也不是買賣建議。美股尚未支援（計畫用類股 ETF 本益比）。
+
 ### 版本與線上更新（GitHub Release）
 
 - 版本號在 `src/version.py`（`APP_VERSION`，格式 主.次.修）。打包版只會更新到 GitHub 上**正式發布的 Release**，推到 `main` 的開發中修改不會被推給使用者。
@@ -288,7 +294,7 @@ src/
 │                live_signals（今日訊號）、pine_export（匯出 Pine v5）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）；savings_plan（存股計畫公式）
 ├── journal/     交易檢討：journal_coach
-├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）
+├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）、valuation（估值參考）
 ├── ai/          AI：ai_client（各家連線與串流）、ai_prompts（提示詞）、ai_text（數字核對、簡轉繁）、ai_context、
 │                llm_runner、anti_hallucination（防幻覺稽核）
 └── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、jobs（慢分析的背景工作）、config、params、

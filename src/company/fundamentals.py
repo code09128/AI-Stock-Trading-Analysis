@@ -60,6 +60,12 @@ def _tw_revenue(code: str) -> Dict[str, Any]:
     }
 
 
+def _consecutive(dates: List[str]) -> bool:
+    """財報日期（YYYY-MM-DD，季底）是否剛好是連續的季。"""
+    idx = [int(d[:4]) * 4 + (int(d[5:7]) - 1) // 3 for d in dates]
+    return len(idx) > 0 and all(b - a == 1 for a, b in zip(idx, idx[1:]))
+
+
 def _tw_quarters(code: str) -> Dict[str, Any]:
     start = (date.today() - timedelta(days=1000)).isoformat()
     rows = finmind.get_data("TaiwanStockFinancialStatements", code, start)
@@ -81,10 +87,11 @@ def _tw_quarters(code: str) -> Dict[str, Any]:
             "gross_margin_pct": round(x["GrossProfit"] / rev * 100, 2) if rev and "GrossProfit" in x else None,
             "op_margin_pct": round(x["OperatingIncome"] / rev * 100, 2) if rev and "OperatingIncome" in x else None,
         })
-    ttm = sum(q[d]["EPS"] for d in dates[-4:])
-    prev_ttm = sum(q[d]["EPS"] for d in dates[-8:-4]) if len(dates) >= 8 else None
-    return {"available": True, "quarters": out, "ttm_eps": round(ttm, 2),
-            "ttm_eps_yoy_pct": _pct(ttm, prev_ttm) if prev_ttm and prev_ttm > 0 else None}
+    # 近四季合計只在四季連續時才算；FinMind 缺一季時加總會跨季，EPS 偏低，估值會被誤導（取不到就回 None，由呼叫端改用別的方式）
+    ttm = sum(q[d]["EPS"] for d in dates[-4:]) if _consecutive(dates[-4:]) else None
+    prev_ttm = sum(q[d]["EPS"] for d in dates[-8:-4]) if len(dates) >= 8 and _consecutive(dates[-8:]) else None
+    return {"available": True, "quarters": out, "ttm_eps": round(ttm, 2) if ttm is not None else None,
+            "ttm_eps_yoy_pct": _pct(ttm, prev_ttm) if ttm is not None and prev_ttm and prev_ttm > 0 else None}
 
 
 def _tw(code: str, symbol: str) -> Dict[str, Any]:

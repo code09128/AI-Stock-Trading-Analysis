@@ -2,6 +2,7 @@
 import { Tip, baseCode, colorOf, fmt, signed } from '../ui';
 import { AiExplain } from '../ai_store';
 import { postJob } from '../desktop_bridge';
+import { ValuationCard } from './valuation_card';
 
 const { useState, useEffect } = React;
 
@@ -470,6 +471,7 @@ function StockInfoPanel({ symbol }) {
       )}
 
       <FundamentalsCard symbol={symbol} />
+      <ValuationCard symbol={symbol} />
 
       <AiExplain module="stock" data={info} title="AI 解讀這檔標的（含 3 利多／3 風險）" />
     </div>

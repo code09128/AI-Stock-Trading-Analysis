@@ -23,6 +23,7 @@ import './portfolio_store';
 import './live_widgets';
 import './pages/watch_parts';
 import './pages/overview_alerts';
+import './pages/valuation_card';
 import './pages/stock_info_panel';
 import './pages/order_panel';
 import './pages/holdings_panel';

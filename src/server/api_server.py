@@ -21,7 +21,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, Dict
 
 from src.ai import ai_client
-from src.company import fundamentals
+from src.company import fundamentals, valuation
 from src.market import bar_store, net, quote_provider, trade_rules
 from src.server import activity_log, alert_engine, autostart, env_settings, jobs, updater, user_data, web_bundle
 from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, get_web_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
@@ -63,6 +63,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/overview": D.handle_overview,
     "/api/stockinfo": D.handle_stockinfo,
     "/api/fundamentals": lambda p: fundamentals.analyze(arg_ticker(p, "symbol")),
+    "/api/valuation": lambda p: valuation.analyze(arg_ticker(p, "symbol")),  # 估值參考：近四季 EPS × 同產業本益比
     "/api/fx": D.handle_fx,
     "/api/chips": D.handle_chips,
     "/api/dividends": D.handle_dividend_calendar,
