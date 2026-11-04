@@ -218,5 +218,17 @@ class CheckAndApplyTests(Sandbox):
         up.verify_package(Path(__file__).resolve().parent.parent)
 
 
+class OldUpdaterCompatTests(unittest.TestCase):
+    def test_health_route_survives_an_old_bundled_updater(self):
+        """舊版 exe：新的 api_server 從 update/ 載入，但 updater 是內建舊版（沒有 mark_healthy）。路由不能丟例外（會變成 500）。"""
+        from src.server import api_server
+
+        class OldUpdater:  # 沒有 mark_healthy
+            pass
+
+        with patch.object(api_server, "updater", OldUpdater()):
+            self.assertEqual(api_server.ROUTES["/api/update/ok"]({}), {"ok": True, "recorded": False})
+
+
 if __name__ == "__main__":
     unittest.main()

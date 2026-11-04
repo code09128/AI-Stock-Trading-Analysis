@@ -101,7 +101,8 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/env/test_finmind": lambda p: env_settings.test_finmind(p.get("token")),
     "/api/update/check": lambda p: updater.check_update(),
     "/api/update/apply": lambda p: updater.apply_update(),
-    "/api/update/ok": lambda p: {"ok": True, "recorded": updater.mark_healthy()},  # 前端畫面載入完成時回報（線上更新的失敗保護用）
+    # 舊版 exe 會載入 update/ 裡的新 api_server，但 updater 仍是內建的舊版（沒有 mark_healthy）：當作沒有保護功能，不要回 500
+    "/api/update/ok": lambda p: {"ok": True, "recorded": bool(getattr(updater, "mark_healthy", lambda: False)())},  # 前端畫面載入完成時回報（線上更新的失敗保護用）
     # 使用者資料（持股、交易紀錄、規則…）存到 data/userdata.json
     "/api/userdata/save": lambda p: user_data.save(p.get("values") or {}),
     # 操作紀錄與自檢
