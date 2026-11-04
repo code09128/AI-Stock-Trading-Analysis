@@ -50,6 +50,25 @@ def main():
                 elif not any(same(name, g) for g in got):
                     print(f"[錯誤] {chain['id']}/{node['id']}：{code} 檔案寫「{name}」，清單是「{'、'.join(sorted(got))}」")
                     errors += 1
+    # FinMind 的清單會留著已下市／合併的舊代號，所以再用證交所即時行情確認每一檔真的查得到。
+    # 分批、批間暫停，避免一次打太多被證交所斷線；連線失敗只提醒（不是代號有問題），「查無此代號」才算錯誤。
+    import time
+    from src.market import quote_provider as qp
+    codes, unreachable = sorted(use), []
+    for i in range(0, len(codes), 40):
+        for q in qp.get_quotes(codes[i:i + 40], {}):
+            code = q["symbol"].split(".")[0]
+            if q.get("price") is not None:
+                continue
+            if "查無" in str(q.get("error")):
+                print(f"[錯誤] {'、'.join(use[code])}：{code} 證交所行情查無（可能已下市或合併）")
+                errors += 1
+            else:
+                unreachable.append(code)
+        time.sleep(1)
+    if unreachable:
+        print(f"[提醒] {len(unreachable)} 檔因證交所連線失敗或無報價沒能確認，稍後重跑：{'、'.join(unreachable[:10])}")
+        warnings += 1
     for code, ids in sorted(use.items()):
         if len(ids) >= 4:
             print(f"[提醒] {code} 出現在 {len(ids)} 條鏈（{'、'.join(ids)}）")

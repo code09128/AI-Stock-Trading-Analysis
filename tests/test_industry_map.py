@@ -145,11 +145,13 @@ class ChainDetailTests(unittest.TestCase):
 
         with patch.object(im.qp, "get_quotes", side_effect=fake):
             d = im.chain_detail("net")
+        net = next(c for c in chain_data.CHAINS if c["id"] == "net")
+        total = {n["id"]: len(n["stocks"]) for n in net["nodes"]}  # 個股數隨資料增減，不寫死
         nic = d["nodes"]["nic"]
         self.assertEqual(nic["change_pct"], round((2.0 * 1e10 - 1.0 * 1e9) / 1.1e10, 2))
-        self.assertEqual((nic["n_ok"], nic["n_total"]), (2, 2))
+        self.assertEqual((nic["n_ok"], nic["n_total"]), (2, total["nic"]))
         opt = d["nodes"]["opt"]
-        self.assertEqual((opt["change_pct"], opt["n_ok"], opt["n_total"]), (None, 0, 3))   # 一檔都沒有：None，不補 0
+        self.assertEqual((opt["change_pct"], opt["n_ok"], opt["n_total"]), (None, 0, total["opt"]))   # 一檔都沒有：None，不補 0
         self.assertFalse(d["stocks"]["3163"]["ok"])
         self.assertEqual(d["stocks"]["2454"]["turnover"], 1000 * 10000 * 1000)
         self.assertEqual(d["stocks"]["2454"]["name"], "名2454")
@@ -199,6 +201,42 @@ class ChainHistoryTests(unittest.TestCase):
             h = im.chain_history("display", 5)
         self.assertIn("無法回放", h["error"])
         self.assertEqual(h["dates"], [])
+
+
+class RealDataQualityTests(unittest.TestCase):
+    """真實的 chain_data.py 的品質守門（離線）：補新鏈時最容易漏的地方。"""
+
+    def test_every_node_is_connected(self):
+        for ch in chain_data.CHAINS:
+            touched = {e[0] for e in ch["edges"]} | {e[1] for e in ch["edges"]}
+            self.assertEqual([n["id"] for n in ch["nodes"] if n["id"] not in touched], [], f"{ch['id']} 有孤立環節")
+
+    def test_nodes_are_reasonably_sized(self):
+        for ch in chain_data.CHAINS:
+            for n in ch["nodes"]:
+                self.assertTrue(1 <= len(n["stocks"]) <= 15, f"{ch['id']}/{n['id']} 個股數 {len(n['stocks'])}")
+
+    def test_chain_ids_and_names_are_unique(self):
+        ids = [c["id"] for c in chain_data.CHAINS]
+        names = [c["name"] for c in chain_data.CHAINS]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_every_chain_sector_is_a_layout_sector(self):
+        sectors = {s for col in chain_data.LAYOUT for s in col}
+        for ch in chain_data.CHAINS:
+            self.assertIn(ch["sector"], sectors, ch["id"])
+
+    def test_covers_the_agreed_industries(self):
+        ids = {c["id"] for c in chain_data.CHAINS}
+        self.assertTrue({"semi", "ship", "fin", "steel", "cement", "textile", "food", "auto", "bio"} <= ids)
+        semi = next(c for c in chain_data.CHAINS if c["id"] == "semi")
+        mem = next(n for n in semi["nodes"] if n["id"] == "memory")
+        self.assertTrue({"2337", "2344", "2408"} <= {c for c, _ in mem["stocks"]})
+
+    def test_version_is_a_date(self):
+        import re
+        self.assertRegex(chain_data.VERSION, r"^\d{4}-\d{2}-\d{2}$")
 
 
 if __name__ == "__main__":
