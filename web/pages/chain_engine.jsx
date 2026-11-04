@@ -775,9 +775,11 @@
         tw.cancel(c);
         tw.to(c, { alpha: away ? 0 : 1 }, dur);
       }
+      // 點進單一環節（支線個股展開）時，同一條鏈的其他環節、光纖、階段標題全部淡出，只留被選的環節，避免和個股、流動封包重疊
+      const shown = (chain, e) => away && chain.def.id === S.chain && (S.state !== 'node' || (e instanceof NodeEntity && e.id === S.node));
       for (const chain of Object.values(eng.chains)) {
-        const on = away && chain.def.id === S.chain;
         for (const e of chain.ents) {
+          const on = shown(chain, e);
           tw.cancel(e);
           if (on) {
             e.visible = true;
@@ -791,7 +793,7 @@
             }
           } else if (e.visible) {
             const done = () => {
-              if (!(S.state !== 'overview' && chain.def.id === S.chain)) e.visible = false;
+              if (!shown(chain, e)) e.visible = false;
             };
             if (e instanceof FiberEntity) tw.to(e, { alpha: 0 }, dur * 0.5, { onDone: done });
             else tw.to(e, { alpha: 0, scale: 0.6 }, dur * 0.5, { onDone: done });

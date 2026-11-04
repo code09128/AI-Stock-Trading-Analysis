@@ -7,6 +7,7 @@
 - 排隊有時間上限：等太久就直接當作逾時，讓呼叫端走原本的失敗處理（重試、顯示錯誤），不要無限期卡著。
 """
 
+import http.client
 import json
 import os
 import ssl
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import deque
@@ -30,10 +32,16 @@ LOG_LOCK = threading.Lock()
 
 HOST_LIMITS = {"mis.twse.com.tw": 2}
 DEFAULT_HOST_LIMIT = 4
+# 禮貌限速（避免被對方當成攻擊）：同一個主機兩次請求至少隔 N 秒；被對方斷線或拒絕後先暫停一段時間，
+# 連續失敗就拉長（60 秒 → 3 分鐘 → 10 分鐘），期間直接回報失敗、完全不送出請求。
+# 限制：只管 HOST_MIN_GAP 列出的主機；暫停是整個程式共用，升級條件是改成官方 API 並用金鑰時再放寬。
+HOST_MIN_GAP = {"mis.twse.com.tw": 0.4}
+BLOCK_STEPS = (60, 180, 600)
 SLOT_WAIT_SEC = 12  # 排隊最久等多久；超過就丟 TimeoutError
 
 _LOCK = threading.Lock()
 _SLOTS: Dict[Tuple[str, str], threading.BoundedSemaphore] = {}
+_POLITE: Dict[str, Dict[str, float]] = {}  # 主機 → next（下一次最早可送出）、until（暫停到）、fails（連續被拒次數）
 _LIVE_RANGES = ("range=1d", "range=5d")  # 日 K 本機快取的補抓（range=1mo）算大下載：不跟報價搶即時連線
 
 
@@ -86,6 +94,51 @@ def _slot(url: str) -> threading.BoundedSemaphore:
     return slot
 
 
+class HostBlocked(ConnectionError):
+    """這個主機剛拒絕或斷線，暫停期間不再送出請求。"""
+
+
+def _polite_state(host: str) -> Dict[str, float]:
+    return _POLITE.setdefault(host, {"next": 0.0, "until": 0.0, "fails": 0})
+
+
+def _polite_before(host: str) -> None:
+    gap = HOST_MIN_GAP.get(host)
+    if not gap:
+        return
+    with _LOCK:
+        st, now = _polite_state(host), time.monotonic()
+        if now < st["until"]:
+            raise HostBlocked(f"{host} 先前拒絕連線，暫停查詢 {int(st['until'] - now) + 1} 秒以免被當成攻擊")
+        start = max(now, st["next"])
+        st["next"] = start + gap
+    if start > now:
+        time.sleep(start - now)
+
+
+def _is_refusal(e: BaseException) -> bool:
+    """對方把我們斷線或拒絕（不含單純逾時）。"""
+    if isinstance(e, HostBlocked):
+        return False
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in (403, 429, 503)
+    if isinstance(e, urllib.error.URLError):
+        return _is_refusal(e.reason) if isinstance(e.reason, BaseException) else False
+    return isinstance(e, (ConnectionError, http.client.RemoteDisconnected))
+
+
+def _polite_after(host: str, error: Optional[BaseException]) -> None:
+    if host not in HOST_MIN_GAP:
+        return
+    with _LOCK:
+        st = _polite_state(host)
+        if error is None:
+            st["fails"] = 0
+        elif _is_refusal(error):
+            st["until"] = time.monotonic() + BLOCK_STEPS[min(int(st["fails"]), len(BLOCK_STEPS) - 1)]
+            st["fails"] += 1
+
+
 @contextmanager
 def host_slot(url: str, wait: float = SLOT_WAIT_SEC):
     """用法：with host_slot(url): 送出請求並讀完回應。只包住網路 I/O，裡面不要再拿其他鎖。"""
@@ -105,6 +158,7 @@ def http_bytes(url: str, timeout: float = 8, opener: Any = None,
     headers 用來放認證（例如 FinMind token），不會寫進紀錄；不要把金鑰放在網址裡。
     body 不是 None 時改用 POST 送出 JSON（期交所行情 API 用）。"""
     started = time.time()
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
     rec = {"time": datetime.now().strftime("%H:%M:%S"), "url": url, "status": "ERR", "ms": 0, "bytes": 0, "error": None}
     try:
         if body is None:
@@ -113,12 +167,15 @@ def http_bytes(url: str, timeout: float = 8, opener: Any = None,
             req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                          headers={**UA, "Content-Type": "application/json", **(headers or {})})
         opener_open = opener.open if opener else urllib.request.urlopen
+        _polite_before(host)
         with host_slot(url), opener_open(req, timeout=timeout) as resp:
             raw = resp.read()
             rec["status"] = getattr(resp, "status", 200)
             rec["bytes"] = len(raw)
+        _polite_after(host, None)
         return raw
     except Exception as e:
+        _polite_after(host, e)
         rec["error"] = str(e)
         raise
     finally:

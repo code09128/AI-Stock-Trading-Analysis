@@ -87,5 +87,58 @@ class MacCertTest(unittest.TestCase):
             self.assertEqual(self._run("win32", None, tmp), (False, None, False))
 
 
+class PoliteLimitTests(unittest.TestCase):
+    HOST = "mis.twse.com.tw"
+
+    def setUp(self):
+        from src.market import net
+        self.net = net
+        net._POLITE.clear()
+
+    def tearDown(self):
+        self.net._POLITE.clear()
+
+    def test_requests_are_spaced(self):
+        from unittest.mock import patch
+        waits = []
+        with patch.object(self.net.time, "sleep", side_effect=waits.append):
+            for _ in range(4):
+                self.net._polite_before(self.HOST)
+        self.assertEqual(len(waits), 3)  # 第一次不用等，之後每次都要等
+        gap = self.net.HOST_MIN_GAP[self.HOST]
+        # sleep 被取代所以時間不前進：第 n 次要等的時間 ≈ n × 間隔（實際執行時每次只等一個間隔）
+        for n, w in enumerate(waits, 1):
+            self.assertAlmostEqual(w, n * gap, delta=0.05)
+
+    def test_unlisted_host_is_not_limited(self):
+        self.net._polite_before("query1.finance.yahoo.com")
+        self.assertNotIn("query1.finance.yahoo.com", self.net._POLITE)
+
+    def test_refusal_blocks_then_escalates_and_success_resets(self):
+        import http.client
+        net = self.net
+        net._polite_after(self.HOST, http.client.RemoteDisconnected("closed"))
+        with self.assertRaises(net.HostBlocked):
+            net._polite_before(self.HOST)
+        first = net._POLITE[self.HOST]["until"]
+        net._POLITE[self.HOST]["until"] = 0  # 假裝暫停結束
+        net._polite_after(self.HOST, ConnectionResetError())
+        self.assertGreater(net._POLITE[self.HOST]["until"] - net.time.monotonic(), net.BLOCK_STEPS[0] + 1)
+        self.assertGreater(net._POLITE[self.HOST]["until"], first)
+        net._polite_after(self.HOST, None)
+        self.assertEqual(net._POLITE[self.HOST]["fails"], 0)
+
+    def test_timeout_and_block_error_do_not_extend_block(self):
+        net = self.net
+        net._polite_after(self.HOST, TimeoutError("slow"))
+        net._polite_after(self.HOST, net.HostBlocked("x"))
+        self.assertEqual(net._POLITE[self.HOST]["until"], 0.0)
+
+    def test_http_403_counts_as_refusal(self):
+        import urllib.error
+        net = self.net
+        net._polite_after(self.HOST, urllib.error.HTTPError("u", 403, "no", {}, None))
+        self.assertGreater(net._POLITE[self.HOST]["until"], 0)
+
 if __name__ == "__main__":
     unittest.main()
