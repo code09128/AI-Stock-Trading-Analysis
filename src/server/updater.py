@@ -5,6 +5,14 @@
   並優先載入 update/ 的程式碼（不碰 data/ 與 .env）；設定頁也可手動「檢查更新」「下載並套用」
 - 原始碼版（有 .git）：不會覆蓋開發中的程式碼，只告訴你有新版本，請自己 git pull
 - 下載後會核對壓縮檔裡 src/version.py 的版本號和 Release 一致，不一致就不套用
+
+失敗保護（update_state.json）：
+- 套用前先驗證（verify_package）：所有 .py 能編譯、index.html 引用的檔案都在；不合格就不套用，目前的版本原封不動。
+- 套用後這個版本要在畫面載入完成時回報（前端 POST /api/update/ok → mark_healthy）。連續 MAX_UNHEALTHY_BOOTS 次啟動都沒有回報，
+  就判定這個版本壞了：update/ 移到 update_bad/、版本記進 bad、改用內建版。壞版本只是被略過，之後更高的版本照常更新，不會卡住。
+- 環境變數 TRADING_SAFE_MODE=1：這次啟動完全不載入 update/（排查問題用）。
+限制：這些保護只存在「內建的更新程式」裡；已經發出去的舊版 exe 內建的更新程式沒有，也無法用線上更新補上（打包版的線上更新只能覆蓋
+src/ 的非 server 子套件與 web/，覆蓋不到 src/server/，更新程式就在那裡），要重新安裝新版安裝包才有。
 """
 
 from datetime import datetime
@@ -74,10 +82,99 @@ def parse_version(v: Any) -> Tuple[int, int, int]:
 def _read_json(path: Path) -> Optional[Dict[str, Any]]:
     try:
         if path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8-sig"))  # -sig：容許 BOM（手動放的檔案常有）
     except Exception:
         pass
     return None
+
+
+STATE_NAME = "update_state.json"
+_boot_counted = False  # 同一個行程只算一次啟動（desktop 的 auto_update_on_boot 和 make_server 都會呼叫 activate）
+MAX_UNHEALTHY_BOOTS = 3  # 同一個更新版本連續幾次啟動都沒有「畫面載入完成」的回報，就判定失敗並還原
+
+
+def _state_path() -> Path:
+    return get_app_dir() / STATE_NAME
+
+
+def load_state() -> Dict[str, Any]:
+    """{'bad': {版本: {reason, at}}, 'pending': {version, boots} 或 None, 'ok': 已確認正常的更新版本或 None}"""
+    d = _read_json(_state_path()) or {}
+    bad = d.get("bad") if isinstance(d.get("bad"), dict) else {}
+    pending = d.get("pending") if isinstance(d.get("pending"), dict) else None
+    return {"bad": bad, "pending": pending, "ok": d.get("ok") or None}
+
+
+def save_state(state: Dict[str, Any]) -> None:
+    try:
+        _state_path().write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # 寫不進去（唯讀資料夾）：保護失效但不影響程式本身
+
+
+def next_boot_state(state: Dict[str, Any], version: str, count_boot: bool = True) -> Tuple[bool, str, Dict[str, Any]]:
+    """這次啟動要不要繼續用 update/ 的這個版本。回傳 (繼續用, 不用的原因, 新狀態)。純函式，方便測試。"""
+    st = {"bad": dict(state["bad"]), "pending": state["pending"], "ok": state["ok"]}
+    if version in st["bad"]:
+        return False, "這個版本先前已被判定失敗", st
+    if st["ok"] == version:
+        return True, "", st
+    p = st["pending"] if st["pending"] and st["pending"].get("version") == version else {"version": version, "boots": 0}
+    if count_boot and p["boots"] >= MAX_UNHEALTHY_BOOTS:  # 只在「新的一次啟動」才放棄；同一次啟動內的重複呼叫（不計數）不能把剛允許的版本翻掉
+        st["pending"] = None
+        st["bad"][version] = {"reason": f"連續 {p['boots']} 次啟動都沒有完成畫面載入", "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        return False, st["bad"][version]["reason"], st
+    if count_boot:
+        p = {"version": version, "boots": p["boots"] + 1}
+    st["pending"] = p
+    return True, "", st
+
+
+def quarantine(version: str, reason: str) -> None:
+    """把壞掉的更新版本記進 bad，並把 update/ 移到 update_bad/（留著給人看哪裡壞）。之後更高的版本照常更新。"""
+    st = load_state()
+    st["bad"].setdefault(version, {"reason": reason, "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})  # 已記過就保留原本的原因
+    st["pending"] = None
+    if st["ok"] == version:
+        st["ok"] = None
+    save_state(st)
+    bad_dir = get_app_dir() / "update_bad"
+    shutil.rmtree(bad_dir, ignore_errors=True)
+    try:
+        os.replace(update_dir(), bad_dir)
+    except OSError:
+        shutil.rmtree(update_dir(), ignore_errors=True)
+
+
+def mark_healthy() -> bool:
+    """畫面載入完成時由前端回報（POST /api/update/ok）。目前用的是 update/ 的版本才記錄；回傳是否有寫入。"""
+    up = _update_info().get("version")
+    if not up or current_version().get("source") != "線上更新版":
+        return False
+    st = load_state()
+    if st["ok"] == up:
+        return False
+    st["ok"], st["pending"] = up, None
+    save_state(st)
+    return True
+
+
+_LOCAL_SRC_RE = re.compile(r"""<script[^>]+src=["']\./([^"']+)["']""")
+
+
+def verify_package(root: Path) -> None:
+    """套用前的驗證：不合格就丟 RuntimeError（呼叫端不會套用，目前的版本不動）。"""
+    for p in sorted((root / "src").rglob("*.py")):
+        try:
+            compile(p.read_text(encoding="utf-8"), str(p), "exec")
+        except SyntaxError as e:
+            raise RuntimeError(f"更新包的 {p.relative_to(root).as_posix()} 第 {e.lineno} 行有語法錯誤，未套用") from None
+        except (OSError, ValueError) as e:
+            raise RuntimeError(f"更新包的 {p.relative_to(root).as_posix()} 無法讀取（{e}），未套用") from None
+    html = (root / "web" / "index.html").read_text(encoding="utf-8", errors="replace")
+    for ref in _LOCAL_SRC_RE.findall(html):
+        if not (root / "web" / ref.split("?")[0]).is_file():
+            raise RuntimeError(f"更新包的 web/index.html 引用了不存在的檔案 {ref}，未套用")
 
 
 def _version_in(text: str) -> Optional[str]:
@@ -114,14 +211,26 @@ def current_version() -> Dict[str, Any]:
     return {"version": base, "source": "打包內建版" if frozen else "原始碼版"}
 
 
-def activate_update_if_present() -> bool:
+def activate_update_if_present(count_boot: bool = True) -> bool:
     """update/ 裡的版本比內建新才掛上（優先載入）；內建版已經一樣新或更新（例如重裝了新的安裝包）就清掉 update/。"""
     up = update_dir()
+    if os.environ.get("TRADING_SAFE_MODE") == "1":
+        return False
     if not (up / "src").is_dir() or not (up / "web" / "index.html").is_file():
         return False
-    if parse_version(_update_info().get("version")) <= parse_version(bundled_version()):
+    ver = str(_update_info().get("version") or "")
+    if parse_version(ver) <= parse_version(bundled_version()):
         shutil.rmtree(up, ignore_errors=True)
         return False
+    global _boot_counted
+    if count_boot:
+        count_boot, _boot_counted = not _boot_counted, True
+    use, reason, new_state = next_boot_state(load_state(), ver, count_boot=count_boot)
+    if not use:
+        quarantine(ver, reason)  # 記進 bad、update/ 移到 update_bad/
+        print(f"更新版 {ver} 不使用（{reason}），改用內建版", file=sys.stderr)
+        return False
+    save_state(new_state)
 
     up_str = str(up)
     if up_str not in sys.path:
@@ -132,12 +241,15 @@ def activate_update_if_present() -> bool:
         sys.meta_path.insert(0, PathFinder)
     elif PathFinder not in sys.meta_path:
         sys.meta_path.insert(0, PathFinder)
-    src_mod = sys.modules.get("src")
-    up_src = str(up / "src")
-    if src_mod is not None and hasattr(src_mod, "__path__"):
-        paths = list(src_mod.__path__)
-        if up_src not in paths:
-            src_mod.__path__ = [up_src] + paths
+    for name, sub in (("src", ""), ("src.server", "server")):
+        # src.server 也要加：已經 import 的 src.server 套件的 __path__ 不會自動跟著 src 變，不加的話 update/src/server/ 永遠不會被載入
+        # （實測打包版：只有 src.market 之類的子套件會被更新版取代）。updater 自己已經載入，不受影響＝永遠是內建的那份
+        mod = sys.modules.get(name)
+        up_pkg = str(up / "src" / sub) if sub else str(up / "src")
+        if mod is not None and hasattr(mod, "__path__"):
+            paths = list(mod.__path__)
+            if up_pkg not in paths:
+                mod.__path__ = [up_pkg] + paths
     return True
 
 
@@ -176,9 +288,11 @@ def check_update(timeout: int = 6) -> Dict[str, Any]:
         rel = fetch_latest_release(timeout=timeout)
     except Exception as e:
         return {"ok": False, "error": str(e), "has_update": False, "current": cur, "remote": None}
+    skipped = rel["version"] in load_state()["bad"]  # 這個版本先前更新後壞掉：不再重複下載，等更高的版本
     return {
         "ok": True,
-        "has_update": parse_version(rel["version"]) > parse_version(cur["version"]),
+        "has_update": parse_version(rel["version"]) > parse_version(cur["version"]) and not skipped,
+        "skipped_bad": skipped,
         "current": cur,
         "remote": rel,
         "repo": REPO,
@@ -188,7 +302,7 @@ def check_update(timeout: int = 6) -> Dict[str, Any]:
 
 def _reload_runtime() -> None:
     """熱重載 src.* 模組與伺服器路由，讓更新不必重開程式也立即生效。"""
-    activate_update_if_present()
+    activate_update_if_present(count_boot=False)
     from src.server import config
     config.WEB_DIR = config.get_web_dir()
     keep_prefixes = ("src.server.api_server", "src.server.updater", "src.server.config",
@@ -252,6 +366,7 @@ def _download_release(rel: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
         if code_ver != rel["version"]:
             raise RuntimeError(f"Release {rel['tag']} 裡的程式版本是 {code_ver or '未標示'}，和標籤不一致，未套用")
 
+        verify_package(tmp_dir)  # 不合格就丟例外：不會動到目前的 update/
         info = {"version": rel["version"], "tag": rel["tag"], "name": rel.get("name", ""),
                 "published_at": rel.get("published_at", ""), "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         (tmp_dir / "version.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -261,6 +376,9 @@ def _download_release(rel: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
             os.replace(target, old_dir)
         os.replace(tmp_dir, target)
         shutil.rmtree(old_dir, ignore_errors=True)
+        st = load_state()
+        st["pending"], st["ok"] = {"version": rel["version"], "boots": 0}, None  # 新版本要重新通過「畫面載入完成」的確認
+        save_state(st)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -277,6 +395,10 @@ def apply_update(timeout: int = 30) -> Dict[str, Any]:
         if parse_version(rel["version"]) <= parse_version(cur["version"]):
             return {"ok": True, "updated": False, "already_latest": True, "mode": "noop",
                     "msg": f"目前已是最新版本 v{cur['version']}", "current": cur, "remote": rel}
+        if rel["version"] in load_state()["bad"]:
+            return {"ok": True, "updated": False, "already_latest": False, "mode": "skipped_bad",
+                    "msg": f"{rel['tag']} 先前更新後無法正常載入，已還原並略過；等下一個版本會再自動更新",
+                    "current": cur, "remote": rel}
         if _is_source_checkout():
             return {"ok": True, "updated": False, "already_latest": False, "mode": "source",
                     "msg": f"有新版本 {rel['tag']}；原始碼版不會自動覆蓋程式碼，請用 git pull 更新",

@@ -142,7 +142,7 @@ def rules_for(symbol: str) -> Dict[str, Any]:
 
 def statutory_cost(fees: List[Dict[str, Any]], action: str, amount: float, shares: float = 0) -> float:
     """法定稅費合計。每一項：rate＝按成交金額，或 per_share＝按股數；可選 ceil（進位到整數元）、min、max。
-    前端看盤頁模擬下單（watch.jsx 的 statutoryTax）用同一套規則，改這裡要一起改。"""
+    前端看盤頁模擬下單（watch.tsx 的 statutoryTax）用同一套規則，改這裡要一起改。"""
     side = "SELL" if action.upper() in ("SELL", "SHORT", "賣出") else "BUY"
     total = 0.0
     for f in fees:

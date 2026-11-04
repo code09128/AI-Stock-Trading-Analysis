@@ -14,5 +14,6 @@
 ## 開發慣例
 - 後端只用 Python 標準函式庫，不新增第三方套件藥用要詢問使用者。唯一例外：桌面視窗版 `desktop.py` 與打包用 pywebview／PyInstaller（`requirements-desktop.txt`），`run.py`／`start.bat` 不需要它們。
 - 桌面版要測試時，寫一支暫存腳本把 `user_data.data_dir` 與 `desktop.get_app_dir` 指到 `%TEMP%\trading_sync_test` 再呼叫 `desktop.main()`（埠 8096），不要直接 `python desktop.py`（會用到真的 `data/`）。
-- 改完跑 `python -m unittest discover tests`（全部離線）；前端改動跑 `npx @biomejs/biome lint web`。
+- 改完跑 `python -m unittest discover tests`（全部離線）；前端改動（`web/**/*.tsx`）跑 `npx @biomejs/biome lint web` 與 `npm run typecheck`（新檔案不要加 `// @ts-nocheck`），
+  並執行 `python build_web.py --web` 把 `web/app.bundle.js` 一起 commit（線上更新靠它；`tests/test_packaging.py` 會檢查）。
 - 批次檔（`.bat`）要用 CRLF 換行。

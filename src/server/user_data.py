@@ -1,7 +1,7 @@
 """
 使用者資料存檔 (user_data.py)：持股、交易紀錄、交易規則、自選股、提醒、AI 設定等，存成程式資料夾的 data/userdata.json。
 - 程式資料夾整個搬走，資料跟著走；換瀏覽器、清快取、改用 localhost 或 127.0.0.1 開都不會遺失
-- 瀏覽器 localStorage 只當暫存：開頁面時從這裡讀回，修改時自動寫回（web/sync_store.jsx）
+- 瀏覽器 localStorage 只當暫存：開頁面時從這裡讀回，修改時自動寫回（web/sync_store.tsx）
 - 寫入用「先寫暫存檔再取代」，寫到一半當機也不會壞檔；每天第一次寫入前備份一份到 data/backups/，保留 14 份
 """
 

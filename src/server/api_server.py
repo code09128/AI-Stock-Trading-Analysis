@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict
 from src.ai import ai_client
 from src.company import fundamentals
 from src.market import bar_store, net, quote_provider, trade_rules
-from src.server import activity_log, alert_engine, autostart, env_settings, jobs, updater, user_data
+from src.server import activity_log, alert_engine, autostart, env_settings, jobs, updater, user_data, web_bundle
 from src.server.config import WEB_DIR, get_app_dir, get_resource_dir, get_web_dir, load_env_file, WATCHLIST_NAMES  # noqa: F401
 
 from src.server.dispatcher import DISPATCHER, TradingEngineDispatcher  # noqa: F401
@@ -50,6 +50,7 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/board/flow": lambda: D.handle_board("flow"),
     "/api/board/tw50": lambda: D.handle_board("tw50"),
     "/api/chains/map": D.handle_chain_map,
+    "/api/chains/map_us": D.handle_chain_map_us,
     "/api/update/status": updater.current_version,
     "/api/update/check": updater.check_update,
 }
@@ -57,6 +58,7 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
 ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     # 看盤與共用資料
     "/api/quotes": D.handle_quotes,
+    "/api/symbol_search": D.handle_symbol_search,
     "/api/intraday": D.handle_intraday,
     "/api/overview": D.handle_overview,
     "/api/stockinfo": D.handle_stockinfo,
@@ -99,6 +101,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/env/test_finmind": lambda p: env_settings.test_finmind(p.get("token")),
     "/api/update/check": lambda p: updater.check_update(),
     "/api/update/apply": lambda p: updater.apply_update(),
+    "/api/update/ok": lambda p: {"ok": True, "recorded": updater.mark_healthy()},  # 前端畫面載入完成時回報（線上更新的失敗保護用）
     # 使用者資料（持股、交易紀錄、規則…）存到 data/userdata.json
     "/api/userdata/save": lambda p: user_data.save(p.get("values") or {}),
     # 操作紀錄與自檢
@@ -140,7 +143,7 @@ def refresh_routes() -> None:
 
 # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤。
 # 背景工作的 start／poll 不記，工作結束時用原本的路徑記一筆（耗時＝實際計算時間）
-QUIET_PATHS = ("/api/quotes", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
+QUIET_PATHS = ("/api/quotes", "/api/symbol_search", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
                "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles", "/api/jobs/",
                "/api/chains/")
 
@@ -306,7 +309,15 @@ def make_server(port: int = 8088) -> ThreadingHTTPServer:
     return server
 
 
+def prepare_web() -> None:
+    """原始碼版：啟動前把前端 .tsx 打包成 web/app.bundle.js（需要 Node.js；打包版沒有原始檔，什麼都不做）。"""
+    msg = web_bundle.ensure_dev_bundle(WEB_DIR)
+    if msg:
+        print(msg, file=sys.stderr)
+
+
 def run_server(port: int = 8088) -> None:
+    prepare_web()
     net.use_mac_system_certs()  # Mac 的 python.org Python 沒有憑證檔時改用系統根憑證；其他系統不動
     bar_store.enable()  # 日 K 存本機（data/bar_cache）；單元測試直接呼叫 make_server，不會寫檔
     make_server(port).serve_forever()

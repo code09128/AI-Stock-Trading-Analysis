@@ -11,27 +11,22 @@
 - server/  : HTTP 伺服器與操作紀錄
 """
 
-from importlib.machinery import PathFinder
-from pathlib import Path
 import sys
 
 
 def _bootstrap_hot_update() -> None:
-    """打包版若存在線上更新目錄 update/src，優先掛載至 __path__ 與 sys.meta_path。"""
+    """打包版：盡早（其他 src 模組載入之前）掛上線上更新 update/。
+    是否掛載交給 updater.activate_update_if_present 決定（版本比較、壞版本清單、失敗還原、TRADING_SAFE_MODE 都在那裡）；
+    這裡不可以自己先掛路徑，否則 updater 事後判定失敗並搬走 update/ 時，已掛上的路徑會指向不存在的資料夾，整個程式起不來。
+    任何例外都吞掉，退回內建版。"""
     if not getattr(sys, "frozen", False):
         return
-    exe_dir = Path(sys.executable).resolve().parent
-    up_src = exe_dir / "update" / "src"
-    if not up_src.is_dir():
-        return
-    up_root = str(exe_dir / "update")
-    if up_root not in sys.path:
-        sys.path.insert(0, up_root)
-    if PathFinder in sys.meta_path and sys.meta_path[0] is not PathFinder:
-        sys.meta_path.remove(PathFinder)
-        sys.meta_path.insert(0, PathFinder)
-    if str(up_src) not in __path__:
-        __path__.insert(0, str(up_src))
+    try:
+        from src.server import updater  # updater 與 config 永遠是內建那份（已先被載入就不會被更新版取代）
+
+        updater.activate_update_if_present()
+    except Exception as e:  # noqa: BLE001
+        print(f"線上更新掛載失敗，改用內建版：{e}", file=sys.stderr)
 
 
 _bootstrap_hot_update()

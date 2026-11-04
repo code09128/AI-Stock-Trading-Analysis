@@ -5,7 +5,7 @@ import time
 
 from src.market import quote_provider
 from src.market.etf_reference import ETF_POOL
-from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets
+from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets, symbol_search
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
 from src.server.params import arg_num
@@ -34,6 +34,15 @@ class MarketDataHandlers:
             "timestamp": time.strftime("%H:%M:%S"),
             "fetch_log": quote_provider.get_fetch_log()[:12],
         }
+
+    def handle_symbol_search(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """自選股輸入名稱（例如「台積電」）找台股代號。數字開頭的輸入（2330、00878、0700.HK）一定是代號，不查名單；
+        英文開頭的（NVDA、AES-KY）可能是美股代號也可能是台股簡稱，照常查，由前端只採用「名稱完全相符」的結果。"""
+        q = str(payload.get("query") or "").strip()[:40]
+        is_ticker = symbol_search.looks_like_ticker(q)
+        if not q or (is_ticker and not q[0].isalpha()):
+            return {"query": q, "matches": [], "is_ticker": is_ticker}
+        return {"query": q, "matches": symbol_search.search(q), "is_ticker": is_ticker}
 
     def handle_indices(self) -> Dict[str, Any]:
         return {"indices": chart_data.indices(), "timestamp": time.strftime("%H:%M:%S")}
@@ -83,14 +92,25 @@ class MarketDataHandlers:
         """產業鏈地圖：全部類股的即時漲跌、各類股底下的產業鏈與結構。"""
         return {**industry_map.overview(), "timestamp": time.strftime("%H:%M:%S")}
 
+    def handle_chain_map_us(self) -> Dict[str, Any]:
+        """美股產業鏈地圖：11 檔類股 ETF 的即時漲跌、各類股底下的產業鏈與結構。"""
+        return {**industry_map.overview("US"), "timestamp": time.strftime("%H:%M:%S")}
+
+    @staticmethod
+    def _chain_market(payload: Dict[str, Any]) -> str:
+        market = str(payload.get("market") or "TW").upper()
+        if market not in industry_map.MARKETS:
+            raise ValueError(f"market 只能是 TW 或 US，收到 {market!r}")
+        return market
+
     def handle_chain_detail(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """產業鏈地圖：一條鏈裡每檔個股的即時報價與環節漲跌。"""
-        return {**industry_map.chain_detail(str(payload.get("id") or "")), "timestamp": time.strftime("%H:%M:%S")}
+        """產業鏈地圖：一條鏈裡每檔個股的即時報價與環節漲跌（payload.market：TW 預設、US）。"""
+        return {**industry_map.chain_detail(str(payload.get("id") or ""), self._chain_market(payload)), "timestamp": time.strftime("%H:%M:%S")}
 
     def handle_chain_history(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """產業鏈地圖：一條鏈最近 N 個交易日的日報酬（回放用）。"""
         days = int(arg_num(payload, "days", 30, "回放天數", integer=True, lo=5, hi=industry_map.HISTORY_MAX_DAYS))
-        return industry_map.chain_history(str(payload.get("id") or ""), days)
+        return industry_map.chain_history(str(payload.get("id") or ""), days, self._chain_market(payload))
 
     def handle_sparks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:40]

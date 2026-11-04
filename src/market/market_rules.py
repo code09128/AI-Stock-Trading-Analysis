@@ -73,7 +73,7 @@ def align_tw_tick(price: float, mode: str = "nearest") -> float:
     else:
         return round(aligned, 1) if aligned % 1 != 0 else float(int(aligned))
 
-BOND_ETF_TAX_FREE_UNTIL = date(2026, 12, 31)  # 債券 ETF 證交稅停徵期限（延長修法三讀後改這裡，前端 ui.jsx 的 twSellTaxRate 也要改）
+BOND_ETF_TAX_FREE_UNTIL = date(2026, 12, 31)  # 債券 ETF 證交稅停徵期限（延長修法三讀後改這裡，前端 ui.tsx 的 twSellTaxRate 也要改）
 
 
 def tw_sell_tax_rate(code: str, on: Optional[date] = None) -> float:

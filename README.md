@@ -102,7 +102,11 @@ cd AI-Stock-Trading-Analysis
 
 用 `start.bat`（或 `python run.py`）開瀏覽器版開發，最方便：
 
-- **改前端（`web/*.jsx`、`index.html`）**：存檔後在瀏覽器按 F5 就生效（原始碼版由瀏覽器即時轉譯 JSX，不用編譯）。
+- **改前端（`web/*.tsx`、`index.html`）**：前端是 ES module（`web/main.tsx` 為進入點），要先用 esbuild 打包成 `web/app.bundle.js`。
+  `start.bat`／`python run.py`／`desktop.py` 啟動時會自動打包（需要 Node.js；原始碼和 bundle 對不上才重打，約 1 秒），改完存檔後**重開 `start.bat`** 或另開終端機跑 `npm run dev`（監看，存檔就重打、未壓縮方便除錯），再按 F5。
+  **`web/app.bundle.js` 要跟原始碼一起 commit**：線上更新只下載 Release 標籤的 `src/` 與 `web/`，沒有它更新後畫面會是空白（舊版更新程式已經發出去，沒辦法改）。
+  發版前執行 `python build_web.py --web`（壓縮版，不要 commit `npm run dev` 產生的除錯版）；`tests/test_packaging.py` 會檢查 bundle 跟原始碼一致。
+  沒有 Node.js 又沒有 bundle 時畫面會是空白，啟動訊息會說明；原始碼有 bundle（從 GitHub 下載的版本）則不需要 Node.js 就能執行。
 - **改後端（`src/*.py`）**：要**關掉黑色視窗、重新開 `start.bat`** 才會載入；只重新整理會看到舊功能或「Route not found」。
 - **只開伺服器、不開瀏覽器**：`python -m src.server.api_server [埠號]`
 - **測試與檢查**：
@@ -110,7 +114,13 @@ cd AI-Stock-Trading-Analysis
   ```bash
   python -m unittest discover tests     # 後端測試（test_integration 會實際連 Yahoo，網路慢時約 1 分鐘，其餘離線）
   npx @biomejs/biome lint web           # 前端語法／無障礙檢查（需要 Node.js）
+  npm install && npm run typecheck      # 前端型別檢查（TypeScript，只在開發時需要；第一次要 npm install）
   ```
+
+- **型別檢查（`tsconfig.json`）**：前端是 `.tsx`，目前用寬鬆模式（`strict` 關閉），檔案之間用 `import`／`export`；全域宣告（React、Tailwind）在 `web/globals.d.ts`。
+  目前 48 個檔案全部都通過檢查，沒有任何 `@ts-nocheck`；新增或修改前端後要維持 `npm run typecheck` 零錯誤，不要用 `@ts-nocheck` 繞過。
+  很多地方用 `any`（biome 的 `noExplicitAny` 已關閉），之後可逐步補成具體型別、再打開 `strict`。`chain_engine.tsx` 的類別欄位是在建構子裡指派的，
+  用同名 `interface` 宣告欄位型別（只給 TypeScript 看，執行時不存在）。打包不做型別檢查（esbuild 只拿掉型別）；打包版執行時不需要 `node_modules`。
 
 - **離線範例資料**：設環境變數 `TRADING_ALLOW_SAMPLE=1`，查不到行情時改用範例資料（預設會直接報錯）。
 - 開發時的資料一樣存在專案的 `data/userdata.json`；要測試又不想動到自己的資料，可以把專案複製一份到別的資料夾再開。
@@ -122,6 +132,12 @@ cd AI-Stock-Trading-Analysis
 - 版本號在 `src/version.py`（`APP_VERSION`，格式 主.次.修）。打包版只會更新到 GitHub 上**正式發布的 Release**，推到 `main` 的開發中修改不會被推給使用者。
 - 打包版每次重新啟動時自動檢查最新 Release，有新版就下載該版本的 `src/`、`web/` 到程式資料夾的 `update/` 並套用；設定頁「版本與線上更新」也能手動檢查與下載。下載後會核對壓縮檔裡的版本號和 Release 一致才套用，`data/` 與 `.env` 不受影響。
 - 原始碼版（有 `.git`）不會被自動覆蓋，有新版時設定頁會提示，請自己 `git pull`。
+- **失敗保護（新版安裝包才有）**：下載後先驗證（所有 `.py` 能編譯、`index.html` 引用的檔案都在，不合格就不套用、目前版本不動）；套用後前端畫面載入完成會回報一次（`POST /api/update/ok`），
+  同一個更新版本連續 3 次啟動都沒有回報，下次啟動自動換回內建版（`update/` 移到 `update_bad/`、版本記進 `update_state.json` 的 `bad`）。壞版本只是被略過，之後更高的版本照常更新，不會因為失敗就再也更新不了。
+  排查時設環境變數 `TRADING_SAFE_MODE=1` 可以這次完全不載入 `update/`。
+- **限制（重要）**：打包版的線上更新只能覆蓋 `web/` 和 `src/` 的**非 `src/server/`** 部分；內建的更新程式（`updater.py`）與 `config.py` 永遠是安裝包內建那份，所以失敗保護、驗證這些功能
+  **只有重新安裝新版安裝包的人才有**，已經發出去的舊版 exe 無法用線上更新補上。新版安裝包會把 `src/server/` 其餘模組（API 路由等）也納入更新；舊版 exe 收到新畫面時，缺少的後端路由
+  （例如 `/api/symbol_search`、`/api/chains/map_us`）會顯示「需要重新安裝新版程式」。
 - 啟動畫面標題下顯示目前版本，載入清單的「檢查更新」會顯示是否有新版與 Release 說明前兩行。
 - **程式內連不上 GitHub 時（手動更新，只有 Windows）**：把 `manual_update.bat`、`manual_update.ps1`（Release 附件或專案根目錄）放到程式安裝資料夾，先結束程式再雙擊 `manual_update.bat`。它用 Windows 的 PowerShell 下載最新 Release，做的事和程式內建更新相同（只放 `src/`、`web/` 到 `update/` 並核對版本號），重開程式即生效。
   - 已知原因：部分電腦「中繼憑證授權單位」留有舊的交叉簽章憑證（USERTrust ECC，簽發者 AAA Certificate Services），Python 驗證 GitHub 憑證鏈時會失敗（`unable to get issuer certificate`），瀏覽器與 PowerShell 不受影響。v1.0.3 起程式遇到這種錯誤會改用只信任根憑證的設定重試；更早的打包版請用手動更新、重新安裝，或自行在 `certmgr.msc` 刪除那張中繼憑證。
@@ -282,10 +298,12 @@ src/
 
 前端 `web/`（React 18 + Tailwind，套件放在 `web/vendor/`，可離線使用）：
 
-- 原始碼執行時由瀏覽器內的 Babel 即時轉譯 JSX，改完重新整理就生效；打包時 `build_web.py` 用 esbuild 預先編譯成 `app.bundle.js`。
-- `app.jsx` 外殼與側邊導覽；`config.jsx`、`ui.jsx`、`charts.jsx`、`live_widgets.jsx`、`markdown.jsx` 共用元件；`sync_store.jsx` 資料同步；`boot_loader.jsx` 啟動預載；`desktop_bridge.jsx` 桌面版關閉確認、畫面縮放與背景工作（postJob）；`ai_store.jsx`、`portfolio_store.jsx` 跨頁狀態
+- ES module：`main.tsx` 依序匯入所有檔案、各檔用 `import`／`export` 互相引用（不再有 `window.TA`）。`bus.tsx` 放執行期才設定的共用函式（`goTab`、`toast`…）。
+  桌面版 `desktop.py` 用 `evaluate_js` 呼叫的三個函式（`flushUserData`、`askClose`、`setDesktopHidden`）在 `main.tsx` 掛在 `window.TA`，名稱不能改（有測試檢查）。
+- 打包：`src/server/web_bundle.py` 用 esbuild 打成 `app.bundle.js`（第一行記錄原始碼雜湊，用來判斷是否過期）；原始碼版啟動時自動打包，`build_web.py`（打包 exe／dmg 用）輸出壓縮版到 `build/web_dist/`。
+- `app.tsx` 外殼與側邊導覽；`config.tsx`、`ui.tsx`、`charts.tsx`、`live_widgets.tsx`、`markdown.tsx` 共用元件；`sync_store.tsx` 資料同步；`boot_loader.tsx` 啟動預載；`desktop_bridge.tsx` 桌面版關閉確認、畫面縮放與背景工作（postJob）；`ai_store.tsx`、`portfolio_store.tsx` 跨頁狀態
 - `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
-- `export_report.jsx`：右上角「匯出報告」的 JSON／Markdown 組裝
+- `export_report.tsx`：右上角「匯出報告」的 JSON／Markdown 組裝
 - `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、industry_chain＋chain_engine（產業鏈地圖與它的 Canvas 畫面引擎）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 

@@ -1,0 +1,20 @@
+{
+  // 只做型別檢查（noEmit）：打包由 esbuild 負責（npm run build），TypeScript 不產出檔案。
+  // 目前是寬鬆模式（strict 關閉）：48 個檔案已全部通過，之後逐步把 strict 相關選項打開、補型別。
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react",
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "allowUmdGlobalAccess": true,
+    "isolatedModules": false,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["web/**/*.tsx", "web/**/*.d.ts"],
+  "exclude": ["web/vendor", "node_modules"]
+}

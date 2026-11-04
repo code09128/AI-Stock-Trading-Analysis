@@ -62,15 +62,10 @@ MAC_BUNDLE_ID = "io.github.code09128.ai-stock-trading"
 
 
 def build_web_dir() -> Path:
-    """前端事先編譯（JSX → app.bundle.js，不帶 Babel）；沒有 Node.js 時退回原始碼版（瀏覽器即時轉譯）。"""
-    try:
-        import build_web
-        return build_web.build()
-    except RuntimeError as e:
-        if "JSX 編譯失敗" in str(e):
-            raise  # 語法錯誤：不要打包出會白屏的版本
-        print(f"  [略過] 前端事先編譯：{e}；改用原始碼版 web/")
-        return WEB_DIR
+    """前端打包（TSX → 壓縮的 app.bundle.js）。前端一定要先打包才能執行，所以沒有 Node.js 或編譯失敗都直接中止，
+    不會產出白屏的版本。"""
+    import build_web
+    return build_web.build()
 
 
 def make_splash_image():

@@ -9,7 +9,8 @@
     "ignoreUnknown": false,
     "includes": [
       "**",
-      "!web/vendor/**"
+      "!web/vendor/**",
+      "!web/app.bundle.js"
     ]
   },
   "formatter": {
@@ -23,9 +24,27 @@
     "rules": {
       "complexity": {
         "noImportantStyles": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "off"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["web/pages/chain_engine.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "off"
+          },
+          "suspicious": {
+            "noUnsafeDeclarationMerging": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single"

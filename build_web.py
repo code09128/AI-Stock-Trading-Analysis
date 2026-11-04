@@ -1,80 +1,65 @@
 """
-前端事先編譯 (build_web.py)：打包前把 web/*.jsx 用 esbuild 轉成一般 JavaScript，合併成 app.bundle.js。
-- 輸出到 build/web_dist/（打包用），原始碼的 web/ 不變：開發時照樣用 Babel 即時轉譯、改完重新整理就生效
-- 打包版不需要 Babel（少 2.9 MB），開頁面也不用再花約 1 秒轉譯
-- 任何 JSX 語法錯誤會讓編譯失敗，壞掉的畫面不會被打包出去
-需要 Node.js（npx）。單獨執行：python build_web.py
+前端打包 (build_web.py)：用 esbuild 把 web/main.tsx 與它匯入的所有 .tsx 打成 app.bundle.js（細節見 src/server/web_bundle.py）。
+  python build_web.py            打包 exe／dmg 前用：壓縮版輸出到 build/web_dist/（build_app.py 會自動呼叫）
+  python build_web.py --web      更新 web/app.bundle.js（要 commit 的那一份；原始碼版啟動時也會自動做）
+  python build_web.py --debug    web/app.bundle.js 改成未壓縮＋sourcemap（除錯用，不要 commit）
+  python build_web.py --watch    監看原始碼，存檔就重新打包 web/app.bundle.js（等同 npm run dev）
+型別直接拿掉、不做型別檢查（型別檢查用 npm run typecheck）；任何語法錯誤會讓編譯失敗，壞掉的畫面不會被打包出去。
+需要 Node.js（npx 或 node_modules 裡的 esbuild）。
 """
 
-import re
 import shutil
-import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
 OUT_DIR = ROOT / "build" / "web_dist"
-ESBUILD = "esbuild@0.24.0"  # 固定版本
-BABEL_TAG = re.compile(r'^\s*<script src="\./vendor/babel\.min\.js"></script>\s*\n', re.M)
-JSX_TAG = re.compile(r'^\s*<script type="text/babel" src="\./([^"]+\.jsx)"></script>\s*\n', re.M)
 
-
-def jsx_order(html: str) -> list:
-    """依 index.html 的載入順序（各檔靠 window.TA 互相引用，順序不能亂）。"""
-    return JSX_TAG.findall(html)
+sys.path.insert(0, str(ROOT))
+from src.server import web_bundle  # noqa: E402
 
 
 def build() -> Path:
-    npx = shutil.which("npx") or shutil.which("npx.cmd")
-    if not npx:
-        raise RuntimeError("找不到 Node.js（npx）。請安裝 Node.js，或改用原始碼方式執行。")
-    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    files = jsx_order(html)
-    if not files:
-        raise RuntimeError("index.html 裡找不到 JSX 檔")
-
     if OUT_DIR.exists():
         shutil.rmtree(OUT_DIR)
-    tmp = OUT_DIR.parent / "web_jsx_tmp"
-    if tmp.exists():
-        shutil.rmtree(tmp)
-
-    # 1. esbuild 只做語法轉換（不打包模組），React 是全域變數 → React.createElement
-    cmd = [npx, "--yes", ESBUILD, *[str(WEB_DIR / f) for f in files], f"--outdir={tmp}", f"--outbase={WEB_DIR}",
-           "--loader:.jsx=jsx", "--jsx=transform", "--target=es2019", "--minify", "--log-level=warning"]
-    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if res.returncode != 0:
-        raise RuntimeError("JSX 編譯失敗：\n" + (res.stderr or res.stdout))
-
-    # 2. 依順序合併；每個檔各自包一層，避免最上層變數名稱互相衝突
-    parts = []
-    for f in files:
-        js = (tmp / f).with_suffix(".js").read_text(encoding="utf-8")
-        parts.append(f"/* {f} */\n;(function(){{\n{js}\n}})();")
-    shutil.rmtree(tmp)
-
-    # 3. 複製其他靜態檔（不含 .jsx 與 Babel），改寫 index.html
-    shutil.copytree(WEB_DIR, OUT_DIR, ignore=shutil.ignore_patterns("*.jsx", "babel.min.js"), dirs_exist_ok=True)
-    (OUT_DIR / "app.bundle.js").write_text("\n".join(parts) + "\n", encoding="utf-8")
-    for d in sorted(OUT_DIR.rglob("*"), reverse=True):  # 移除只放 .jsx 的空資料夾
+    # 其他靜態檔（vendor、index.html）照搬；原始碼、型別宣告、開發時產生的 bundle 與 sourcemap 不帶
+    shutil.copytree(WEB_DIR, OUT_DIR, ignore=shutil.ignore_patterns(
+        "*.tsx", "*.d.ts", "app.bundle.js", "app.bundle.js.map"), dirs_exist_ok=True)
+    try:
+        web_bundle.bundle(WEB_DIR, OUT_DIR / web_bundle.BUNDLE, minify=True, root=ROOT)
+    except web_bundle.BundleError as e:
+        shutil.rmtree(OUT_DIR, ignore_errors=True)
+        raise RuntimeError(str(e)) from e
+    for d in sorted(OUT_DIR.rglob("*"), reverse=True):  # 移除只放原始碼的空資料夾（pages、panels）
         if d.is_dir() and not any(d.iterdir()):
             d.rmdir()
-    out_html = BABEL_TAG.sub("", html)
-    first = True
-
-    def repl(m):
-        nonlocal first
-        if first:
-            first = False
-            return '  <script src="./app.bundle.js"></script>\n'
-        return ""
-
-    out_html = JSX_TAG.sub(repl, out_html)
-    (OUT_DIR / "index.html").write_text(out_html, encoding="utf-8")
-    size_kb = (OUT_DIR / "app.bundle.js").stat().st_size / 1024
-    print(f"  [OK] 前端編譯完成：{len(files)} 個 JSX → app.bundle.js（{size_kb:.0f} KB），輸出 {OUT_DIR}")
+    size_kb = (OUT_DIR / web_bundle.BUNDLE).stat().st_size / 1024
+    n = len(web_bundle.sources(WEB_DIR))
+    print(f"  [OK] 前端編譯完成：{n} 個 TSX → app.bundle.js（{size_kb:.0f} KB），輸出 {OUT_DIR}")
     return OUT_DIR
+
+
+def build_web_bundle(debug: bool = False) -> None:
+    out = WEB_DIR / web_bundle.BUNDLE
+    web_bundle.bundle(WEB_DIR, out, minify=not debug, root=ROOT, sourcemap=debug)
+    print(f"  [OK] {out}（{out.stat().st_size / 1024:.0f} KB{'，未壓縮＋sourcemap：除錯用，不要 commit' if debug else ''}）")
+
+
+def watch(debug: bool = True) -> None:
+    """每秒檢查一次原始碼雜湊，變了就重打。只用標準函式庫（不依賴 esbuild --watch，bundle 開頭的雜湊才會一致）。"""
+    last = None
+    print("監看前端原始碼中（Ctrl+C 結束）…")
+    while True:
+        cur = web_bundle.sources_hash(WEB_DIR)
+        if cur != last:
+            last = cur
+            try:
+                build_web_bundle(debug=debug)
+            except web_bundle.BundleError as e:
+                print(f"  [失敗] {e}")
+        time.sleep(1)
 
 
 if __name__ == "__main__":
@@ -82,4 +67,16 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    build()
+    args = sys.argv[1:]
+    try:
+        if "--watch" in args:
+            watch(debug="--minify" not in args)
+        elif "--web" in args or "--debug" in args:
+            build_web_bundle(debug="--debug" in args)
+        else:
+            build()
+    except (web_bundle.BundleError, RuntimeError) as e:
+        print(e)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        pass

@@ -203,6 +203,69 @@ class ChainHistoryTests(unittest.TestCase):
         self.assertEqual(h["dates"], [])
 
 
+class UsChainTests(unittest.TestCase):
+    """美股產業鏈：資料結構、不跟台股混在一起、類股 ETF 漲跌與成交金額（單位是股，不乘 1000）。"""
+
+    def setUp(self):
+        im._CACHE.clear()
+
+    def test_real_us_definition_is_valid_and_ids_do_not_clash(self):
+        from src.market import chain_data_us as us
+        self.assertEqual(im.validate(market="US"), [])
+        self.assertFalse({c["id"] for c in us.CHAINS} & {c["id"] for c in chain_data.CHAINS})
+        self.assertEqual(set(us.SECTOR_ETF), {n for col in us.LAYOUT for n in col})  # 每個類股都有代表它的 ETF
+        for c in us.CHAINS:
+            used = {n["id"] for n in c["nodes"]}
+            linked = {x for e in c["edges"] for x in e}
+            self.assertEqual(used - linked, set(), f"{c['id']} 有孤立環節")
+
+    def test_us_code_format_and_tw_code_not_accepted(self):
+        bad = _chain(nodes=[{"id": "a", "name": "A", "stage": 0, "stocks": [("2330", "台積電")]},
+                            {"id": "b", "name": "B", "stage": 1, "stocks": [("BRK-B", "波克夏")]}])
+        self.assertIn("代號格式不對：2330", "；".join(im.validate([bad], [["半導體"]], [], market="US")))
+        ok = _chain(nodes=[{"id": "a", "name": "A", "stage": 0, "stocks": [("NVDA", "輝達")]},
+                           {"id": "b", "name": "B", "stage": 1, "stocks": [("BRK-B", "波克夏")]}])
+        self.assertEqual(im.validate([ok], [["半導體"]], [], market="US"), [])
+        self.assertIn("代號格式不對：NVDA", "；".join(im.validate([ok], [["半導體"]], [], market="TW")))
+
+    def test_unknown_market_is_a_user_error(self):
+        h = MarketDataHandlers()
+        with self.assertRaises(ValueError):
+            h.handle_chain_detail({"id": "us_semi", "market": "JP"})
+        with self.assertRaises(ValueError):
+            im.get_chain("semi", "US")  # 台股的鏈代號在美股查不到
+
+    def test_overview_uses_sector_etf_quotes(self):
+        def fake(symbols, names):
+            return [{"symbol": s, "is_live": s != "XLE", "change_pct": 1.5 if s == "XLK" else -0.5, "price": 100.0,
+                     "volume": 1000.0, "quote_time": "2026-11-04 10:00:00"} for s in symbols]
+        with patch.object(im.qp, "get_quotes", side_effect=fake):
+            d = im.overview("US")
+        hubs = {h["name"]: h for h in d["hubs"]}
+        self.assertEqual(d["market"], "US")
+        self.assertEqual((hubs["科技"]["change_pct"], hubs["科技"]["source"]), (1.5, "live"))
+        self.assertIsNone(hubs["能源"]["change_pct"])  # 沒有即時報價：None，不補 0
+        self.assertEqual(hubs["科技"]["chains"], ["us_semi", "us_ai"])
+        self.assertAlmostEqual(sum(h["turnover_share_pct"] or 0 for h in d["hubs"]), 100, delta=1)
+        self.assertEqual(d["errors"], [])
+
+    def test_overview_reports_when_all_etfs_fail(self):
+        with patch.object(im.qp, "get_quotes", side_effect=lambda s, n: [{"symbol": x, "is_live": False} for x in s]):
+            d = im.overview("US")
+        self.assertTrue(d["errors"])
+
+    def test_detail_turnover_is_in_shares_and_cache_is_per_market(self):
+        qs = {"NVDA": {"symbol": "NVDA", "is_live": True, "price": 100.0, "volume": 2000.0, "change_pct": 2.0, "name": "NVIDIA", "quote_time": "t"},
+              "AMD": {"symbol": "AMD", "is_live": True, "price": 50.0, "volume": 1000.0, "change_pct": -1.0, "name": "AMD", "quote_time": "t"}}
+        with patch.object(im.qp, "get_quotes", side_effect=lambda s, n: [qs.get(x) for x in s]):
+            d = im.chain_detail("us_semi", "US")
+        self.assertEqual(d["stocks"]["NVDA"]["turnover"], 200000)
+        design = d["nodes"]["design"]
+        self.assertEqual(design["change_pct"], round((2.0 * 200000 - 1.0 * 50000) / 250000, 2))
+        self.assertEqual((design["n_ok"], design["n_total"]), (2, 6))
+        self.assertIn("Yahoo", d["source"])
+
+
 class RealDataQualityTests(unittest.TestCase):
     """真實的 chain_data.py 的品質守門（離線）：補新鏈時最容易漏的地方。"""
 

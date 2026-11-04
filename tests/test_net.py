@@ -110,6 +110,20 @@ class PoliteLimitTests(unittest.TestCase):
         for n, w in enumerate(waits, 1):
             self.assertAlmostEqual(w, n * gap, delta=0.05)
 
+    def test_queue_longer_than_limit_times_out_without_growing(self):
+        from unittest.mock import patch
+        net = self.net
+        with patch.object(net.time, "sleep"):
+            while True:
+                try:
+                    net._polite_before(self.HOST)
+                except TimeoutError:
+                    break
+        nxt = net._POLITE[self.HOST]["next"]
+        with self.assertRaises(TimeoutError):
+            net._polite_before(self.HOST)
+        self.assertEqual(net._POLITE[self.HOST]["next"], nxt)  # 被拒的請求不會再把隊伍加長
+
     def test_unlisted_host_is_not_limited(self):
         self.net._polite_before("query1.finance.yahoo.com")
         self.assertNotIn("query1.finance.yahoo.com", self.net._POLITE)

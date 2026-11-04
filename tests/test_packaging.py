@@ -86,15 +86,77 @@ class PackagingPathTests(unittest.TestCase):
 
 
 class WebBuildTests(unittest.TestCase):
-    """前端事先編譯：index.html 的 JSX 清單要完整且檔案存在（esbuild 本身需要 Node，打包時才跑）。"""
+    """前端打包：進入點要匯入每個 .tsx；Python 呼叫頁面的介面（window.TA）要存在；自動打包的判斷邏輯。esbuild 本身需要 Node，不在這裡跑。"""
 
-    def test_jsx_order_matches_files(self):
+    def setUp(self):
         import build_web
-        html = (build_web.WEB_DIR / "index.html").read_text(encoding="utf-8")
-        files = build_web.jsx_order(html)
-        self.assertGreaterEqual(len(files), 20)
-        self.assertEqual(files[-1], "app.jsx")  # 外殼最後載入
-        for f in files:
-            self.assertTrue((build_web.WEB_DIR / f).exists(), f)
-        on_disk = {p.relative_to(build_web.WEB_DIR).as_posix() for p in build_web.WEB_DIR.rglob("*.jsx")}
-        self.assertEqual(on_disk - set(files), set(), "有 JSX 檔沒被 index.html 載入")
+        self.web = build_web.WEB_DIR
+
+    def test_entry_imports_every_tsx_and_app_is_last(self):
+        import re
+        main = (self.web / "main.tsx").read_text(encoding="utf-8")
+        imported = re.findall(r"^import '\./([^']+)';", main, re.M)
+        self.assertEqual(imported[-1], "app")  # 外殼最後載入
+        on_disk = {p.relative_to(self.web).with_suffix("").as_posix() for p in self.web.rglob("*.tsx")}
+        self.assertEqual(on_disk - set(imported) - {"main", "bus"}, set(), "有 TSX 檔沒被 main.tsx 匯入")
+        for f in imported:
+            self.assertTrue((self.web / f"{f}.tsx").exists(), f)
+
+    def test_index_html_loads_bundle_not_babel_or_sources(self):
+        import re
+        html = re.sub(r"<!--.*?-->", "", (self.web / "index.html").read_text(encoding="utf-8"), flags=re.S)  # 註解裡會提到 .tsx
+        self.assertIn('src="./app.bundle.js"', html)
+        self.assertNotIn("babel", html.lower())
+        self.assertNotIn(".tsx", html)
+
+    def test_no_window_ta_registry_left_except_desktop_interface(self):
+        import re
+        for p in self.web.rglob("*.tsx"):
+            code = re.sub(r"//[^\n]*", "", p.read_text(encoding="utf-8"))
+            if p.name != "main.tsx":
+                self.assertNotIn("window.TA", code, p.name)
+
+    def test_desktop_py_calls_exist_on_window_ta(self):
+        """desktop.py 用 evaluate_js 呼叫 window.TA.xxx：頁面沒有提供就會悄悄失效（例如關視窗前沒有存檔）。"""
+        import re
+        used = set(re.findall(r"window\.TA\.(\w+)", (Path(__file__).resolve().parent.parent / "desktop.py").read_text(encoding="utf-8")))
+        main = (self.web / "main.tsx").read_text(encoding="utf-8")
+        exposed = set(re.findall(r"\w+", re.search(r"window\.TA = \{([^}]*)\}", main).group(1)))
+        self.assertEqual(used - exposed, set(), f"desktop.py 用到但 main.tsx 沒提供：{used - exposed}")
+
+    def test_committed_bundle_matches_sources(self):
+        """線上更新只下載 Release 標籤的 src/ 與 web/：web/app.bundle.js 沒跟原始碼一起 commit 或已經過期，更新後的畫面就是空白。
+        失敗時執行：python build_web.py --web（或啟動一次 start.bat），再把 web/app.bundle.js 一起 commit。"""
+        from src.server import web_bundle as wb
+        self.assertTrue((self.web / wb.BUNDLE).exists(), "web/app.bundle.js 不存在")
+        self.assertEqual(wb.bundle_hash(self.web), wb.sources_hash(self.web),
+                         "web/app.bundle.js 已過期：請執行 python build_web.py --web 後一起 commit")
+
+    def test_sources_hash_ignores_line_endings_and_detects_changes(self):
+        import tempfile
+        from src.server import web_bundle as wb
+        with tempfile.TemporaryDirectory() as d:
+            web = Path(d)
+            (web / "a.tsx").write_bytes(b"line1\r\nline2\r\n")
+            crlf = wb.sources_hash(web)
+            (web / "a.tsx").write_bytes(b"line1\nline2\n")
+            self.assertEqual(wb.sources_hash(web), crlf)  # 解壓縮／換行轉換不能讓 bundle 變成「過期」
+            (web / "a.tsx").write_bytes(b"line1\nline3\n")
+            self.assertNotEqual(wb.sources_hash(web), crlf)
+
+    def test_ensure_noop_when_packaged_or_fresh_and_reports_when_node_missing(self):
+        import tempfile
+        from unittest.mock import patch
+        from src.server import web_bundle as wb
+        with tempfile.TemporaryDirectory() as d:
+            web = Path(d)
+            self.assertEqual(wb.ensure_dev_bundle(web), "")  # 沒有 main.tsx＝打包版：什麼都不做
+            (web / "main.tsx").write_text("x", encoding="utf-8")
+            with patch.object(wb, "_esbuild_cmd", return_value=None):
+                self.assertIn("空白", wb.ensure_dev_bundle(web))  # 沒有 bundle 也沒有 Node：說明畫面會空白
+                (web / wb.BUNDLE).write_text(f"/* src-hash: {wb.sources_hash(web)} */\nold", encoding="utf-8")
+                self.assertEqual(wb.ensure_dev_bundle(web), "")  # 雜湊一致：不打包、不需要 Node
+                (web / "main.tsx").write_text("y", encoding="utf-8")
+                self.assertIn("舊版", wb.ensure_dev_bundle(web))  # 原始碼變了、沒有 Node：沿用舊 bundle 並提醒
+                with patch.object(wb.sys, "frozen", True, create=True):
+                    self.assertEqual(wb.ensure_dev_bundle(web), "")  # 打包版（frozen）永遠不打包

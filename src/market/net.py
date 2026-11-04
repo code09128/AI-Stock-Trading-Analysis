@@ -111,6 +111,8 @@ def _polite_before(host: str) -> None:
         if now < st["until"]:
             raise HostBlocked(f"{host} 先前拒絕連線，暫停查詢 {int(st['until'] - now) + 1} 秒以免被當成攻擊")
         start = max(now, st["next"])
+        if start - now > SLOT_WAIT_SEC:  # 排隊太長：跟 host_slot 一樣直接當逾時，不讓呼叫端卡住，也不再加長隊伍
+            raise TimeoutError(f"{host} 排隊超過 {SLOT_WAIT_SEC} 秒")
         st["next"] = start + gap
     if start > now:
         time.sleep(start - now)

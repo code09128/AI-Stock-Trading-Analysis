@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 import re
 
-from src.market import chain_data, etf_data, market_board
+from src.market import chain_data, chain_data_us, etf_data, market_board
 from src.market import quote_provider as qp
 from src.market.cache import TTLCache
 from src.market.data_adapter import DualMarketDataAdapter
@@ -22,15 +22,26 @@ DETAIL_TTL = 20
 HISTORY_TTL = 600
 HISTORY_MAX_DAYS = 60
 CODE_RE = re.compile(r"^\d{4,6}[A-Z]?$")
+US_CODE_RE = re.compile(r"^[A-Z]{1,5}(-[A-Z])?$")  # NVDA、BRK-B
+MARKETS = ("TW", "US")
+
+
+def _data(market: str):
+    """該市場的資料定義模組（chain_data／chain_data_us）。"""
+    if market not in MARKETS:
+        raise ValueError(f"不支援的市場：{market!r}")
+    return chain_data_us if market == "US" else chain_data
 _CACHE = TTLCache()
 
 
 def validate(chains: Optional[List[Dict[str, Any]]] = None, layout: Optional[List[List[str]]] = None,
-             links: Optional[List[Any]] = None) -> List[str]:
-    """離線檢查資料定義，回傳問題清單（空＝沒問題）。改 chain_data.py 後由測試呼叫。"""
-    chains = chain_data.CHAINS if chains is None else chains
-    layout = chain_data.LAYOUT if layout is None else layout
-    links = chain_data.LINKS if links is None else links
+             links: Optional[List[Any]] = None, market: str = "TW") -> List[str]:
+    """離線檢查資料定義，回傳問題清單（空＝沒問題）。改 chain_data.py／chain_data_us.py 後由測試呼叫。"""
+    data = _data(market)
+    code_re = US_CODE_RE if market == "US" else CODE_RE
+    chains = data.CHAINS if chains is None else chains
+    layout = data.LAYOUT if layout is None else layout
+    links = data.LINKS if links is None else links
     problems: List[str] = []
     sectors = [n for col in layout for n in col]
     if len(set(sectors)) != len(sectors):
@@ -69,7 +80,7 @@ def validate(chains: Optional[List[Dict[str, Any]]] = None, layout: Optional[Lis
             if not codes:
                 problems.append(f"{cid}/{nid}：沒有個股")
             for code in codes:
-                if not CODE_RE.match(str(code)):
+                if not code_re.match(str(code)):
                     problems.append(f"{cid}/{nid}：代號格式不對：{code}")
             if len(set(codes)) != len(codes):
                 problems.append(f"{cid}/{nid}：同一環節有重複的個股")
@@ -84,12 +95,12 @@ def validate(chains: Optional[List[Dict[str, Any]]] = None, layout: Optional[Lis
     return problems
 
 
-def _definition() -> Dict[str, Any]:
-    problems = validate()
+def _definition(market: str = "TW") -> Dict[str, Any]:
+    problems = validate(market=market)
     if problems:
-        raise ValueError("產業鏈資料有誤（src/market/chain_data.py）：" + "；".join(problems[:5]))
+        raise ValueError("產業鏈資料有誤（src/market/chain_data*.py）：" + "；".join(problems[:5]))
     chains = []
-    for c in chain_data.CHAINS:
+    for c in _data(market).CHAINS:
         chains.append({
             "id": c["id"], "name": c["name"], "sector": c["sector"], "blurb": c.get("blurb", ""), "stages": list(c["stages"]),
             "nodes": [{"id": n["id"], "name": n["name"], "stage": n["stage"],
@@ -99,8 +110,8 @@ def _definition() -> Dict[str, Any]:
     return {"chains": chains}
 
 
-def get_chain(chain_id: str) -> Dict[str, Any]:
-    for c in _definition()["chains"]:
+def get_chain(chain_id: str, market: str = "TW") -> Dict[str, Any]:
+    for c in _definition(market)["chains"]:
         if c["id"] == chain_id:
             return c
     raise ValueError(f"沒有這條產業鏈：{chain_id!r}")
@@ -116,7 +127,10 @@ def _codes(chain: Dict[str, Any]) -> Dict[str, str]:
 
 
 # ---------- 全景 ----------
-def overview() -> Dict[str, Any]:
+def overview(market: str = "TW") -> Dict[str, Any]:
+    if market == "US":
+        return _overview_us()
+
     def load():
         d = _definition()
         errors: List[str] = []
@@ -150,13 +164,52 @@ def overview() -> Dict[str, Any]:
                     hub.update(change_pct=dv["change_pct"], source="daily", as_of=daily.get("date"))
                 hubs.append(hub)
         return {
-            "version": chain_data.VERSION, "columns": list(chain_data.COLUMNS), "hubs": hubs,
+            "version": chain_data.VERSION, "market": "TW", "columns": list(chain_data.COLUMNS), "hubs": hubs,
             "links": [list(x) for x in chain_data.LINKS], "chains": d["chains"], "daily_date": daily.get("date"),
             "errors": errors,
             "source": "漲跌：證交所 MIS 即時類股指數（沒有的類股用證交所盤後資料）；成交比重：證交所 BFIAMU；"
                       "產業鏈分類為自行整理的示意，不是官方資料",
         }
     return _CACHE.get_or_load("overview", load, OVERVIEW_TTL, on_error="raise")
+
+
+def _overview_us() -> Dict[str, Any]:
+    """美股全景：11 檔 SPDR 類股 ETF 的 Yahoo 即時報價當類股漲跌；成交比重＝ETF 成交金額占 11 檔合計。"""
+    def load():
+        data = chain_data_us
+        d = _definition("US")
+        etfs = list(data.SECTOR_ETF.values())
+        quotes = qp.get_quotes(etfs, {})
+        by_sym = {q["symbol"]: q for q in quotes if q}
+        errors: List[str] = []
+        money = {}
+        for name, etf in data.SECTOR_ETF.items():
+            q = by_sym.get(etf) or {}
+            if q.get("price") and q.get("volume"):
+                money[name] = q["price"] * q["volume"]
+        total = sum(money.values())
+        by_sector: Dict[str, List[str]] = {}
+        for c in d["chains"]:
+            by_sector.setdefault(c["sector"], []).append(c["id"])
+        hubs = []
+        for col, names in enumerate(data.LAYOUT):
+            for order, name in enumerate(names):
+                q = by_sym.get(data.SECTOR_ETF.get(name, "")) or {}
+                ok = bool(q.get("is_live")) and q.get("change_pct") is not None
+                hub = {"name": name, "col": col, "order": order, "change_pct": q.get("change_pct") if ok else None,
+                       "source": "live" if ok else None, "as_of": q.get("quote_time") if ok else None,
+                       "turnover_share_pct": round(money[name] / total * 100, 1) if name in money and total else None,
+                       "chains": by_sector.get(name, [])}
+                hubs.append(hub)
+        if not any(h["source"] for h in hubs):
+            errors.append("類股 ETF 都沒有取得報價（可能連線失敗）")
+        return {
+            "version": data.VERSION, "market": "US", "columns": list(data.COLUMNS), "hubs": hubs,
+            "links": [list(x) for x in data.LINKS], "chains": d["chains"], "daily_date": None, "errors": errors,
+            "source": "漲跌：Yahoo Finance 的 SPDR 類股 ETF（XLK、XLF…）即時報價，休市時是最近一個交易日；成交比重＝11 檔 ETF 成交金額占比；"
+                      "產業鏈分類為自行整理的示意，不是官方資料",
+        }
+    return _CACHE.get_or_load("overview:US", load, OVERVIEW_TTL, on_error="raise")
 
 
 # ---------- 單一產業鏈：即時報價 ----------
@@ -170,8 +223,9 @@ def _weighted(items: List[Dict[str, Any]]) -> Optional[float]:
     return round(sum(i["change_pct"] * w for i, w in zip(items, ws)) / sum(ws), 2)
 
 
-def chain_detail(chain_id: str) -> Dict[str, Any]:
-    chain = get_chain(chain_id)
+def chain_detail(chain_id: str, market: str = "TW") -> Dict[str, Any]:
+    chain = get_chain(chain_id, market)
+    unit = 1 if market == "US" else 1000  # 台股成交量是「張」（1000 股），美股是股
 
     def load():
         codes = _codes(chain)
@@ -184,7 +238,7 @@ def chain_detail(chain_id: str) -> Dict[str, Any]:
             stocks[code] = {
                 "code": code, "name": q.get("name") if q.get("name") and q.get("name") != code else codes[code],
                 "price": price, "change_pct": q.get("change_pct") if ok else None, "volume": vol,
-                "turnover": round(price * vol * 1000) if ok and price and vol else None,  # 張 → 股，單位元
+                "turnover": round(price * vol * unit) if ok and price and vol else None,  # 台股張 → 股；單位為當地幣別
                 "quote_time": q.get("quote_time") or "", "ok": ok, "error": None if ok else (q.get("error") or "沒有報價"),
             }
         nodes = {}
@@ -199,14 +253,15 @@ def chain_detail(chain_id: str) -> Dict[str, Any]:
             "summary": {"change_pct": _weighted(uniq), "n_ok": len(uniq), "n_total": len(stocks)},
             "as_of": times[-1] if times else None,
             "error": None if uniq else "這條產業鏈的個股都沒有取得報價（可能休市或連線失敗）",
-            "source": "證交所 MIS 即時行情（約延遲 5 秒）；環節漲跌＝環節內個股以成交值加權平均",
+            "source": ("Yahoo Finance 即時報價（美股盤中約延遲 0～5 秒，休市時是最近一個交易日）" if market == "US" else "證交所 MIS 即時行情（約延遲 5 秒）")
+                      + "；環節漲跌＝環節內個股以成交值加權平均",
         }
-    return _CACHE.get_or_load(f"detail:{chain_id}", load, DETAIL_TTL, on_error="raise")
+    return _CACHE.get_or_load(f"detail:{market}:{chain_id}", load, DETAIL_TTL, on_error="raise")
 
 
 # ---------- 單一產業鏈：回放 ----------
-def chain_history(chain_id: str, days: int = 30) -> Dict[str, Any]:
-    chain = get_chain(chain_id)
+def chain_history(chain_id: str, days: int = 30, market: str = "TW") -> Dict[str, Any]:
+    chain = get_chain(chain_id, market)
     days = max(5, min(int(days), HISTORY_MAX_DAYS))
 
     def load():
@@ -247,4 +302,4 @@ def chain_history(chain_id: str, days: int = 30) -> Dict[str, Any]:
         return {"id": chain_id, "dates": dates[1:], "stocks": stocks, "nodes": nodes,
                 "missing": [c for c in codes if c not in stocks], "error": None,
                 "source": "Yahoo Finance 日 K 收盤價；環節＝環節內個股等權平均"}
-    return _CACHE.get_or_load(f"history:{chain_id}:{days}", load, HISTORY_TTL, on_error="raise")
+    return _CACHE.get_or_load(f"history:{market}:{chain_id}:{days}", load, HISTORY_TTL, on_error="raise")

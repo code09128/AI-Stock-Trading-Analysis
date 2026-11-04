@@ -7,7 +7,7 @@
   <title>股票交易分析系統</title>
   <link rel="icon" type="image/svg+xml"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230ea5e9'/%3E%3Cstop offset='1' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='url(%23g)'/%3E%3Cg stroke='white' stroke-width='2' stroke-linecap='round' fill='none'%3E%3Cpath d='M12 6v4M12 22v3M21 5v3M21 18v4'/%3E%3Crect x='9.5' y='10' width='5' height='12' rx='1' fill='white'/%3E%3Crect x='18.5' y='8' width='5' height='10' rx='1'/%3E%3C/g%3E%3C/svg%3E">
-  <!-- 第三方套件放在 web/vendor（固定版本：Tailwind 3.4.17、React 18.3.1、Babel 7.26.4），離線也能開；字型離線時改用系統字型 -->
+  <!-- 第三方套件放在 web/vendor（固定版本：Tailwind 3.4.17、React 18.3.1、esbuild 打包），離線也能開；字型離線時改用系統字型 -->
   <script src="./vendor/tailwindcss-3.4.17.js"></script>
   <script>
     // 主題：中性深灰底、單一藍色強調色；漲跌維持台股紅漲綠跌（rose / emerald），amber 只用於警示
@@ -31,7 +31,6 @@
   </script>
   <script src="./vendor/react.production.min.js"></script>
   <script src="./vendor/react-dom.production.min.js"></script>
-  <script src="./vendor/babel.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- 字型不擋畫面：先用系統字型顯示，下載完再換（離線時也不會卡住啟動） -->
@@ -166,54 +165,8 @@
     <div class="sp-msg" id="splash-msg">正在載入介面…</div>
   </div><!--/splash--></div>
 
-  <script type="text/babel" src="./sync_store.jsx"></script>
-  <script type="text/babel" src="./config.jsx"></script>
-  <script type="text/babel" src="./charts.jsx"></script>
-  <script type="text/babel" src="./panels/technical_parts.jsx"></script>
-  <script type="text/babel" src="./panels/technical.jsx"></script>
-  <script type="text/babel" src="./panels/news.jsx"></script>
-  <script type="text/babel" src="./panels/backtest_parts.jsx"></script>
-  <script type="text/babel" src="./panels/backtest_verify.jsx"></script>
-  <script type="text/babel" src="./panels/backtest_tools.jsx"></script>
-  <script type="text/babel" src="./panels/backtest_replay.jsx"></script>
-  <script type="text/babel" src="./panels/backtest_portfolio.jsx"></script>
-  <script type="text/babel" src="./panels/backtest_custom.jsx"></script>
-  <script type="text/babel" src="./panels/backtest.jsx"></script>
-  <script type="text/babel" src="./panels/portfolio.jsx"></script>
-  <script type="text/babel" src="./panels/journal.jsx"></script>
-  <script type="text/babel" src="./panels/selftest.jsx"></script>
-  <script type="text/babel" src="./ui.jsx"></script>
-  <script type="text/babel" src="./activity_log.jsx"></script>
-  <script type="text/babel" src="./markdown.jsx"></script>
-  <script type="text/babel" src="./ai_store.jsx"></script>
-  <script type="text/babel" src="./portfolio_store.jsx"></script>
-  <script type="text/babel" src="./live_widgets.jsx"></script>
-  <script type="text/babel" src="./pages/watch_parts.jsx"></script>
-  <script type="text/babel" src="./pages/overview_alerts.jsx"></script>
-  <script type="text/babel" src="./pages/stock_info_panel.jsx"></script>
-  <script type="text/babel" src="./pages/order_panel.jsx"></script>
-  <script type="text/babel" src="./pages/holdings_panel.jsx"></script>
-  <script type="text/babel" src="./pages/heatmap.jsx"></script>
-  <script type="text/babel" src="./pages/watch.jsx"></script>
-  <script type="text/babel" src="./pages/market_board.jsx"></script>
-  <script type="text/babel" src="./pages/chain_engine.jsx"></script>
-  <script type="text/babel" src="./pages/industry_chain.jsx"></script>
-  <script type="text/babel" src="./pages/multi_chart.jsx"></script>
-  <script type="text/babel" src="./pages/savings_plan.jsx"></script>
-  <script type="text/babel" src="./pages/savings_portfolio.jsx"></script>
-  <script type="text/babel" src="./pages/candle_guide.jsx"></script>
-  <script type="text/babel" src="./pages/strategy_guide.jsx"></script>
-  <script type="text/babel" src="./pages/settings_monitor.jsx"></script>
-  <script type="text/babel" src="./pages/settings_keys.jsx"></script>
-  <script type="text/babel" src="./pages/settings_ai.jsx"></script>
-  <script type="text/babel" src="./pages/settings_background.jsx"></script>
-  <script type="text/babel" src="./pages/settings.jsx"></script>
-  <script type="text/babel" src="./pages/tour.jsx"></script>
-  <script type="text/babel" src="./pages/guide.jsx"></script>
-  <script type="text/babel" src="./boot_loader.jsx"></script>
-  <script type="text/babel" src="./desktop_bridge.jsx"></script>
-  <script type="text/babel" src="./export_report.jsx"></script>
-  <script type="text/babel" src="./app.jsx"></script>
+  <!-- 前端程式（web/main.tsx 與其匯入的所有 .tsx）由 esbuild 打包成這一個檔案：原始碼版啟動時自動打包（見 README），打包版直接內建 -->
+  <script src="./app.bundle.js"></script>
 </body>
 
 </html>
