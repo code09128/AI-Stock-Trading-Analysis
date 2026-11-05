@@ -247,6 +247,113 @@ function DetailPanel({ view, map, hubMap, det, hist, replay, market, onNode, onC
   );
 }
 
+// ---- 搜尋產業：輸入名稱 → 候選清單 → 鏡頭飛過去 ----
+type Hit = { label: string; kind: 'sector' | 'chain' | 'node' | 'stock'; sector: string; chain?: string; node?: string; sub: string };
+const KIND_LABEL = { sector: '產業別', chain: '產業鏈', node: '環節', stock: '個股' };
+const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+
+function buildIndex(map): Hit[] {
+  const out: Hit[] = [];
+  for (const h of map.hubs) out.push({ label: h.name, kind: 'sector', sector: h.name, sub: h.chains.length ? `${h.chains.length} 條產業鏈` : '尚無產業鏈' });
+  for (const c of map.chains) {
+    out.push({ label: c.name, kind: 'chain', sector: c.sector, chain: c.id, sub: c.sector });
+    for (const n of c.nodes) {
+      out.push({ label: n.name, kind: 'node', sector: c.sector, chain: c.id, node: n.id, sub: `${c.name}・${c.stages[n.stage]}` });
+      for (const s of n.stocks) out.push({ label: `${s.code} ${s.name}`, kind: 'stock', sector: c.sector, chain: c.id, node: n.id, sub: `${c.name}・${n.name}` });
+    }
+  }
+  return out;
+}
+
+function searchHits(index: Hit[], q: string): Hit[] {
+  const k = norm(q);
+  if (!k) return [];
+  const order = { sector: 0, chain: 1, node: 2, stock: 3 };
+  return index
+    .map((h) => {
+      const t = norm(h.label);
+      return { h, s: t === k ? 0 : t.startsWith(k) ? 1 : t.includes(k) ? 2 : 9 };
+    })
+    .filter((x) => x.s < 9)
+    .sort((a, b) => a.s - b.s || order[a.h.kind] - order[b.h.kind])
+    .slice(0, 8)
+    .map((x) => x.h);
+}
+
+function ChainSearch({ map, onPick }: { map: any; onPick: (h: Hit) => void }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const index = useMemo(() => (map ? buildIndex(map) : []), [map]);
+  const hits = useMemo(() => searchHits(index, q), [index, q]);
+  const pick = (h: Hit) => {
+    onPick(h);
+    setQ('');
+    setOpen(false);
+    setIdx(0);
+  };
+  const listId = 'chain-search-list';
+  return (
+    <div className="relative">
+      <input
+        type="search"
+        value={q}
+        disabled={!map}
+        placeholder="搜尋產業、環節或個股（半導體、2330）"
+        aria-label="搜尋產業並前往"
+        role="combobox"
+        aria-expanded={open && q.trim() !== ''}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        autoComplete="off"
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+          setIdx(0);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (hits.length) setIdx((i) => (i + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length);
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (hits[idx]) pick(hits[idx]);
+          } else if (e.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
+        className="w-56 px-2.5 py-1 text-xs rounded-lg bg-slate-900/80 border border-slate-700/70 text-slate-100 placeholder:text-slate-500 outline-none focus:border-cyan-400"
+      />
+      {open && q.trim() !== '' && (
+        <div id={listId} role="listbox" className={`${PANEL} absolute left-0 top-9 w-64 p-1 z-20`}>
+          {hits.length === 0 && <div className="px-2 py-1.5 text-xs text-slate-400">找不到「{q.trim()}」，試試產業別或產業鏈名稱</div>}
+          {hits.map((h, i) => (
+            <div
+              key={`${h.kind}-${h.chain || ''}-${h.node || h.label}`}
+              role="option"
+              aria-selected={i === idx}
+              tabIndex={-1}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 不要讓輸入框先失焦、清單先收起來
+                pick(h);
+              }}
+              onMouseEnter={() => setIdx(i)}
+              className={`flex items-center justify-between gap-2 px-2 py-1 rounded-md text-[13px] cursor-pointer ${i === idx ? 'bg-cyan-500/20' : ''}`}
+            >
+              <span className="truncate text-slate-100">{h.label}</span>
+              <span className="text-[10px] text-slate-400 shrink-0">
+                {KIND_LABEL[h.kind]}・{h.sub}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 滑鼠移動時只重繪這個小元件，不牽動整個頁面
 function HoverTip({ apiRef }) {
   const [h, setH] = useState(null);
@@ -424,6 +531,38 @@ function IndustryChainPage() {
     return undefined;
   };
 
+  // 搜尋後的導覽：先回全景對準該產業（擴散波）→ 鏡頭推進產業鏈 → 再推進到環節。每一步都用引擎既有的鏡頭補間
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [trip, setTrip] = useState('');
+  const clearTimers = () => {
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
+  };
+  useEffect(() => clearTimers, []);
+  const flyTo = (h: Hit) => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    clearTimers();
+    const later = (fn: () => void, ms: number) => timers.current.push(setTimeout(fn, ms));
+    const fromDeep = viewRef.current.state !== 'overview';
+    const t1 = fromDeep ? 1000 : 400; // 從產業鏈內部出發要先等鏡頭拉回全景
+    setReplay({ on: false, day: 0, cum: false, playing: false });
+    setTrip(h.kind === 'sector' ? h.label : h.kind === 'chain' ? (h.sector === h.label ? h.label : `${h.sector} › ${h.label}`) : `${h.sub.replace('・', ' › ')} › ${h.label}`);
+    eng.go({ state: 'overview', sector: h.sector });
+    later(() => eng.ping('hub', h.sector), t1);
+    if (h.kind !== 'sector') {
+      const chain = h.chain as string;
+      later(() => eng.go({ state: 'chain', chain }), t1 + 600);
+      if (h.node) {
+        later(() => eng.go({ state: 'node', chain, node: h.node }), t1 + 600 + 1300);
+        later(() => eng.ping('node', h.node as string), t1 + 600 + 1300 + 700);
+      }
+    }
+    later(() => setTrip(''), t1 + 600 + (h.node ? 2000 : 1100) + 400);
+  };
+
   const goChain = (id) => engineRef.current?.go({ state: 'chain', chain: id });
   const goNode = (id) => engineRef.current?.go({ state: 'node', chain: chainId, node: id });
   const clickSector = (h) => (h.chains.length ? goChain(h.chains[0]) : engineRef.current?.go({ state: 'overview', sector: h.name }));
@@ -453,8 +592,8 @@ function IndustryChainPage() {
         />
 
         {/* 上方：產業鏈切換與工具 */}
-        <div className="absolute left-3 right-3 top-3 flex flex-wrap items-center gap-2 pointer-events-none">
-          <div className={`${PANEL} px-2 py-1.5 flex flex-wrap items-center gap-1 pointer-events-auto`}>
+        <div className="absolute left-3 right-3 top-3 flex flex-wrap lg:flex-nowrap items-center gap-2 pointer-events-none">
+          <div className={`${PANEL} px-2 py-1.5 flex flex-wrap lg:flex-nowrap lg:min-w-0 items-center gap-1 pointer-events-auto`}>
             <fieldset className="flex m-0 p-0 min-w-0 rounded-lg overflow-hidden border border-slate-700/70 mr-1" aria-label="市場">
               {[['TW', '台股'], ['US', '美股']].map(([m, label]) => (
                 <button
@@ -468,15 +607,19 @@ function IndustryChainPage() {
                 </button>
               ))}
             </fieldset>
+            <ChainSearch map={map} onPick={flyTo} />
             <span className="text-[11px] text-slate-400 px-1">產業鏈</span>
-            {(map?.chains || []).map((c) => (
-              <button key={c.id} type="button" onClick={() => goChain(c.id)} className={`${BTN} ${view.chain === c.id ? 'border-cyan-400 bg-cyan-500/20' : ''}`}>
-                {c.name}
-              </button>
-            ))}
+            {/* 產業鏈變多了（25 條）：單行橫向捲動，不要把工具列撐成好幾排蓋住下面的清單 */}
+            <div className="flex gap-1 overflow-x-auto pb-1 w-full min-w-0 lg:w-auto lg:flex-1">
+              {(map?.chains || []).map((c) => (
+                <button key={c.id} type="button" onClick={() => goChain(c.id)} className={`${BTN} shrink-0 whitespace-nowrap ${view.chain === c.id ? 'border-cyan-400 bg-cyan-500/20' : ''}`}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex-1" />
-          <div className="flex gap-1.5 pointer-events-auto">
+          <div className="flex gap-1.5 pointer-events-auto shrink-0">
             {view.state !== 'overview' && (
               <button type="button" className={BTN} onClick={() => engineRef.current?.back()}>
                 ← 返回
@@ -494,9 +637,15 @@ function IndustryChainPage() {
           </div>
         </div>
 
+        {trip && (
+          <div className={`${PANEL} absolute left-1/2 -translate-x-1/2 top-16 max-w-[92%] text-center px-4 py-1.5 text-sm text-cyan-100 pointer-events-none z-10 animate-pulse`} role="status">
+            ✈ 前往 {trip}…
+          </div>
+        )}
+
         {/* 左側：全部產業清單 */}
         {listOpen && map && view.state === 'overview' && (
-          <aside className={`${PANEL} absolute left-3 top-14 ${debug ? 'bottom-44' : 'bottom-24'} w-[250px] p-2.5 overflow-auto hidden md:block`} aria-label="全部產業">
+          <aside className={`${PANEL} absolute left-3 top-28 lg:top-14 ${debug ? 'bottom-44' : 'bottom-24'} w-[250px] p-2.5 overflow-auto hidden md:block`} aria-label="全部產業">
             <div className="flex items-center gap-1 text-[11px] text-slate-400 tracking-wider mb-1.5">
               全部產業（{map.hubs.length}）
               <Tip text="證交所全部類股。漲跌用即時類股指數（盤中隨成交更新），少數類股沒有即時指數就用盤後資料。有「鏈」標記的可以點進去看上中下游環節與個股。" />
@@ -536,7 +685,7 @@ function IndustryChainPage() {
 
         {/* 右側：明細 */}
         {showDetail && map && (
-          <aside className={`${PANEL} absolute right-3 top-14 bottom-24 w-[330px] max-w-[calc(100%-1.5rem)] p-3 overflow-auto`} aria-live="polite">
+          <aside className={`${PANEL} absolute right-3 top-44 lg:top-14 bottom-44 md:bottom-24 w-[330px] max-w-[calc(100%-1.5rem)] p-3 overflow-auto`} aria-live="polite">
             <DetailPanel
               view={view}
               map={map}

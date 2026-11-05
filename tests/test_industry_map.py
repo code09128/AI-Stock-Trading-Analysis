@@ -53,6 +53,21 @@ class DefinitionTests(unittest.TestCase):
         self.assertIn("LINKS", "；".join(im.validate([_chain()], layout, [("半導體", "不存在")])))
         self.assertIn("重複的產業別", "；".join(im.validate([_chain()], [["半導體"], ["半導體"]], [])))
 
+    def test_also_sectors_are_validated_and_listed_on_those_hubs(self):
+        layout = [["半導體", "汽車", "水泥"]]
+        also = lambda *x: "；".join(im.validate([_chain(also=list(x))], layout, []))  # noqa: E731
+        self.assertEqual(also("汽車"), "")
+        self.assertIn("also 的產業別「不存在」不在 LAYOUT", also("不存在"))
+        self.assertIn("also 不要重複主要產業別", also("半導體"))
+        im._CACHE.clear()
+        daily = {"date": "2026-11-03", "rows": []}
+        with patch.object(im.market_board, "sector_index_live", return_value={}), patch.object(im.market_board, "sectors", return_value=daily):
+            hubs = {h["name"]: h for h in im.overview()["hubs"]}
+        self.assertEqual(hubs["數位雲端"]["chains"], ["cloud"])      # 合併進「資訊與雲端服務」
+        self.assertEqual(hubs["資訊服務"]["chains"], ["cloud"])
+        self.assertEqual(hubs["橡膠"]["chains"], ["chem"])
+        self.assertEqual(hubs["玻璃陶瓷"]["chains"], ["glass"])        # 沒有 also 的照舊
+
     def test_unknown_chain_is_a_user_error(self):
         for call in (lambda: im.get_chain("nope"), lambda: im.chain_detail("nope"), lambda: im.chain_history("nope")):
             with self.assertRaises(ValueError):
@@ -293,6 +308,7 @@ class RealDataQualityTests(unittest.TestCase):
     def test_covers_the_agreed_industries(self):
         ids = {c["id"] for c in chain_data.CHAINS}
         self.assertTrue({"semi", "ship", "fin", "steel", "cement", "textile", "food", "auto", "bio"} <= ids)
+        self.assertTrue({"echan", "cloud", "retail", "leisure", "energy", "glass", "chem"} <= ids)
         semi = next(c for c in chain_data.CHAINS if c["id"] == "semi")
         mem = next(n for n in semi["nodes"] if n["id"] == "memory")
         self.assertTrue({"2337", "2344", "2408"} <= {c for c, _ in mem["stocks"]})

@@ -59,6 +59,11 @@ def validate(chains: Optional[List[Dict[str, Any]]] = None, layout: Optional[Lis
             problems.append(f"{cid}：id 只能用小寫英文、數字與底線")
         if c.get("sector") not in sectors:
             problems.append(f"{cid}：產業別「{c.get('sector')}」不在 LAYOUT 裡（要跟證交所類股名稱一致）")
+        for extra in c.get("also") or []:
+            if extra not in sectors:
+                problems.append(f"{cid}：also 的產業別「{extra}」不在 LAYOUT 裡")
+            elif extra == c.get("sector"):
+                problems.append(f"{cid}：also 不要重複主要產業別「{extra}」")
         stages, nodes = c.get("stages") or [], c.get("nodes") or []
         if len(stages) < 2:
             problems.append(f"{cid}：至少要有 2 個階段")
@@ -102,7 +107,7 @@ def _definition(market: str = "TW") -> Dict[str, Any]:
     chains = []
     for c in _data(market).CHAINS:
         chains.append({
-            "id": c["id"], "name": c["name"], "sector": c["sector"], "blurb": c.get("blurb", ""), "stages": list(c["stages"]),
+            "id": c["id"], "name": c["name"], "sector": c["sector"], "also": list(c.get("also") or []), "blurb": c.get("blurb", ""), "stages": list(c["stages"]),
             "nodes": [{"id": n["id"], "name": n["name"], "stage": n["stage"],
                        "stocks": [{"code": s[0], "name": s[1]} for s in n["stocks"]]} for n in c["nodes"]],
             "edges": [list(e) for e in c["edges"]],
@@ -145,7 +150,8 @@ def overview(market: str = "TW") -> Dict[str, Any]:
         by_daily = {r["name"]: r for r in daily.get("rows") or []}
         by_sector: Dict[str, List[str]] = {}
         for c in d["chains"]:
-            by_sector.setdefault(c["sector"], []).append(c["id"])
+            for sec in [c["sector"], *c["also"]]:  # also＝合併進這條鏈的相關產業別，點它們也進得到這條鏈
+                by_sector.setdefault(sec, []).append(c["id"])
         columns: List[List[str]] = [list(col) for col in chain_data.LAYOUT]
         known = {n for col in columns for n in col}
         for name in list(live) + list(by_daily):  # 證交所新增、LAYOUT 還沒收錄的類股：自動放到最後一欄
@@ -190,7 +196,8 @@ def _overview_us() -> Dict[str, Any]:
         total = sum(money.values())
         by_sector: Dict[str, List[str]] = {}
         for c in d["chains"]:
-            by_sector.setdefault(c["sector"], []).append(c["id"])
+            for sec in [c["sector"], *c["also"]]:  # also＝合併進這條鏈的相關產業別，點它們也進得到這條鏈
+                by_sector.setdefault(sec, []).append(c["id"])
         hubs = []
         for col, names in enumerate(data.LAYOUT):
             for order, name in enumerate(names):

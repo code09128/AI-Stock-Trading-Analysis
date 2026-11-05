@@ -1089,6 +1089,15 @@ function create(canvas, host) {
         for (const n of Object.values(eng.chains[S.chain].nodeEnts as Record<string, NodeEntity>)) if (n.has && Math.abs(n.v) >= threshold) eng.effects.push({ x: n.x, y: n.y, r: 90, max: 330, life: 1, color: toneOf(n.v, true) });
       }
     },
+    // 搜尋導向用：在目標站點（kind='hub'）或環節（kind='node'）放兩圈青色擴散波，讓人看得出「飛到這裡了」
+    ping(kind: 'hub' | 'node', name: string) {
+      if (host.reduced) return;
+      const t: any = kind === 'hub' ? eng.hubs[name] : S.chain && eng.chains[S.chain]?.nodeEnts[name];
+      if (!t) return;
+      for (const [delay, max] of [[0, 300], [220, 400]]) {
+        setTimeout(() => eng.effects.push({ x: t.x, y: t.y, r: kind === 'hub' ? t.r : 60, max, life: 1, color: [34, 211, 238] }), delay);
+      }
+    },
     setAnim(on) {
       eng.anim = on && !host.reduced;
     },
