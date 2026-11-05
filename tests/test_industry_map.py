@@ -63,7 +63,7 @@ class DefinitionTests(unittest.TestCase):
         daily = {"date": "2026-11-03", "rows": []}
         with patch.object(im.market_board, "sector_index_live", return_value={}), patch.object(im.market_board, "sectors", return_value=daily):
             hubs = {h["name"]: h for h in im.overview()["hubs"]}
-        self.assertEqual(hubs["數位雲端"]["chains"], ["cloud"])      # 合併進「資訊與雲端服務」
+        self.assertEqual(hubs["數位雲端"]["chains"], ["cloud", "game"])      # 合併進「資訊與雲端服務」
         self.assertEqual(hubs["資訊服務"]["chains"], ["cloud"])
         self.assertEqual(hubs["橡膠"]["chains"], ["chem"])
         self.assertEqual(hubs["玻璃陶瓷"]["chains"], ["glass"])        # 沒有 also 的照舊
@@ -308,7 +308,7 @@ class RealDataQualityTests(unittest.TestCase):
     def test_covers_the_agreed_industries(self):
         ids = {c["id"] for c in chain_data.CHAINS}
         self.assertTrue({"semi", "ship", "fin", "steel", "cement", "textile", "food", "auto", "bio"} <= ids)
-        self.assertTrue({"echan", "cloud", "retail", "leisure", "energy", "glass", "chem"} <= ids)
+        self.assertTrue({"echan", "cloud", "retail", "leisure", "energy", "glass", "chem", "game", "hardware"} <= ids)
         semi = next(c for c in chain_data.CHAINS if c["id"] == "semi")
         mem = next(n for n in semi["nodes"] if n["id"] == "memory")
         self.assertTrue({"2337", "2344", "2408"} <= {c for c, _ in mem["stocks"]})
