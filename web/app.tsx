@@ -30,7 +30,7 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
 
 function App() {
-  const [activeTab, setActiveTab] = useState('watch');
+  const [activeTab, setActiveTab] = useState(() => (window.location.hash.startsWith('#chains') ? 'chains' : 'watch')); // 產業鏈的網址定位可直接開到那一頁
   const aiCfg = useAISettings();
   // 技術分析的買賣決策若交給 AI，就不自動每 5 秒刷新（否則會每 5 秒呼叫一次模型）
   const aiDecisionOn =
@@ -666,6 +666,14 @@ function App() {
     bus.currentPage = activeTab;
     logEvent?.('page', { to: activeTab });
   }, [activeTab]);
+  // 瀏覽器上一頁／下一頁回到產業鏈的網址定位時，切到產業鏈那一頁（頁面自己再套用定位）
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash.startsWith('#chains')) setActiveTab('chains');
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   bus.goTab = handleSwitchTab;
   bus.toast = showToast; // 背景任務（例如 AI 解讀）完成時用
   // 任何頁面都能要求「分析這檔」（看盤持股列、技術分析的持股切換）

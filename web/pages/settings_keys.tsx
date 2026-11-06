@@ -9,7 +9,7 @@ function UpdatePanel() {
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState(null);
 
-  const runCheck = async () => {
+  const runCheck = async (silent = false) => {
     setBusy('check');
     setMsg(null);
     try {
@@ -21,7 +21,7 @@ function UpdatePanel() {
       const d = await r.json();
       if (!d.ok || d.error) throw new Error(d.error || '檢查更新失敗');
       setChk(d);
-      setMsg({
+      if (!silent) setMsg({
         err: false,
         text: d.has_update
           ? `發現新版本 ${d.remote?.tag}（目前 v${d.current?.version}）${d.source_checkout ? '；原始碼版請用 git pull 更新' : '，可按右邊按鈕下載套用'
@@ -29,11 +29,15 @@ function UpdatePanel() {
           : `目前已是最新版本 v${d.current?.version}`,
       });
     } catch (e) {
-      setMsg({ err: true, text: e.message });
+      if (!silent) setMsg({ err: true, text: e.message });
     } finally {
       setBusy('');
     }
   };
+  // 打開設定頁就先查一次，才有「更新內容」可以顯示（離線或 GitHub 連不上時安靜略過，按鈕仍可手動檢查）
+  useEffect(() => {
+    runCheck(true);
+  }, []);
 
   const runApply = async () => {
     setBusy('apply');
@@ -81,7 +85,7 @@ function UpdatePanel() {
         <button
           type="button"
           disabled={!!busy}
-          onClick={runCheck}
+          onClick={() => runCheck()}
           className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
         >
           {busy === 'check' ? '檢查中…' : '🔄 檢查更新'}
@@ -105,6 +109,15 @@ function UpdatePanel() {
           </span>
         )}
       </div>
+      {chk?.remote?.notes && (
+        <div className="border-t border-slate-800 pt-3 space-y-1">
+          <div className="text-xs font-semibold text-slate-200">
+            {chk.has_update ? '新版更新內容' : '目前版本的更新內容'}・{chk.remote.tag}
+            {chk.remote.published_at ? <span className="font-normal text-slate-500">（{chk.remote.published_at.slice(0, 10)}）</span> : null}
+          </div>
+          <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-auto">{chk.remote.notes}</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -170,6 +170,10 @@ function DetailPanel({ view, map, hubMap, det, hist, replay, market, onNode, onC
   const nodeVal = (id) => (useHist ? pickSeries(hist.nodes[id], day, replay.cum) : (det?.nodes[id]?.change_pct ?? null));
   const sum = det?.summary;
   const node = view.node ? chain.nodes.find((n) => n.id === view.node) : null;
+  const nodeRank = chain.nodes
+    .map((n) => ({ name: n.name, v: nodeVal(n.id) }))
+    .filter((n) => n.v !== null && n.v !== undefined)
+    .sort((a, b) => b.v - a.v);
   return (
     <div className="space-y-2">
       <div className="text-[11px] text-slate-400 tracking-wider">
@@ -222,6 +226,18 @@ function DetailPanel({ view, map, hubMap, det, hist, replay, market, onNode, onC
                 : '載入個股報價中…'}
           </div>
           {det?.error && <div className="text-xs text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded p-2">{det.error}</div>}
+          {nodeRank.length > 1 && (
+            <div className="grid gap-0.5 text-[11px] p-2 rounded-lg bg-cyan-500/5 border border-slate-700/60">
+              {[['最強環節', nodeRank[0]], ['最弱環節', nodeRank[nodeRank.length - 1]]].map(([label, n]) => (
+                <div key={label as string} className="flex justify-between">
+                  <span className="text-slate-400">{label as string}</span>
+                  <span className={toneCls(n.v)}>
+                    {n.name} {fmtPct(n.v)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {chain.stages.map((st, si) => (
             <div key={st}>
               <div className="text-[11px] text-cyan-300 tracking-wider pt-1">{st}</div>
@@ -374,6 +390,32 @@ function HoverTip({ apiRef }) {
   );
 }
 
+// 網址定位：#chains／#chains/<鏈>／#chains/<鏈>/<環節>（美股在 chains 後面多一段 US）。可分享、重新整理回得去、瀏覽器上一頁可返回
+const HASH_ROOT = 'chains';
+type HashTarget = { market: 'TW' | 'US'; chain: string | null; node: string | null };
+function viewHash(v: { state: string; chain: string | null; node: string | null }, market: string): string {
+  const seg = [HASH_ROOT];
+  if (market === 'US') seg.push('US');
+  if (v.chain) {
+    seg.push(v.chain);
+    if (v.state === 'node' && v.node) seg.push(v.node);
+  }
+  return `#${seg.map(encodeURIComponent).join('/')}`;
+}
+function parseHash(h: string): HashTarget | null {
+  let p: string[];
+  try {
+    p = h.replace(/^#/, '').split('/').map(decodeURIComponent);
+  } catch {
+    return null; // 網址被手動改壞（例如 %E0）：當作沒有定位
+  }
+  if (p[0] !== HASH_ROOT) return null;
+  const rest = p.slice(1);
+  const isUS = rest[0] === 'US';
+  const seg = isUS ? rest.slice(1) : rest;
+  return { market: isUS ? 'US' : 'TW', chain: seg[0] || null, node: seg[1] || null };
+}
+
 function IndustryChainPage() {
   const canvasRef = useRef(null);
   const miniRef = useRef(null);
@@ -381,7 +423,8 @@ function IndustryChainPage() {
   const engineRef = useRef(null);
   const [map, setMap] = useState(null);
   const [mapErr, setMapErr] = useState('');
-  const [market, setMarket] = useState('TW'); // 'TW' 台股（證交所類股）／'US' 美股（SPDR 類股 ETF）
+  const pendingHash = useRef<HashTarget | null>(parseHash(window.location.hash)); // 網址上的目標：等地圖載入後套用
+  const [market, setMarket] = useState<'TW' | 'US'>(pendingHash.current?.market ?? 'TW'); // 'TW' 台股（證交所類股）／'US' 美股（SPDR 類股 ETF）
   const [view, setView] = useState({ state: 'overview', chain: null, node: null, sector: null });
   const [details, setDetails] = useState({});
   const [history, setHistory] = useState({});
@@ -435,6 +478,16 @@ function IndustryChainPage() {
   // ---- 全景資料 ----
   const marketRef = useRef(market);
   marketRef.current = market;
+  const mapRef = useRef(map);
+  mapRef.current = map;
+  const applyTarget = (t: HashTarget, m: { chains: { id: string; nodes: { id: string }[] }[] } | null, instant: boolean) => {
+    const eng = engineRef.current;
+    if (!eng) return;
+    const chain = t.chain && m ? m.chains.find((c) => c.id === t.chain) : null;
+    if (!chain) return void eng.go({ state: 'overview', sector: null }, instant);
+    const node = t.node && chain.nodes.some((n) => n.id === t.node) ? t.node : null;
+    eng.go(node ? { state: 'node', chain: chain.id, node } : { state: 'chain', chain: chain.id }, instant);
+  };
   const loadMap = useCallback(() => {
     const asked = market;
     fetch(asked === 'US' ? '/api/chains/map_us' : '/api/chains/map')
@@ -448,6 +501,11 @@ function IndustryChainPage() {
         setMap(d);
         setMapErr('');
         engineRef.current?.setMap(d);
+        const want = pendingHash.current;
+        if (want) {
+          pendingHash.current = null;
+          applyTarget(want, d, true);
+        }
       })
       .catch((e) => marketRef.current === asked && setMapErr(e.message || String(e)));
   }, [market]);
@@ -515,8 +573,8 @@ function IndustryChainPage() {
 
   const hist = chainId ? history[chainId] : null;
   const histOk = hist && !hist.error;
-  const startReplay = () => {
-    const open = (h) => setReplay({ on: true, day: h.dates.length - 1, cum: false, playing: false });
+  const startReplay = (play = false) => {
+    const open = (h) => setReplay(play ? { on: true, day: 0, cum: false, playing: true } : { on: true, day: h.dates.length - 1, cum: false, playing: false });
     if (histOk) return open(hist);
     setHistLoading(true);
     setHistErr('');
@@ -531,11 +589,40 @@ function IndustryChainPage() {
     return undefined;
   };
 
+  const [trip, setTrip] = useState('');
+  // 視角變了就更新網址（飛行動畫途中的中間站只覆蓋、不新增歷史，免得上一頁要退好幾步）
+  useEffect(() => {
+    if (pendingHash.current) return; // 還在等地圖載入，網址上的目標還沒套用
+    const h = viewHash(view, market);
+    if (window.location.hash === h) return;
+    if (!window.location.hash.startsWith(`#${HASH_ROOT}`) || trip) window.history.replaceState(null, '', h);
+    else window.history.pushState(null, '', h);
+  }, [view, market, trip]);
+  // 上一頁／下一頁或手動改網址：跟著切換
+  useEffect(() => {
+    const onHash = () => {
+      const t = parseHash(window.location.hash);
+      if (!t || viewHash(viewRef.current, marketRef.current) === window.location.hash) return;
+      if (t.market !== marketRef.current) {
+        pendingHash.current = t;
+        setMarket(t.market);
+        return;
+      }
+      clearTimers();
+      setTrip('');
+      applyTarget(t, mapRef.current, false);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+      if (window.location.hash.startsWith(`#${HASH_ROOT}`)) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    };
+  }, []);
+
   // 搜尋後的導覽：先回全景對準該產業（擴散波）→ 鏡頭推進產業鏈 → 再推進到環節。每一步都用引擎既有的鏡頭補間
   const viewRef = useRef(view);
   viewRef.current = view;
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const [trip, setTrip] = useState('');
   const clearTimers = () => {
     for (const t of timers.current) clearTimeout(t);
     timers.current = [];
@@ -578,7 +665,14 @@ function IndustryChainPage() {
         aria-label="產業鏈互動地圖"
         tabIndex={-1}
         onKeyDown={(e) => {
-          if (!(e.target as HTMLElement).matches?.('input,select,textarea') && engineRef.current?.key(e)) e.preventDefault();
+          const tgt = e.target as HTMLElement;
+          if (e.key === ' ' && chainId && !tgt.matches?.('input,select,textarea,button')) {
+            e.preventDefault();
+            if (replay.on && histOk) setReplay((r) => (r.day >= hist.dates.length - 1 ? { ...r, day: 0, playing: true } : { ...r, playing: !r.playing }));
+            else if (!histLoading) startReplay(true);
+            return;
+          }
+          if (!tgt.matches?.('input,select,textarea') && engineRef.current?.key(e)) e.preventDefault();
         }}
         className="relative rounded-2xl border border-slate-800 overflow-hidden outline-none"
         style={{ height: 'calc(100vh - 230px)', minHeight: 560, background: '#03050b' }}
@@ -595,7 +689,7 @@ function IndustryChainPage() {
         <div className="absolute z-30 left-3 right-3 top-3 flex flex-wrap xl:flex-nowrap items-center gap-2 pointer-events-none">
           <div className={`${PANEL} px-2 py-1.5 flex flex-wrap xl:flex-nowrap xl:min-w-0 items-center gap-1 pointer-events-auto`}>
             <fieldset className="flex m-0 p-0 min-w-0 rounded-lg overflow-hidden border border-slate-700/70 mr-1" aria-label="市場">
-              {[['TW', '台股'], ['US', '美股']].map(([m, label]) => (
+              {([['TW', '台股'], ['US', '美股']] as const).map(([m, label]) => (
                 <button
                   key={m}
                   type="button"
@@ -731,7 +825,7 @@ function IndustryChainPage() {
               </>
             ) : (
               <>
-                <button type="button" className={BTN} disabled={histLoading} onClick={startReplay}>
+                <button type="button" className={BTN} disabled={histLoading} onClick={() => startReplay()}>
                   {histLoading ? '載入歷史日 K…' : '▶ 回放近 30 日'}
                 </button>
                 <span className="text-[11px] text-slate-400">{histErr ? <span className="text-amber-300">{histErr}</span> : '目前是即時報價；回放可看漲跌怎麼由上游傳到下游'}</span>
