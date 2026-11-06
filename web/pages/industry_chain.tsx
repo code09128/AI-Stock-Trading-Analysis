@@ -327,7 +327,7 @@ function ChainSearch({ map, onPick }: { map: any; onPick: (h: Hit) => void }) {
         className="w-56 px-2.5 py-1 text-xs rounded-lg bg-slate-900/80 border border-slate-700/70 text-slate-100 placeholder:text-slate-500 outline-none focus:border-cyan-400"
       />
       {open && q.trim() !== '' && (
-        <div id={listId} role="listbox" className={`${PANEL} absolute left-0 top-9 w-64 p-1 z-20`}>
+        <div id={listId} role="listbox" className={`${PANEL} absolute left-0 top-9 w-64 p-1 z-20`} style={{ backgroundColor: "rgb(2 6 23)" }}>
           {hits.length === 0 && <div className="px-2 py-1.5 text-xs text-slate-400">找不到「{q.trim()}」，試試產業別或產業鏈名稱</div>}
           {hits.map((h, i) => (
             <div
@@ -592,8 +592,8 @@ function IndustryChainPage() {
         />
 
         {/* 上方：產業鏈切換與工具 */}
-        <div className="absolute left-3 right-3 top-3 flex flex-wrap lg:flex-nowrap items-center gap-2 pointer-events-none">
-          <div className={`${PANEL} px-2 py-1.5 flex flex-wrap lg:flex-nowrap lg:min-w-0 items-center gap-1 pointer-events-auto`}>
+        <div className="absolute z-30 left-3 right-3 top-3 flex flex-wrap xl:flex-nowrap items-center gap-2 pointer-events-none">
+          <div className={`${PANEL} px-2 py-1.5 flex flex-wrap xl:flex-nowrap xl:min-w-0 items-center gap-1 pointer-events-auto`}>
             <fieldset className="flex m-0 p-0 min-w-0 rounded-lg overflow-hidden border border-slate-700/70 mr-1" aria-label="市場">
               {[['TW', '台股'], ['US', '美股']].map(([m, label]) => (
                 <button
@@ -610,7 +610,7 @@ function IndustryChainPage() {
             <ChainSearch map={map} onPick={flyTo} />
             <span className="text-[11px] text-slate-400 px-1">產業鏈</span>
             {/* 產業鏈變多了（25 條）：單行橫向捲動，不要把工具列撐成好幾排蓋住下面的清單 */}
-            <div className="flex gap-1 overflow-x-auto pb-1 w-full min-w-0 lg:w-auto lg:flex-1">
+            <div className="flex gap-1 overflow-x-auto pb-1 w-full min-w-0 xl:w-auto xl:flex-1">
               {(map?.chains || []).map((c) => (
                 <button key={c.id} type="button" onClick={() => goChain(c.id)} className={`${BTN} shrink-0 whitespace-nowrap ${view.chain === c.id ? 'border-cyan-400 bg-cyan-500/20' : ''}`}>
                   {c.name}
@@ -645,7 +645,7 @@ function IndustryChainPage() {
 
         {/* 左側：全部產業清單 */}
         {listOpen && map && view.state === 'overview' && (
-          <aside className={`${PANEL} absolute left-3 top-28 lg:top-14 ${debug ? 'bottom-44' : 'bottom-24'} w-[250px] p-2.5 overflow-auto hidden md:block`} aria-label="全部產業">
+          <aside className={`${PANEL} absolute left-3 top-28 xl:top-14 ${debug ? 'bottom-44' : 'bottom-24'} w-[250px] p-2.5 overflow-auto hidden md:block`} aria-label="全部產業">
             <div className="flex items-center gap-1 text-[11px] text-slate-400 tracking-wider mb-1.5">
               全部產業（{map.hubs.length}）
               <Tip text="證交所全部類股。漲跌用即時類股指數（盤中隨成交更新），少數類股沒有即時指數就用盤後資料。有「鏈」標記的可以點進去看上中下游環節與個股。" />
@@ -685,7 +685,7 @@ function IndustryChainPage() {
 
         {/* 右側：明細 */}
         {showDetail && map && (
-          <aside className={`${PANEL} absolute right-3 top-44 lg:top-14 bottom-44 md:bottom-24 w-[330px] max-w-[calc(100%-1.5rem)] p-3 overflow-auto`} aria-live="polite">
+          <aside className={`${PANEL} absolute right-3 top-44 xl:top-14 bottom-44 md:bottom-24 w-[330px] max-w-[calc(100%-1.5rem)] p-3 overflow-auto`} aria-live="polite">
             <DetailPanel
               view={view}
               map={map}
