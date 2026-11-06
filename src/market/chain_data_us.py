@@ -13,7 +13,7 @@ ADR（TSM、ASML、NVO…）依其所屬產業歸類，與掛牌地無關。
 改完把 VERSION 改成修改日期。前端不用改。
 """
 
-VERSION = "2026-11-04"
+VERSION = "2026-11-07"
 
 COLUMNS = ["原料與能源", "工業與地產", "科技與消費", "金融與健康"]
 LAYOUT = [
@@ -122,5 +122,67 @@ CHAINS = [
             {"id": "air", "name": "航空公司", "stage": 2, "stocks": [("DAL", "達美"), ("UAL", "聯合航空"), ("LUV", "西南航空"), ("AAL", "美國航空")]},
         ],
         "edges": [("parts", "prime"), ("prime", "air")],
+    },
+    {
+        "id": "us_comm", "name": "通訊與媒體娛樂", "sector": "通訊服務", "blurb": "社群廣告與遊戲，經串流內容，到電信與有線寬頻",
+        "stages": ["平台與內容", "串流與娛樂", "電信與寬頻"],
+        "nodes": [
+            {"id": "ad", "name": "搜尋與社群廣告", "stage": 0, "stocks": [("GOOGL", "Alphabet"), ("META", "Meta"), ("SNAP", "Snap"), ("PINS", "Pinterest"), ("RDDT", "Reddit")]},
+            {"id": "game", "name": "遊戲與互動娛樂", "stage": 0, "stocks": [("TTWO", "Take-Two"), ("RBLX", "Roblox")]},
+            {"id": "stream", "name": "串流與影視娛樂", "stage": 1, "stocks": [("NFLX", "網飛"), ("DIS", "迪士尼"), ("WBD", "華納兄弟探索"), ("SPOT", "Spotify"), ("ROKU", "Roku")]},
+            {"id": "telco", "name": "電信與有線寬頻", "stage": 2, "stocks": [("T", "AT&T"), ("VZ", "威瑞森"), ("TMUS", "T-Mobile"), ("CMCSA", "康卡斯特"), ("CHTR", "特許通訊")]},
+        ],
+        "edges": [("ad", "stream"), ("game", "stream"), ("stream", "telco")],
+    },
+    {
+        "id": "us_staples", "name": "食品飲料與民生零售", "sector": "必需消費", "blurb": "農產原料，經包裝食品、飲料與日用品，到大型零售通路",
+        "stages": ["農產與原料", "品牌製造", "零售通路"],
+        "nodes": [
+            {"id": "ingr", "name": "農產與食品原料", "stage": 0, "stocks": [("ADM", "ADM"), ("BG", "邦吉"), ("TSN", "泰森食品"), ("HRL", "荷美爾")]},
+            {"id": "food", "name": "包裝食品與飲料", "stage": 1, "stocks": [("KO", "可口可樂"), ("PEP", "百事"), ("MDLZ", "億滋"), ("GIS", "通用磨坊"), ("KHC", "卡夫亨氏"), ("MNST", "怪獸飲料")]},
+            {"id": "care", "name": "個人與家用品", "stage": 1, "stocks": [("PG", "寶僑"), ("CL", "高露潔"), ("KMB", "金百利"), ("EL", "雅詩蘭黛")]},
+            {"id": "sin", "name": "菸酒", "stage": 1, "stocks": [("PM", "菲利普莫里斯"), ("MO", "奧馳亞"), ("STZ", "星座品牌")]},
+            {"id": "retail", "name": "大型零售通路", "stage": 2, "stocks": [("WMT", "沃爾瑪"), ("COST", "好市多"), ("TGT", "標靶"), ("KR", "克羅格"), ("DG", "達樂")]},
+        ],
+        "edges": [("ingr", "food"), ("ingr", "care"), ("food", "retail"), ("care", "retail"), ("sin", "retail")],
+    },
+    {
+        "id": "us_util", "name": "電力與公用事業", "sector": "公用事業", "blurb": "核電與再生能源發電，經電力公司與電網，到天然氣與水務配送",
+        "stages": ["發電", "電力公司與電網", "氣體與水務"],
+        "nodes": [
+            {"id": "gen", "name": "獨立發電與核電", "stage": 0, "stocks": [("CEG", "星座能源"), ("VST", "Vistra"), ("NRG", "NRG")]},
+            {"id": "ren", "name": "再生能源", "stage": 0, "stocks": [("NEE", "NextEra"), ("AES", "AES")]},
+            {"id": "util", "name": "綜合電力公司", "stage": 1, "stocks": [("DUK", "杜克能源"), ("SO", "南方公司"), ("D", "道明尼"), ("AEP", "美國電力"), ("EXC", "愛克斯龍"), ("XEL", "Xcel"), ("SRE", "森普拉"), ("PCG", "太平洋瓦電")]},
+            {"id": "gas", "name": "天然氣配送", "stage": 2, "stocks": [("ATO", "Atmos"), ("NI", "NiSource")]},
+            {"id": "water", "name": "水務", "stage": 2, "stocks": [("AWK", "美國水務"), ("WTRG", "Essential Utilities")]},
+        ],
+        "edges": [("gen", "util"), ("ren", "util"), ("util", "gas"), ("util", "water")],
+    },
+    {
+        "id": "us_re", "name": "房地產與 REITs", "sector": "房地產", "blurb": "通訊塔與資料中心，經物流與商用地產，到住宅與醫療倉儲",
+        "stages": ["基礎設施", "商用與物流", "住宅與特殊"],
+        "nodes": [
+            {"id": "tower", "name": "通訊塔", "stage": 0, "stocks": [("AMT", "美國電塔"), ("CCI", "冠城國際"), ("SBAC", "SBA 通訊")]},
+            {"id": "dc", "name": "資料中心", "stage": 0, "stocks": [("EQIX", "Equinix"), ("DLR", "Digital Realty")]},
+            {"id": "ind", "name": "工業物流", "stage": 1, "stocks": [("PLD", "普洛斯")]},
+            {"id": "retail", "name": "零售與商辦", "stage": 1, "stocks": [("SPG", "西蒙地產"), ("O", "不動產收益"), ("KIM", "金科地產"), ("BXP", "波士頓地產")]},
+            {"id": "svc", "name": "地產服務", "stage": 1, "stocks": [("CBRE", "世邦魏理仕"), ("CSGP", "CoStar")]},
+            {"id": "resi", "name": "住宅", "stage": 2, "stocks": [("AVB", "AvalonBay"), ("EQR", "Equity Residential"), ("INVH", "邀請住宅"), ("MAA", "MAA")]},
+            {"id": "spec", "name": "醫療與倉儲", "stage": 2, "stocks": [("WELL", "威爾塔"), ("VTR", "溫塔爾"), ("PSA", "公共儲存")]},
+        ],
+        "edges": [("tower", "retail"), ("dc", "ind"), ("ind", "spec"), ("retail", "resi"), ("svc", "resi")],
+    },
+    {
+        "id": "us_mat", "name": "化工金屬與包裝", "sector": "原物料", "blurb": "礦業、肥料與鋼鋁，經化工與建材，到包裝",
+        "stages": ["礦業與原料", "化工與建材", "包裝"],
+        "nodes": [
+            {"id": "mine", "name": "金屬與礦業", "stage": 0, "stocks": [("FCX", "自由港"), ("NEM", "紐蒙特"), ("SCCO", "南方銅業")]},
+            {"id": "ag", "name": "肥料與農化", "stage": 0, "stocks": [("NTR", "Nutrien"), ("CF", "CF 工業"), ("MOS", "美盛"), ("CTVA", "科迪華")]},
+            {"id": "steel", "name": "鋼鐵與鋁", "stage": 0, "stocks": [("NUE", "紐柯"), ("STLD", "鋼動力"), ("AA", "美國鋁業")]},
+            {"id": "chem", "name": "基礎與特用化工", "stage": 1, "stocks": [("LIN", "林德"), ("APD", "氣體產品"), ("DOW", "陶氏"), ("DD", "杜邦"), ("LYB", "利安德巴塞爾"), ("SHW", "宣偉"), ("ECL", "藝康")]},
+            {"id": "build", "name": "建材", "stage": 1, "stocks": [("VMC", "火神材料"), ("MLM", "馬丁瑪利埃塔")]},
+            {"id": "pack", "name": "包裝", "stage": 2, "stocks": [("BALL", "波爾"), ("IP", "國際紙業"), ("PKG", "包裝公司"), ("AMCR", "安姆科")]},
+        ],
+        "edges": [("mine", "chem"), ("ag", "chem"), ("steel", "build"), ("chem", "pack")],
     },
 ]

@@ -229,6 +229,7 @@ class UsChainTests(unittest.TestCase):
         self.assertEqual(im.validate(market="US"), [])
         self.assertFalse({c["id"] for c in us.CHAINS} & {c["id"] for c in chain_data.CHAINS})
         self.assertEqual(set(us.SECTOR_ETF), {n for col in us.LAYOUT for n in col})  # 每個類股都有代表它的 ETF
+        self.assertEqual({c["sector"] for c in us.CHAINS}, set(us.SECTOR_ETF))  # 11 個美股類股都有至少一條鏈
         for c in us.CHAINS:
             used = {n["id"] for n in c["nodes"]}
             linked = {x for e in c["edges"] for x in e}
