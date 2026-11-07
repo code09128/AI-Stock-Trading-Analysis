@@ -4,6 +4,8 @@ import './config';
 import './charts';
 import './panels/technical_parts';
 import './panels/technical';
+import './panels/news_research';
+import './pages/stock_tabs';
 import './panels/news';
 import './panels/backtest_parts';
 import './panels/backtest_verify';

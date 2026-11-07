@@ -115,6 +115,45 @@ def _mask(text: str, secret: str) -> str:
     return text.replace(secret, "***") if secret else text
 
 
+AI_FAIL_SUFFIX = "（本頁其他由程式計算的數字與規則引擎結果不受影響。）"
+
+
+def friendly_error(raw: Any) -> str:
+    """把 AI 失敗的原始訊息轉成「原因＋怎麼辦」，原始訊息放在最後方便排查。
+
+    只靠訊息文字判斷（各家服務的錯誤格式不一），判斷不出來就說明「原因不明」並附原始訊息。
+    不會包含金鑰：上游 _mask 已先把金鑰換成 ***。
+    """
+    text = str(raw or "").strip()
+    low = text.lower()
+    m = re.search(r"http (\d{3})", low)
+    code = int(m.group(1)) if m else 0
+    if "timed out" in low or "timeout" in low or "逾時" in text:
+        why, fix = "AI 沒有在時限內回應", "稍後重試；模型太大或本機模型載入中時常發生，可改用較小的模型。"
+    elif code in (401, 403) or "api key" in low and ("invalid" in low or "unauthorized" in low) or "permission" in low:
+        why, fix = "金鑰無效或沒有權限", "到「設定」頁檢查金鑰是否貼對、是否過期，或該模型有沒有開通。"
+    elif code == 429 or "quota" in low or "rate limit" in low or "resource_exhausted" in low:
+        why, fix = "請求太頻繁或額度用完", "等幾分鐘再試；若是免費額度用完，要等額度重置或換一個連線。"
+    elif code == 404 or "not found" in low and "model" in low:
+        why, fix = "找不到這個模型或網址", "到「設定」頁按「取得模型清單」重新選模型，或檢查網址。"
+    elif code in (500, 502, 503, 504):
+        why, fix = "AI 服務暫時忙碌或故障", "不是你的設定問題，稍後再試；急用可先看規則引擎的結果。"
+    elif code == 400:
+        why, fix = "AI 拒絕了這次請求（內容或參數不被接受）", "換一個模型再試；若持續發生，把這段訊息給開發者排查。"
+    elif any(k in low for k in ("name or service not known", "getaddrinfo", "connection refused",
+                                "connection reset", "unreachable", "network", "ssl", "certificate")):
+        why, fix = "連不到 AI 服務", "檢查網路；若用本機模型，確認 Ollama／LM Studio 有在執行且網址正確。"
+    elif "尚未填入 api key" in low or "尚未選擇模型" in text:
+        why, fix = "AI 連線還沒設定完成", "到「設定」頁填入金鑰並選擇模型。"
+    elif "格式異常" in text or "對不上" in text or "json" in low:
+        why, fix = "AI 回傳的內容格式不符", "重試一次；若持續發生，換一個模型。"
+    elif "串流中斷" in text:
+        why, fix = "AI 回應中途斷線", "重試一次；內容可能不完整，已收到的部分僅供參考。"
+    else:
+        why, fix = "AI 呼叫失敗（原因不明）", "稍後重試；若持續發生，看下方原始訊息。"
+    return f"{why}。{fix}{AI_FAIL_SUFFIX} 原始訊息：{text[:200] or '（無）'}"
+
+
 RETRY_WAITS = (3, 8)  # 雲端模型忙碌（503）或請求太頻繁（429）時，等幾秒再試
 
 
@@ -487,7 +526,7 @@ def test(profile: Dict[str, Any]) -> Dict[str, Any]:
         out = complete(profile, "你是測試助手。", "請只回覆「OK」兩個字。", timeout=45)
         return {"ok": True, "latency_ms": int((time.time() - started) * 1000), "sample": out.strip()[:80]}
     except AIError as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": friendly_error(e)}
 
 
 MAX_DATA_CHARS = 24000
@@ -608,6 +647,22 @@ def key_facts(module: str, data: Any) -> str:
             score = snap.get("trend_score") or {}
             if score:
                 out.append(f"趨勢評分 {score.get('total')}/100（{score.get('signal_label')}）")
+            sigs = [s for s in (data.get("signals") or []) if isinstance(s, dict)]
+            if sigs:
+                recent = "；".join(
+                    f"{s.get('date')} {'買進' if s.get('type') == 'buy' else '賣出'}標記（{s.get('reason')}"
+                    f"{'' if s.get('confirmed', True) else '，盤中尚未確認'}）"
+                    for s in sigs[-3:]
+                )
+                out.append("K 線買賣訊號標記（固定規則：收盤突破／跌破近 20 日高低點，且 MACD 金叉死叉或柱體放大；"
+                           "RSI≥80 不標買、≤20 不標賣；僅是規則標記，不是預測。歷史統計（2019 起 10 檔台美股，隔日開盤進場、未含手續費稅）：買進後 5/10/20 日上漲比例 58.6%/61.4%/63.4%，隨便哪天買是 55.5%/59.1%/62.7%，優勢很小；賣出標記後仍有約 55～65% 的機率上漲，沒有預警效果；樣本多為多頭期，不可說成有優勢）最近：" + recent)
+            bb = data.get("bollinger")
+            if isinstance(bb, dict) and bb.get("text"):
+                out.append(
+                    f"布林通道(20日, ±2σ；中軌=MA20，上下軌是波動帶，不是支撐壓力保證)：{bb.get('text')}｜"
+                    f"上軌 {bb.get('upper')}／中軌 {bb.get('mid')}／下軌 {bb.get('lower')}｜"
+                    f"{'通道近期最窄，波動可能放大但方向不明' if bb.get('squeeze') else '通道寬度正常'}"
+                )
         elif module == "mod2":
             vb = data.get("volatility_bounds") or {}
             pi = data.get("priced_in_evaluation") or {}
@@ -616,6 +671,16 @@ def key_facts(module: str, data: Any) -> str:
                 out.append(f"Priced-in 判斷：{json.dumps(pi, ensure_ascii=False)[:300]}")
             if vb:
                 out.append(f"ATR 預期波動區間：{json.dumps(vb, ensure_ascii=False)[:300]}")
+            nr = data.get("news_research") or {}
+            if nr:
+                c = nr.get("counts") or {}
+                out.append(f"新聞語氣（關鍵字規則，官方公告權重×3，粗略）：{nr.get('tone')}｜利多 {c.get('positive')}、"
+                           f"利空 {c.get('negative')}、中性 {c.get('neutral')}｜官方公告 {c.get('official')} 則、一般新聞 {c.get('news')} 則")
+                for e in (nr.get("evidence") or [])[:6]:
+                    out.append(f"證據{e.get('no')}：{e.get('time')} {e.get('kind')}（{e.get('source')}）{e.get('title')}"
+                               f"｜規則方向 {e.get('sentiment')}｜發布後首個收盤 {e.get('reaction_pct')}%")
+                for g in nr.get("gaps") or []:
+                    out.append(f"資料缺口：{g}")
         elif module == "mod4":
             val = data.get("portfolio_valuation") or {}
             names = [f"{h['symbol']} {h.get('name', '')}".strip() + f" {h.get('weight_pct')}%" for h in val.get("holdings", [])]

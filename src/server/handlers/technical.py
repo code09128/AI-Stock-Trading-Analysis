@@ -7,6 +7,8 @@ from src.ai.llm_runner import LLMRunner
 from src.market.bar import Bar
 from src.technical import scenarios
 from src.technical.indicators import calculate_ma
+from src.technical.intraday import bollinger, bollinger_signal
+from src.technical.signals import visible_signals
 from src.market import quote_provider
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
@@ -60,6 +62,7 @@ class TechnicalHandlers:
         ma5_series = calculate_ma(closes, 5)
         ma20_series = calculate_ma(closes, 20)
         ma60_series = calculate_ma(closes, 60)
+        bb_series = bollinger(closes, 20, 2.0)  # 中軌＝MA20，上下軌＝±2 個母體標準差
 
         recent_bars = []
         start_idx = max(0, len(bars) - bar_count)
@@ -78,7 +81,20 @@ class TechnicalHandlers:
                 "ma5": round(ma5_series[i], 2) if ma5_series[i] is not None else None,
                 "ma20": round(ma20_series[i], 2) if ma20_series[i] is not None else None,
                 "ma60": round(ma60_series[i], 2) if ma60_series[i] is not None else None,
+                "bb_upper": round(bb_series[i]["upper"], 2) if bb_series[i] else None,
+                "bb_lower": round(bb_series[i]["lower"], 2) if bb_series[i] else None,
             })
+
+        # 買賣訊號標記：用完整 K 棒計算（需要前 20 根當基準），只回傳畫面上看得到的那段
+        signals, signals_error = visible_signals(
+            bars, recent_bars[0]["date"] if recent_bars else "", bool(live_overlay.get("applied"))
+        )
+
+        # 布林通道目前位置：只看已收完的 K 棒（盤中暫定的最後一根不算）
+        try:
+            bb_now = bollinger_signal(bars[:-1] if live_overlay.get("applied") else bars)
+        except Exception:
+            bb_now = None
 
         runner = LLMRunner(provider=provider, api_key=api_key, profile=payload.get("ai"))
         decision = runner.generate_technical_decision(snapshot)
@@ -100,6 +116,9 @@ class TechnicalHandlers:
             "updated_at": time.strftime("%H:%M:%S"),
             "snapshot": snapshot,
             "recent_bars": recent_bars,
+            "signals": signals,
+            "bollinger": bb_now,
+            "signals_error": signals_error,
             "llm_result": decision,
             "scenarios": scen,
         }

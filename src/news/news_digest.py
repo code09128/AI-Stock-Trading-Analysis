@@ -74,6 +74,102 @@ def _rule_fields(title: str, kind: str, detail: str = "") -> Dict[str, Any]:
     return {"metrics": metrics, "horizon": horizon, "official": any(k in kind for k in OFFICIAL_KINDS)}
 
 
+POS_RE = re.compile(r"上修|調升|調高|創高|新高|買超|轉盈|優於預期|超預期|大漲|飆|看好|受惠|擴產|接單|得標|"
+                    r"beat|upgrade|raises?|record|surge|rally|strong", re.I)
+NEG_RE = re.compile(r"下修|調降|調低|創低|新低|賣超|虧損|轉虧|衰退|低於預期|大跌|重挫|暴跌|示警|減產|裁員|罰款|調查|下滑|砍單|"
+                    r"miss|downgrade|cuts?|plunge|slump|probe|lawsuit|warning|weak", re.I)
+
+
+# 近期樣本對照（tools/backtest_news_tone.py，2026-11-07，9 檔台美股 55 則標題）：偏多標題發布後首個收盤方向相符 32%（平均 -0.63%），
+# 偏空 83%（平均 -3.42%）；期間大盤整體下跌、免費來源沒有歷史標題，樣本太少，不能證明語氣有預測力。
+def rule_sentiment(text: str):
+    """用標題裡的利多／利空關鍵字粗略判斷方向，回傳 (POSITIVE|NEGATIVE|NEUTRAL, 命中的關鍵字)。
+
+    限制（要升級就改用 AI 判斷）：只數關鍵字，看不懂否定（例如「不看好」會被算成利多）、反話與整句語意；
+    正負數量相同一律算 NEUTRAL。只當沒有 AI 時的粗略參考，不是結論。
+    """
+    pos = [m.group(0) for m in POS_RE.finditer(text or "")]
+    neg = [m.group(0) for m in NEG_RE.finditer(text or "")]
+    hits = [*dict.fromkeys(pos), *dict.fromkeys(neg)]
+    if len(pos) > len(neg):
+        return "POSITIVE", hits
+    if len(neg) > len(pos):
+        return "NEGATIVE", hits
+    return "NEUTRAL", hits
+
+
+MIN_EVIDENCE = 3  # 少於這個則數，結論代表性不足
+DECISIVE_MIN = 3  # 有利多／利空方向的新聞少於這個則數，語氣只能參考
+TIMELINE_MAX = 8
+OFFICIAL_WEIGHT = 3  # 官方公告在語氣投票的權重（一般新聞 1）
+
+
+def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict[str, Any]:
+    """把已排序的新聞整理成研究摘要：重點新聞、整體語氣、數量、資料缺口、時間軸。
+
+    columns（分析專欄）是觀點不是事件，不算進語氣、重點與時間軸。
+    """
+    non_column = [x for x in items if x["kind"] != COLUMN_KIND]
+    # 標題沒提到這檔（也不是官方公告）的新聞常是同一來源順帶列出的無關報導，不計入語氣、重點與時間軸
+    events = [x for x in non_column if x.get("mentions", True)]
+    counts = {"official": 0, "news": 0, "column": len(items) - len(non_column), "unrelated": len(non_column) - len(events),
+              "positive": 0, "negative": 0, "neutral": 0}
+    w_pos = w_neg = 0
+    for x in events:
+        counts["official" if x.get("official") else "news"] += 1
+        w = OFFICIAL_WEIGHT if x.get("official") else 1
+        sent = x.get("sentiment", "NEUTRAL")
+        if sent == "POSITIVE":
+            counts["positive"] += 1
+            w_pos += w
+        elif sent == "NEGATIVE":
+            counts["negative"] += 1
+            w_neg += w
+        else:
+            counts["neutral"] += 1
+    if not events:
+        tone = "資料不足"
+    elif w_pos and w_pos >= 1.5 * w_neg:
+        tone = "偏多"
+    elif w_neg and w_neg >= 1.5 * w_pos:
+        tone = "偏空"
+    elif w_pos and w_neg:
+        tone = "分歧"
+    else:
+        tone = "中性"
+
+    lead = None
+    if events:
+        e = events[0]
+        lead = {k: e.get(k) for k in ("title", "source", "kind", "local_iso", "link", "sentiment", "reaction")}
+
+    gaps: List[str] = []
+    if not events:
+        gaps.append("沒有抓到這檔近期的新聞或公告，無法做新聞面判斷")
+    elif len(events) < MIN_EVIDENCE:
+        gaps.append(f"新聞與公告只有 {len(events)} 則（少於 {MIN_EVIDENCE} 則），結論代表性不足")
+    if counts["unrelated"]:
+        gaps.append(f"{counts['unrelated']} 則新聞標題沒有提到這檔，已不計入語氣與時間軸")
+    if events and counts["positive"] + counts["negative"] < DECISIVE_MIN:
+        gaps.append(f"有明確利多或利空方向的新聞只有 {counts['positive'] + counts['negative']} 則"
+                    f"（少於 {DECISIVE_MIN} 則），語氣僅供參考")
+    if events and counts["official"] == 0:
+        gaps.append("近期沒有官方公告（重大訊息、公司公告、8-K），無法用公司自己的說法交叉驗證")
+    if errors:
+        gaps.append(f"{len(errors)} 個新聞來源抓取失敗，可能漏掉部分報導")
+    if lead and (lead.get("reaction") or {}).get("pending"):
+        gaps.append("重點新聞發布後還沒有收盤，價格反應尚未出現")
+    if mode == "RULES" and events:
+        gaps.append("未使用 AI：只有關鍵字規則，看不懂否定或標題以外的細節")
+
+    timeline = [
+        {"local_iso": x["local_iso"], "title": x["title"], "source": x["source"], "kind": x["kind"],
+         "sentiment": x.get("sentiment"), "pct": (x.get("reaction") or {}).get("pct")}
+        for x in sorted(events, key=lambda x: x["local_iso"])[-TIMELINE_MAX:]
+    ]
+    return {"tone": tone, "counts": counts, "lead": lead, "gaps": gaps, "timeline": timeline}
+
+
 def _rule_score(it: Dict[str, Any], atr_pct: Optional[float]) -> float:
     s = 2.0 if it["official"] else 0.0
     s += 1.0 if it["mentions"] else -1.0
@@ -138,6 +234,7 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
         x["detail"] = it.get("detail", "")
         x["reaction"] = price_reaction(bars, it["local_iso"], market)
         x.update(_rule_fields(it["title"], it["kind"], x["detail"]))
+        x["sentiment"], x["sentiment_hits"] = rule_sentiment(f"{it['title']} {x['detail']}")
         x["mentions"] = x["official"] or _mentions(it["title"], symbol, name)
         x["rule_score"] = _rule_score(x, atr_pct)
         items.append(x)
@@ -153,7 +250,7 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
             changers, unverified = res["reaction_changers"], res["unverified_numbers"]
             mode = f"AI（{profile.get('model')}）"
         except ai_client.AIError as e:
-            ai_err = f"AI 整理失敗，改用關鍵字規則：{e}"
+            ai_err = f"AI 整理失敗，已改用關鍵字規則。{ai_client.friendly_error(e)}"
 
     # 排序：AI 的重要性為主、規則分數（官方公告、財務指標、實際價格反應）為輔
     items.sort(key=lambda x: (-((x.get("ai") or {}).get("importance") or 0), -x["rule_score"]))
@@ -167,6 +264,7 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
         "symbol": symbol, "name": name, "mode": mode, "ai_error": ai_err,
         "atr_pct": atr_pct, "items": items, "reaction_changers": changers,
         "unverified_numbers": unverified,
+        "summary": summarize(items, news.get("errors", []), mode if mode == "RULES" else "AI"),
         "sources": news.get("sources", []), "errors": news.get("errors", []),
         "method": ("價格反應＝發布前最後一個收盤到發布後第一個收盤的真實漲跌；超過 1 個 ATR（近 14 日平均波動）代表市場明顯有感。"
                    "同一天的多則新聞會共用同一個價格反應，無法分辨是哪一則造成的。"

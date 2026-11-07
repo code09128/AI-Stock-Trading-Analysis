@@ -27,7 +27,7 @@ class AIHandlers:
                     context = ai_context.build(symbol, ai_context.SECTIONS_BY_MODULE[module])
                 return ai_client.explain(profile, module, data, str(payload.get("question", "")), context)
         except ai_client.AIError as e:
-            return {"error": str(e)}
+            return {"error": ai_client.friendly_error(e)}
         return {"error": f"未知的 AI 動作：{action}"}
 
     def handle_ai_explain_stream(self, payload: Dict[str, Any]):
@@ -44,4 +44,4 @@ class AIHandlers:
             for ev in ai_client.explain_stream(profile, module, data, str(payload.get("question", "")), context):
                 yield ev
         except Exception as e:
-            yield {"type": "error", "error": str(e)}
+            yield {"type": "error", "error": ai_client.friendly_error(e)}

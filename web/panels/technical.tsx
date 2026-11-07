@@ -465,10 +465,6 @@ function Mod1Panel({ ctx }) {
             </div>
           </div>
 
-          <TrendScoreCard score={m1Data.snapshot.trend_score} />
-
-          <ChipPanel symbol={m1Data.snapshot.symbol} />
-
           {/* 日線 / 週線切換 */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-slate-400">K 線週期</span>
@@ -530,6 +526,8 @@ function Mod1Panel({ ctx }) {
           {/* 互動式 K 線 + 十字準星 + 成交量副圖 */}
           <CandlestickChart
             bars={m1Data.recent_bars}
+            signals={m1Data.signals}
+            signalsError={m1Data.signals_error}
             supports={m1Data.snapshot.support_levels}
             resistances={m1Data.snapshot.resistance_levels}
             key={`${m1Data.snapshot.symbol}-${m1Timeframe}`}
@@ -616,6 +614,11 @@ function Mod1Panel({ ctx }) {
             </div>
           </div>
 
+          {/* K 線與支撐壓力在前；趨勢評分、籌碼面是補充資料，放在後面 */}
+          <TrendScoreCard score={m1Data.snapshot.trend_score} />
+
+          <ChipPanel symbol={m1Data.snapshot.symbol} />
+
           <ScenarioPanel data={m1Data.scenarios} />
         </div>
       )}
@@ -629,6 +632,8 @@ function Mod1Panel({ ctx }) {
           ]}
           data={{
             snapshot: m1Data.snapshot,
+            signals: m1Data.signals,
+            bollinger: m1Data.bollinger,
             weekly: m1Data.weekly_snapshot,
             scenarios: m1Data.scenarios,
             decision: m1Data.llm_result?.decision_payload,

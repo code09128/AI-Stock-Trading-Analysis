@@ -197,7 +197,7 @@ const startExplain = async (key, label, body) => {
       }
     }
     if (!out) {
-      out = partial ? { answer: partial } : { error: 'AI 串流中斷，未收到完整回應' };
+      out = partial ? { answer: partial } : { error: 'AI 回應中途斷線，未收到完整內容。重試一次；本頁其他由程式計算的數字與規則引擎結果不受影響。' };
     }
   } catch (e) {
     out = { error: e.message };

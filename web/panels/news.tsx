@@ -2,8 +2,9 @@
 import { bus } from '../bus';
 import { NEWS_PRESETS } from '../config';
 import { Tip, baseCode, normSym, uniqueSymbols } from '../ui';
-import { AiExplain, activeProfile, cleanProfile, loadAI, useAISettings } from '../ai_store';
+import { AiExplain, useAISettings } from '../ai_store';
 import { usePortfolio } from '../portfolio_store';
+import { ResearchSummary, useDigest } from './news_research';
 
 function KindBadge({ kind }) {
   const official = ['重大訊息', '公司公告', '8-K'].includes(kind);
@@ -16,29 +17,8 @@ function KindBadge({ kind }) {
 }
 
 // 近期新聞彙整：逐則 5 個面向＋真實價格反應，依重要性排序
-function NewsDigest({ symbol, aiOn }) {
-  const { useState } = React;
-  const [d, setD] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const run = async () => {
-    setLoading(true);
-    try {
-      const cfg = loadAI ? loadAI() : null;
-      const prof = aiOn && cfg ? cleanProfile(activeProfile(cfg)) : null;
-      const res = await fetch('/api/news/digest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, ai: prof }),
-      });
-      const j = await res.json();
-      if (j.error) throw new Error(j.error);
-      setD(j);
-    } catch (e) {
-      setD({ fail: e.message });
-    } finally {
-      setLoading(false);
-    }
-  };
+function NewsDigest({ symbol, aiOn, digest }) {
+  const { d, loading, run } = digest;
   const pctCls = (v) =>
     v == null ? 'text-slate-500' : v >= 0 ? 'text-emerald-400' : 'text-rose-400';
   return (
@@ -201,6 +181,8 @@ function Mod2Panel({ ctx }) {
   const aiOn =
     aiCfg.scope.mod2 !== false && !!aiCfg.profiles.find((p) => p.id === aiCfg.activeId);
   const [newsLoading, setNewsLoading] = useState(false);
+  const digest = useDigest(m2Form.target, aiOn);
+  const [step, setStep] = useState('');
   const loadNews = async () => {
     setNewsLoading(true);
     try {
@@ -226,44 +208,69 @@ function Mod2Panel({ ctx }) {
       setNewsLoading(false);
     }
   };
-  // 從看盤頁熱力圖「查今天的新聞」過來：自動抓一次
+  // 一鍵分析：抓新聞並整理 → 系統挑出最重要的一則 → 用它發布當下已知的價格做 Priced-in 評估
+  // 情緒方向：沒有指定時用標題關鍵字規則（粗略）；想要 AI 判斷請在進階區勾選「改由 AI 判斷」
+  const analyze = async () => {
+    setStep('正在抓取並整理新聞…');
+    const dig = await digest.run();
+    const lead = dig?.summary?.lead;
+    if (!lead) {
+      setStep('');
+      bus.toast?.(
+        dig?.fail
+          ? `⚠️ 新聞整理失敗：${dig.fail}`
+          : `⚠️ ${m2Form.target} 近期沒有可分析的新聞或公告`,
+      );
+      return;
+    }
+    setStep('正在用重點新聞評估是否已反映在股價…');
+    const f = {
+      ...m2Form,
+      headline: lead.title,
+      timestamp_iso: lead.local_iso,
+      use_event_date: true,
+      sentiment: lead.sentiment || 'NEUTRAL',
+    };
+    setM2Form(f);
+    await runMod2({ ...f, sentiment_source: '標題關鍵字規則（粗估）' });
+    setStep('');
+  };
+  // 從看盤頁熱力圖「查今天的新聞」過來：自動分析一次
   React.useEffect(() => {
     if (bus._autoNews && bus._autoNews === m2Form.target) {
       bus._autoNews = null;
-      loadNews();
+      analyze();
     }
     // eslint-disable-next-line
   }, [m2Form.target]);
-  const pickNews = (it) => {
-    // 用新聞發布當下已知的真實價格計算「事件前」漲幅（use_event_date），情緒方向仍由你判斷
+  const pickNews = async (it) => {
+    // 用新聞發布當下已知的真實價格計算「事件前」漲幅（use_event_date），情緒方向由標題關鍵字規則或 AI 判斷
     const f = {
       ...m2Form,
       headline: it.title,
       timestamp_iso: it.local_iso,
       use_event_date: true,
+      sentiment: it.sentiment || m2Form.sentiment,
     };
     setM2Form(f);
-    runMod2(f);
+    await runMod2({ ...f, sentiment_source: '標題關鍵字規則（粗估）' });
   };
   return (
     <div className="space-y-5">
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-white">新聞事件</h2>
-            <span className="block mt-1 text-xs text-slate-500">
-              資料狀態：新聞標題與情緒是「範例輸入」，可自行修改；股價、ATR、事件前漲幅來自真實日
-              K（Yahoo/FinMind）
-            </span>
-            <p className="text-xs text-slate-400">
-              判斷消息是否已提前反映在股價，並估算事件後的合理波動範圍
-            </p>
-          </div>
+      <div
+        data-tour="mod2-news"
+        className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 space-y-3"
+      >
+        <div>
+          <h2 className="text-base font-semibold text-white">新聞研究</h2>
+          <p className="mt-1 text-xs text-slate-400">
+            輸入代號按「分析新聞」：自動抓近期真實新聞與公告 → 整理並挑出最重要的一則 →
+            用它發布當下已知的價格，判斷消息是否已反映在股價。結論都附出處，沒有資料會明講缺口。
+          </p>
         </div>
-
         {heldSymbols.length > 0 && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs flex flex-wrap items-center gap-2">
-            <b className="text-amber-200">我的持股新聞快查</b>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <b className="text-amber-200">我的持股</b>
             {heldSymbols.map((sym) => (
               <button
                 type="button"
@@ -288,226 +295,50 @@ function Mod2Panel({ ctx }) {
                 {sym}
               </button>
             ))}
-            <span className="text-slate-500">點代號自動抓取該檔最新新聞</span>
+            <span className="text-slate-500">點代號自動分析該檔新聞</span>
           </div>
         )}
-        <div className="flex flex-wrap gap-2">
-          {NEWS_PRESETS.map((preset) => (
-            <button
-              type="button"
-              key={preset.label}
-              onClick={() => {
-                setM2Form(preset);
-                runMod2(preset);
-              }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-sky-300 border border-slate-800 transition cursor-pointer"
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-
-        <div
-          className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-3 space-y-2"
-          data-tour="mod2-news"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-sky-200">
-              抓取「{m2Form.target}」最新真實新聞／公告。台股：Google
-              News、鉅亨網、Yahoo奇摩股市、MoneyDJ、證交所重大訊息，加上玩股網、財報狗分析專欄；美股：Google
-              News、Yahoo Finance、鉅亨網、SEC 8-K，加上 TradingView、ETFdb 分析專欄。 點一則 →
-              自動帶入標題與發布時間，並用當時已知的真實價格算事件前漲幅。
-              <Tip text="新聞＝發生了什麼事；公告（重大訊息、公司公告、8-K）＝公司自己發布的官方資訊，可信度最高；分析專欄＝作者的觀點與解讀，不是新事件，判斷「利多是否已反映」時請以新聞與公告為主。同一則新聞被多個網站轉載只會顯示一次。" />
-            </div>
-            <button
-              type="button"
-              onClick={loadNews}
-              disabled={newsLoading}
-              className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer"
-            >
-              {newsLoading ? '抓取中…' : '抓取最新新聞'}
-            </button>
-          </div>
-          {news && (
-            <div className="space-y-1">
-              <div className="text-[11px] text-slate-400">
-                {news.sources?.join('・')}
-                {news.errors?.map((e) => (
-                  <span key={e} className="text-rose-300 ml-2">
-                    ⚠️ {e}
-                  </span>
-                ))}
-              </div>
-              {news.items.length > 0 && (
-                <div className="flex gap-1 text-[11px]">
-                  {['全部', '新聞', '公告', '分析專欄'].map((k) => (
-                    <button
-                      type="button"
-                      key={k}
-                      onClick={() => setNewsKind(k)}
-                      className={`px-2 py-0.5 rounded cursor-pointer ${newsKind === k ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
-                    >
-                      {k}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="max-h-72 overflow-y-auto space-y-1">
-                {news.items
-                  .filter((it) =>
-                    newsKind === '全部'
-                      ? true
-                      : newsKind === '公告'
-                        ? ['重大訊息', '公司公告', '8-K'].includes(it.kind)
-                        : it.kind === newsKind,
-                  )
-                  .map((it) => (
-                    <button
-                      type="button"
-                      key={`${it.published_utc}-${it.title}`}
-                      onClick={() => pickNews(it)}
-                      className="w-full text-left px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 hover:border-sky-400 text-xs cursor-pointer"
-                    >
-                      <span className="text-slate-500 font-mono mr-2">
-                        {it.local_iso.replace('T', ' ').slice(0, 16)}
-                      </span>
-                      <KindBadge kind={it.kind} />
-                      <span className="text-slate-200 ml-2">{it.title}</span>
-                      <span className="text-slate-500 ml-2">— {it.source}</span>
-                      {it.detail && (
-                        <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
-                          {it.detail}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                {news.items.length === 0 && (
-                  <div className="text-xs text-slate-500">
-                    沒有抓到新聞（可能該代號近期無報導）。
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <NewsDigest symbol={m2Form.target} aiOn={aiOn} />
-
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div className="md:col-span-3">
-            <label htmlFor="m2-target" className="block text-xs text-slate-400 mb-1">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-44">
+            <label htmlFor="m2-quick-target" className="block text-xs text-slate-400 mb-1">
               股票代號
             </label>
             <input
-              id="m2-target"
+              id="m2-quick-target"
               type="text"
               value={m2Form.target}
               onChange={(e) => setM2Form({ ...m2Form, target: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !digest.loading && !m2Loading) analyze();
+              }}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
             />
           </div>
-          <div className="md:col-span-3">
-            <label htmlFor="m2-sentiment" className="block text-xs text-slate-400 mb-1">
-              新聞情緒方向
-              {aiOn && (
-                <span className="ml-2 inline-flex items-center gap-1 text-violet-300">
-                  <input
-                    type="checkbox"
-                    checked={!!m2Form.ai_sentiment}
-                    onChange={(e) => setM2Form({ ...m2Form, ai_sentiment: e.target.checked })}
-                    aria-label="改由 AI 判斷情緒"
-                  />
-                  改由 AI 判斷
-                </span>
-              )}
-            </label>
-            <select
-              id="m2-sentiment"
-              value={m2Form.sentiment}
-              onChange={(e) => setM2Form({ ...m2Form, sentiment: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-            >
-              <option value="POSITIVE">POSITIVE (利多催化)</option>
-              <option value="NEGATIVE">NEGATIVE (利空衝擊)</option>
-              <option value="NEUTRAL">NEUTRAL (中性訊息)</option>
-            </select>
-          </div>
-          <div className="md:col-span-3">
-            <label htmlFor="m2-ret5" className="block text-xs text-slate-400 mb-1">
-              事件前 5 日累計漲跌 (%)
-            </label>
-            <input
-              id="m2-ret5"
-              type="number"
-              step="0.1"
-              value={m2Form.ret_5d_pct ?? ''}
-              onChange={(e) =>
-                setM2Form({
-                  ...m2Form,
-                  ret_5d_pct: e.target.value === '' ? '' : Number(e.target.value),
-                })
-              }
-              placeholder="留空＝用真實日 K 計算"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label htmlFor="m2-ret20" className="block text-xs text-slate-400 mb-1">
-              事件前 20 日累計漲跌 (%)
-            </label>
-            <input
-              id="m2-ret20"
-              type="number"
-              step="0.1"
-              value={m2Form.ret_20d_pct ?? ''}
-              onChange={(e) =>
-                setM2Form({
-                  ...m2Form,
-                  ret_20d_pct: e.target.value === '' ? '' : Number(e.target.value),
-                })
-              }
-              placeholder="留空＝用真實日 K 計算"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
-            />
-          </div>
-          <div className="md:col-span-12">
-            <label htmlFor="m2-headline" className="block text-xs text-slate-400 mb-1">
-              新聞事件標題 / 摘要
-            </label>
-            <input
-              id="m2-headline"
-              type="text"
-              value={m2Form.headline}
-              onChange={(e) => setM2Form({ ...m2Form, headline: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-            />
-          </div>
-          <div className="md:col-span-9">
-            <label htmlFor="m2-inv" className="block text-xs text-slate-400 mb-1">
-              停損／判斷失效條件（Invalidation，要寫出具體價格或百分比，例如「跌破 980
-              停損」；太模糊會被系統退回）
-            </label>
-            <input
-              id="m2-inv"
-              type="text"
-              value={m2Form.invalidation_criteria}
-              onChange={(e) => setM2Form({ ...m2Form, invalidation_criteria: e.target.value })}
-              placeholder="留空＝系統用真實支撐／壓力自動產生"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-            />
-          </div>
-          <div className="md:col-span-3 flex items-end">
-            <button
-              type="button"
-              onClick={() => runMod2()}
-              disabled={m2Loading}
-              className="w-full py-2 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm shadow-lg shadow-sky-600/25 transition cursor-pointer"
-            >
-              {m2Loading ? '評估中...' : '執行 Priced-in 評估'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={analyze}
+            disabled={digest.loading || m2Loading}
+            className="px-5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white font-semibold text-sm cursor-pointer"
+          >
+            {digest.loading || m2Loading ? '分析中…' : '分析新聞'}
+          </button>
+          <span className="text-xs text-slate-400" role="status" aria-live="polite">
+            {step ||
+              (aiOn ? '已啟用 AI：整理新聞時會呼叫 AI' : '未啟用 AI：只用關鍵字規則（粗略）')}
+          </span>
         </div>
       </div>
+
+      <ResearchSummary
+        d={digest.d && !digest.d.fail ? digest.d : null}
+        m2Data={m2Data}
+        onPick={pickNews}
+      />
+      {digest.d?.fail && (
+        <div className="rounded-xl border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-xs text-rose-200">
+          ⚠️ 新聞整理失敗：{digest.d.fail}
+        </div>
+      )}
 
       {m2Data && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -650,9 +481,299 @@ function Mod2Panel({ ctx }) {
                 },
             { text: 'ATR、波動區間為真實日 K 計算' },
           ]}
-          data={m2Data}
+          data={{
+            ...m2Data,
+            news_research: digest.d?.summary
+              ? {
+                  tone: digest.d.summary.tone,
+                  counts: digest.d.summary.counts,
+                  gaps: digest.d.summary.gaps,
+                  lead: digest.d.summary.lead,
+                  mode: digest.d.mode,
+                  evidence: (digest.d.items || [])
+                    .filter((it) => it.kind !== '分析專欄')
+                    .slice(0, 6)
+                    .map((it, i) => ({
+                      no: i + 1,
+                      time: it.local_iso,
+                      kind: it.kind,
+                      source: it.source,
+                      title: it.title,
+                      sentiment: it.sentiment,
+                      reaction_pct: it.reaction?.pct ?? null,
+                    })),
+                }
+              : undefined,
+          }}
         />
       )}
+
+      <details data-tour="mod2-advanced" className="rounded-2xl border border-slate-800 bg-slate-900/60">
+        <summary className="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-slate-200 hover:text-white">
+          進階：手動輸入標題、情緒與漲跌幅，或瀏覽全部抓到的新聞
+        </summary>
+      <div className="p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-white">手動輸入與完整新聞清單</h2>
+            <span className="block mt-1 text-xs text-slate-500">
+              資料狀態：新聞標題與情緒是「範例輸入」，可自行修改；股價、ATR、事件前漲幅來自真實日
+              K（Yahoo/FinMind）
+            </span>
+            <p className="text-xs text-slate-400">
+              判斷消息是否已提前反映在股價，並估算事件後的合理波動範圍
+            </p>
+          </div>
+        </div>
+
+        {heldSymbols.length > 0 && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs flex flex-wrap items-center gap-2">
+            <b className="text-amber-200">我的持股新聞快查</b>
+            {heldSymbols.map((sym) => (
+              <button
+                type="button"
+                key={sym}
+                onClick={() => {
+                  bus._autoNews = sym;
+                  setM2Form({
+                    ...m2Form,
+                    target: sym,
+                    headline: '',
+                    ret_5d_pct: '',
+                    ret_20d_pct: '',
+                    invalidation_criteria: '',
+                  });
+                }}
+                className={`px-2 py-0.5 rounded-md mono border cursor-pointer ${
+                  baseCode(normSym(sym)) === baseCode(normSym(m2Form.target || ''))
+                    ? 'bg-amber-500/30 border-amber-400 text-white'
+                    : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
+            <span className="text-slate-500">點代號自動抓取該檔最新新聞</span>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {NEWS_PRESETS.map((preset) => (
+            <button
+              type="button"
+              key={preset.label}
+              onClick={() => {
+                setM2Form(preset);
+                runMod2(preset);
+              }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-sky-300 border border-slate-800 transition cursor-pointer"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-3 space-y-2"
+          data-tour="mod2-news-list"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs text-sky-200">
+              抓取「{m2Form.target}」最新真實新聞／公告。台股：Google
+              News、鉅亨網、Yahoo奇摩股市、MoneyDJ、證交所重大訊息，加上玩股網、財報狗分析專欄；美股：Google
+              News、Yahoo Finance、鉅亨網、SEC 8-K，加上 TradingView、ETFdb 分析專欄。 點一則 →
+              自動帶入標題與發布時間，並用當時已知的真實價格算事件前漲幅。
+              <Tip text="新聞＝發生了什麼事；公告（重大訊息、公司公告、8-K）＝公司自己發布的官方資訊，可信度最高；分析專欄＝作者的觀點與解讀，不是新事件，判斷「利多是否已反映」時請以新聞與公告為主。同一則新聞被多個網站轉載只會顯示一次。" />
+            </div>
+            <button
+              type="button"
+              onClick={loadNews}
+              disabled={newsLoading}
+              className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer"
+            >
+              {newsLoading ? '抓取中…' : '抓取最新新聞'}
+            </button>
+          </div>
+          {news && (
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-400">
+                {news.sources?.join('・')}
+                {news.errors?.map((e) => (
+                  <span key={e} className="text-rose-300 ml-2">
+                    ⚠️ {e}
+                  </span>
+                ))}
+              </div>
+              {news.items.length > 0 && (
+                <div className="flex gap-1 text-[11px]">
+                  {['全部', '新聞', '公告', '分析專欄'].map((k) => (
+                    <button
+                      type="button"
+                      key={k}
+                      onClick={() => setNewsKind(k)}
+                      className={`px-2 py-0.5 rounded cursor-pointer ${newsKind === k ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {news.items
+                  .filter((it) =>
+                    newsKind === '全部'
+                      ? true
+                      : newsKind === '公告'
+                        ? ['重大訊息', '公司公告', '8-K'].includes(it.kind)
+                        : it.kind === newsKind,
+                  )
+                  .map((it) => (
+                    <button
+                      type="button"
+                      key={`${it.published_utc}-${it.title}`}
+                      onClick={() => pickNews(it)}
+                      className="w-full text-left px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 hover:border-sky-400 text-xs cursor-pointer"
+                    >
+                      <span className="text-slate-500 font-mono mr-2">
+                        {it.local_iso.replace('T', ' ').slice(0, 16)}
+                      </span>
+                      <KindBadge kind={it.kind} />
+                      <span className="text-slate-200 ml-2">{it.title}</span>
+                      <span className="text-slate-500 ml-2">— {it.source}</span>
+                      {it.detail && (
+                        <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                          {it.detail}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                {news.items.length === 0 && (
+                  <div className="text-xs text-slate-500">
+                    沒有抓到新聞（可能該代號近期無報導）。
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <NewsDigest symbol={m2Form.target} aiOn={aiOn} digest={digest} />
+
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div className="md:col-span-3">
+            <label htmlFor="m2-target" className="block text-xs text-slate-400 mb-1">
+              股票代號
+            </label>
+            <input
+              id="m2-target"
+              type="text"
+              value={m2Form.target}
+              onChange={(e) => setM2Form({ ...m2Form, target: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
+            />
+          </div>
+          <div className="md:col-span-3">
+            <label htmlFor="m2-sentiment" className="block text-xs text-slate-400 mb-1">
+              新聞情緒方向
+              {aiOn && (
+                <span className="ml-2 inline-flex items-center gap-1 text-violet-300">
+                  <input
+                    type="checkbox"
+                    checked={!!m2Form.ai_sentiment}
+                    onChange={(e) => setM2Form({ ...m2Form, ai_sentiment: e.target.checked })}
+                    aria-label="改由 AI 判斷情緒"
+                  />
+                  改由 AI 判斷
+                </span>
+              )}
+            </label>
+            <select
+              id="m2-sentiment"
+              value={m2Form.sentiment}
+              onChange={(e) => setM2Form({ ...m2Form, sentiment: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+            >
+              <option value="POSITIVE">POSITIVE (利多催化)</option>
+              <option value="NEGATIVE">NEGATIVE (利空衝擊)</option>
+              <option value="NEUTRAL">NEUTRAL (中性訊息)</option>
+            </select>
+          </div>
+          <div className="md:col-span-3">
+            <label htmlFor="m2-ret5" className="block text-xs text-slate-400 mb-1">
+              事件前 5 日累計漲跌 (%)
+            </label>
+            <input
+              id="m2-ret5"
+              type="number"
+              step="0.1"
+              value={m2Form.ret_5d_pct ?? ''}
+              onChange={(e) =>
+                setM2Form({
+                  ...m2Form,
+                  ret_5d_pct: e.target.value === '' ? '' : Number(e.target.value),
+                })
+              }
+              placeholder="留空＝用真實日 K 計算"
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
+            />
+          </div>
+          <div className="md:col-span-3">
+            <label htmlFor="m2-ret20" className="block text-xs text-slate-400 mb-1">
+              事件前 20 日累計漲跌 (%)
+            </label>
+            <input
+              id="m2-ret20"
+              type="number"
+              step="0.1"
+              value={m2Form.ret_20d_pct ?? ''}
+              onChange={(e) =>
+                setM2Form({
+                  ...m2Form,
+                  ret_20d_pct: e.target.value === '' ? '' : Number(e.target.value),
+                })
+              }
+              placeholder="留空＝用真實日 K 計算"
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white"
+            />
+          </div>
+          <div className="md:col-span-12">
+            <label htmlFor="m2-headline" className="block text-xs text-slate-400 mb-1">
+              新聞事件標題 / 摘要
+            </label>
+            <input
+              id="m2-headline"
+              type="text"
+              value={m2Form.headline}
+              onChange={(e) => setM2Form({ ...m2Form, headline: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+            />
+          </div>
+          <div className="md:col-span-9">
+            <label htmlFor="m2-inv" className="block text-xs text-slate-400 mb-1">
+              停損／判斷失效條件（Invalidation，要寫出具體價格或百分比，例如「跌破 980
+              停損」；太模糊會被系統退回）
+            </label>
+            <input
+              id="m2-inv"
+              type="text"
+              value={m2Form.invalidation_criteria}
+              onChange={(e) => setM2Form({ ...m2Form, invalidation_criteria: e.target.value })}
+              placeholder="留空＝系統用真實支撐／壓力自動產生"
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+            />
+          </div>
+          <div className="md:col-span-3 flex items-end">
+            <button
+              type="button"
+              onClick={() => runMod2()}
+              disabled={m2Loading}
+              className="w-full py-2 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm shadow-lg shadow-sky-600/25 transition cursor-pointer"
+            >
+              {m2Loading ? '評估中...' : '執行 Priced-in 評估'}
+            </button>
+          </div>
+        </div>
+      </div>
+      </details>
     </div>
   );
 }

@@ -399,6 +399,20 @@ function SettingsPage() {
           ))}
         </div>
       </div>
+
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-2">
+        <h2 className="text-sm font-bold text-white">系統自檢</h2>
+        <p className="text-xs text-slate-400">
+          用固定的測試資料檢查核心計算規則（回測、風控、評分等）是否正常，給排查問題時使用，一般看盤不需要。
+        </p>
+        <button
+          type="button"
+          onClick={() => bus.goTab?.('visual_tests')}
+          className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-sky-300 hover:text-white text-xs cursor-pointer"
+        >
+          開啟系統自檢
+        </button>
+      </div>
     </div>
   );
 }

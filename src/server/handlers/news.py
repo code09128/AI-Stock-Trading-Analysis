@@ -69,7 +69,8 @@ class NewsHandlers:
             )
         ).strip()
         sentiment = str(payload.get("sentiment", "POSITIVE")).strip()
-        sentiment_info = {"source": "使用者選擇", "reason": ""}
+        # 研究摘要流程由系統依標題關鍵字規則帶入方向，不是使用者選的，來源要照實標示
+        sentiment_info = {"source": str(payload.get("sentiment_source") or "使用者選擇"), "reason": ""}
         if ai_client.is_enabled(payload.get("ai")) and payload.get("ai_sentiment"):
             try:
                 cls = ai_client.classify_sentiment(payload["ai"], headline, ticker)

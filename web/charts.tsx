@@ -10,13 +10,34 @@ const RANGE_PRESETS = [
 ] as [string, number][];
 const MIN_VISIBLE = 10;
 
-function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60, unit = '日' }) {
+const SIGNAL_LS_KEY = 'ta_show_signals_v1';
+const readShowSignals = () => {
+  try {
+    return localStorage.getItem(SIGNAL_LS_KEY) !== '0'; // 預設顯示
+  } catch {
+    return true;
+  }
+};
+
+const BB_LS_KEY = 'ta_show_bollinger_v1';
+const readShowBB = () => {
+  try {
+    return localStorage.getItem(BB_LS_KEY) === '1'; // 預設關閉，需要時再開
+  } catch {
+    return false;
+  }
+};
+
+// signals：[{date, type: 'buy'|'sell', reason, confirmed}]，由後端依固定規則算出，只在 K 線上標記
+function CandlestickChart({ bars: allBars, supports, resistances, signals = [], signalsError = null, barCount = 60, unit = '日' }: { bars: any; supports?: any; resistances?: any; signals?: any[]; signalsError?: string | null; barCount?: number; unit?: string }) {
   const { useRef, useEffect } = React;
   const total = allBars?.length || 0;
   // view：顯示幾根（count）與最右邊離最新差幾根（offset，0＝貼齊最新）
   const [view, setView] = useState({ count: barCount, offset: 0 });
   const [hoverIdx, setHoverIdx] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const [showSignals, setShowSignals] = useState(readShowSignals);
+  const [showBB, setShowBB] = useState(readShowBB);
   const svgRef = useRef(null);
   const drag = useRef(null);
   const pointers = useRef(new Map());
@@ -117,6 +138,9 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
 
   const activeIdx = hoverIdx !== null && hoverIdx < bars.length ? hoverIdx : bars.length - 1;
   const activeBar = bars[activeIdx];
+  const sigByDate = new Map<string, any>();
+  if (showSignals) for (const sg of signals || []) sigByDate.set(sg.date, sg);
+  const activeSignal = sigByDate.get(activeBar.date);
   const isActiveUp = activeBar.close >= activeBar.open;
 
   const allPrices = [];
@@ -126,6 +150,7 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
     if (b.ma5) allPrices.push(b.ma5);
     if (b.ma20) allPrices.push(b.ma20);
     if (b.ma60) allPrices.push(b.ma60);
+    if (showBB && b.bb_upper != null && b.bb_lower != null) allPrices.push(b.bb_upper, b.bb_lower);
     if (b.volume > maxVol) maxVol = b.volume;
   }
   const minRaw = Math.min(...allPrices);
@@ -149,6 +174,12 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
   const ma5Points = line('ma5');
   const ma20Points = line('ma20');
   const ma60Points = line('ma60');
+  // 布林通道：上下軌＝MA20 ± 2 個標準差；畫成淡色帶狀範圍＋兩條虛線
+  const bbBars = showBB ? bars.map((b, idx) => ({ b, idx })).filter(({ b }) => b.bb_upper != null && b.bb_lower != null) : [];
+  const bbX = (idx) => padLeft + idx * stepX + stepX / 2;
+  const bbUpper = bbBars.map(({ b, idx }) => `${bbX(idx)},${toY(b.bb_upper)}`);
+  const bbLower = bbBars.map(({ b, idx }) => `${bbX(idx)},${toY(b.bb_lower)}`);
+  const bbBand = [...bbUpper, ...[...bbLower].reverse()].join(' ');
   const hasMa60 = ma60Points.length > 0 || bars.some((b) => b.ma60 != null);
   const decimals = maxP < 50 ? 2 : 1;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => ({
@@ -231,9 +262,51 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
               {expanded ? '✕ 關閉' : '⛶ 放大'}
             </button>
           </div>
+          <button
+            type="button"
+            aria-pressed={showSignals}
+            title="依固定規則標出買賣訊號：收盤突破近 20 日高點＋MACD 金叉或紅柱放大＝買；跌破近 20 日低點＋死叉或綠柱放大＝賣。歷史統計相對隨機進場優勢很小（見說明頁 K 線怎麼看），僅供參考，不是投資建議。"
+            onClick={() => {
+              const next = !showSignals;
+              setShowSignals(next);
+              try {
+                localStorage.setItem(SIGNAL_LS_KEY, next ? '1' : '0');
+              } catch {
+                /* 瀏覽器不給存也不影響顯示 */
+              }
+            }}
+            className={`${btn} border ${
+              showSignals
+                ? 'bg-amber-500/20 border-amber-400 text-amber-100'
+                : 'border-slate-700 text-slate-400 hover:text-white'
+            }`}
+          >
+            買賣訊號
+          </button>
+          <button
+            type="button"
+            aria-pressed={showBB}
+            title="布林通道：中軌是 20 日均線，上下軌是均線加減 2 個標準差（約 95% 的價格會落在通道內）。通道收窄代表波動變小，之後常出現較大波動，但方向無法預測；價格貼著上軌不一定是賣點，強勢股可沿上軌走很久。"
+            onClick={() => {
+              const next = !showBB;
+              setShowBB(next);
+              try {
+                localStorage.setItem(BB_LS_KEY, next ? '1' : '0');
+              } catch {
+                /* 瀏覽器不給存也不影響顯示 */
+              }
+            }}
+            className={`${btn} border ${
+              showBB
+                ? 'bg-violet-500/20 border-violet-400 text-violet-100'
+                : 'border-slate-700 text-slate-400 hover:text-white'
+            }`}
+          >
+            布林通道
+          </button>
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] font-mono">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono whitespace-nowrap">
           <span className="flex items-center gap-1 text-yellow-400">
             <span className="w-3 h-0.5 bg-yellow-400 inline-block" /> MA5
           </span>
@@ -257,6 +330,12 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
             <span className="w-3 h-0.5 border-b border-dashed border-rose-400 inline-block" />{' '}
             壓力
           </span>
+          {showSignals && (
+            <>
+              <span className="text-rose-400">▲買</span>
+              <span className="text-emerald-400">▼賣</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -293,12 +372,25 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
         {activeBar.ma60 != null && (
           <span className="text-emerald-400">MA60: {activeBar.ma60}</span>
         )}
+        {showBB && activeBar.bb_upper != null && (
+          <span className="text-violet-300">
+            布林 上{activeBar.bb_upper} / 下{activeBar.bb_lower}
+          </span>
+        )}
+        {activeSignal && (
+          <span
+            className={`w-full font-sans ${activeSignal.type === 'buy' ? 'text-rose-300' : 'text-emerald-300'}`}
+          >
+            {activeSignal.type === 'buy' ? '▲ 買進訊號' : '▼ 賣出訊號'}
+            {activeSignal.confirmed ? '' : '（盤中，尚未確認）'}：{activeSignal.reason}（僅供參考）
+          </span>
+        )}
       </div>
 
       <svg
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
-        className={`w-full ${expanded ? 'h-[calc(100vh-14rem)] min-h-[420px]' : 'h-72'} select-none touch-none ${
+        className={`w-full ${expanded ? 'h-[calc(100vh-14rem)] min-h-[420px]' : 'aspect-[780/340] md:aspect-auto md:h-72'} select-none touch-none ${
           drag.current ? 'cursor-grabbing' : 'cursor-crosshair'
         }`}
         onPointerDown={onPointerDown}
@@ -440,6 +532,33 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
                 fill={color}
                 opacity={isHovered ? 0.95 : 0.5}
               />
+              {(() => {
+                const sg = sigByDate.get(b.date);
+                if (!sg) return null;
+                const buy = sg.type === 'buy';
+                const r = Math.max(Math.min(stepX * 0.55, 6), 3.5);
+                const baseY = buy
+                  ? Math.min(toY(b.low) + r + 3, padTop + priceH - 2)
+                  : Math.max(toY(b.high) - r - 3, padTop + 2);
+                const pts = buy
+                  ? `${cx},${baseY - r} ${cx - r},${baseY + r * 0.8} ${cx + r},${baseY + r * 0.8}`
+                  : `${cx},${baseY + r} ${cx - r},${baseY - r * 0.8} ${cx + r},${baseY - r * 0.8}`;
+                const col = buy ? '#ef4444' : '#10b981';
+                return (
+                  <polygon
+                    points={pts}
+                    fill={sg.confirmed ? col : 'none'}
+                    stroke={col}
+                    strokeWidth="1.4"
+                    strokeDasharray={sg.confirmed ? undefined : '2 2'}
+                    pointerEvents="none"
+                  >
+                    <title>
+                      {buy ? '買進訊號' : '賣出訊號'}：{sg.reason}
+                    </title>
+                  </polygon>
+                );
+              })()}
               {idx % labelEvery === 0 && (
                 <text
                   x={cx}
@@ -478,6 +597,13 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
           opacity="0.75"
           pointerEvents="none"
         />
+        {showBB && bbBars.length > 1 && (
+          <g pointerEvents="none">
+            <polygon points={bbBand} fill="#a78bfa" opacity="0.10" />
+            <polyline fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeDasharray="4 3" points={bbUpper.join(' ')} opacity="0.9" />
+            <polyline fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeDasharray="4 3" points={bbLower.join(' ')} opacity="0.9" />
+          </g>
+        )}
         {ma60Points && (
           <polyline
             fill="none"
@@ -525,6 +651,8 @@ function CandlestickChart({ bars: allBars, supports, resistances, barCount = 60,
           </span>
           <span>
             滾輪縮放・拖曳左右平移・手機兩指縮放・雙擊還原{expanded ? '・Esc 關閉' : ''}
+            {showSignals ? '・買賣訊號為固定規則標記，歷史統計優勢很小，僅供參考' : ''}
+            {showSignals && signalsError ? `・⚠️ ${signalsError}` : ''}
           </span>
         </div>
       </div>

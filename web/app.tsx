@@ -15,6 +15,7 @@ import { loadPortfolio, saveRules, setJournal } from './portfolio_store';
 import { IndexBar } from './live_widgets';
 import { AlertWatcher } from './pages/overview_alerts';
 import { WatchPage } from './pages/watch';
+import { STOCK_TAB_IDS, StockTabs } from './pages/stock_tabs';
 import { MarketBoardPage } from './pages/market_board';
 import { IndustryChainPage } from './pages/industry_chain';
 import { MultiChartPage } from './pages/multi_chart';
@@ -28,6 +29,21 @@ import { buildExportReport, downloadText, stamp } from './export_report';
 
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
+
+// 提示框的圖示：訊息開頭已經有圖示（✅／⚠️／ℹ️…）就用它並依類型上色，沒有才補 ✅，避免出現兩個圖示
+const TOAST_TONES = {
+  warn: 'bg-amber-950/95 border-amber-500/40 text-amber-200',
+  info: 'bg-sky-950/95 border-sky-500/40 text-sky-200',
+  ok: 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200',
+};
+function splitToast(msg: unknown) {
+  const text = String(msg ?? '');
+  const m = text.match(/^(\p{Extended_Pictographic}️?)\s*/u);
+  const icon = m ? m[1] : '✅';
+  const body = m ? text.slice(m[0].length) : text;
+  const tone = /^(⚠|❌|⛔)/u.test(icon) ? 'warn' : /^ℹ/u.test(icon) ? 'info' : 'ok';
+  return { icon, body, tone };
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState(() => (window.location.hash.startsWith('#chains') ? 'chains' : 'watch')); // 產業鏈的網址定位可直接開到那一頁
@@ -126,13 +142,15 @@ function App() {
   const [testSuiteRunning, setTestSuiteRunning] = useState(false);
   const [testSuiteReport, setTestSuiteReport] = useState(null);
 
-  const showToast = useCallback((msg) => {
+  // page：只屬於某一頁的結果提示（例如背景跑完的回測）；使用者已經切到別頁就不顯示，只留在操作紀錄
+  const showToast = useCallback((msg, page?: string) => {
     // 畫面提示也記到操作紀錄；含失敗／錯誤字樣的標成錯誤，方便篩選
     logEvent?.(
       'notice',
       { message: String(msg).slice(0, 200) },
       /失敗|錯誤|無法|⚠️/.test(String(msg)) ? 'error' : 'info',
     );
+    if (page && bus.currentPage !== page) return;
     setToastMsg(msg);
     clearTimeout(toastTimer.current); // 連續提示時，上一則的計時器不能提早關掉這一則
     toastTimer.current = setTimeout(() => setToastMsg(null), 2600);
@@ -180,9 +198,9 @@ function App() {
         if (newClose !== undefined) prevPriceRef.current = newClose;
         setM1Data(data);
         if (!quiet)
-          showToast(`✅ 技術分析完成：${targetTicker}（${targetTf === 'W' ? '週線' : '日線'}）`);
+          showToast(`✅ 技術分析完成：${targetTicker}（${targetTf === 'W' ? '週線' : '日線'}）`, 'mod1');
       } catch (err) {
-        if (reqId === m1ReqRef.current) showToast(`⚠️ 技術分析 分析失敗: ${err.message}`);
+        if (reqId === m1ReqRef.current) showToast(`⚠️ 技術分析 分析失敗: ${err.message}`, 'mod1');
       } finally {
         if (reqId === m1ReqRef.current) {
           setM1Loading(false);
@@ -236,9 +254,9 @@ function App() {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         setM2Data(data);
-        showToast(`✅ 新聞判斷完成：${base.target || ''}`);
+        showToast(`✅ 新聞判斷完成：${base.target || ''}`, 'mod2');
       } catch (err) {
-        showToast(`⚠️ 新聞判斷 評估失敗: ${err.message}`);
+        showToast(`⚠️ 新聞判斷 評估失敗: ${err.message}`, 'mod2');
       } finally {
         setM2Loading(false);
       }
@@ -256,9 +274,10 @@ function App() {
       setM3Data(data);
       showToast(
         `✅ 回測完成：${m3Form.target_asset}，共 ${data.backtest_result?.total_trades ?? 0} 筆交易`,
+        'mod3',
       );
     } catch (err) {
-      if (mine === m3ReqRef.current) showToast(`⚠️ 策略回測 回測失敗: ${err.message}`);
+      if (mine === m3ReqRef.current) showToast(`⚠️ 策略回測 回測失敗: ${err.message}`, 'mod3');
     } finally {
       if (mine === m3ReqRef.current) setM3Loading(false);
     }
@@ -291,9 +310,9 @@ function App() {
       if (mine !== m4ReqRef.current) return;
       if (data.error) throw new Error(data.error);
       setM4Data(data);
-      showToast(`✅ 組合風控計算完成（${m4Holdings.length} 檔持股）`);
+      showToast(`✅ 組合風控計算完成（${m4Holdings.length} 檔持股）`, 'mod4');
     } catch (err) {
-      if (mine === m4ReqRef.current) showToast(`⚠️ 組合風控 風控運算失敗: ${err.message}`);
+      if (mine === m4ReqRef.current) showToast(`⚠️ 組合風控 風控運算失敗: ${err.message}`, 'mod4');
     } finally {
       if (mine === m4ReqRef.current) setM4Loading(false);
     }
@@ -323,16 +342,16 @@ function App() {
         setM5Data(data);
         if (data.entries_used) setM5Entries(data.entries_used);
         if (usedSource === 'mine' && !data.closed_trades_used) {
-          showToast(`✅ 已更新持有中部位（${(data.open_positions || []).length} 檔）；賣出成交後才會有勝率與個人規則`);
+          showToast(`✅ 已更新持有中部位（${(data.open_positions || []).length} 檔）；賣出成交後才會有勝率與個人規則`, 'mod5');
         } else if (usedSource === 'mine') {
           setJournal(data.entries_used || usedEntries);
           saveRules(data.personalized_3_rules, data.rules_source);
           notifySaved('交易診斷完成，已更新交易紀錄與 3 條個人規則（下單面板會顯示）');
         } else {
-          showToast('✅ 交易診斷完成（範例資料，不會更新你的交易紀錄與規則）');
+          showToast('✅ 交易診斷完成（範例資料，不會更新你的交易紀錄與規則）', 'mod5');
         }
       } catch (err) {
-        if (mine === m5ReqRef.current) showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`);
+        if (mine === m5ReqRef.current) showToast(`⚠️ 交易檢討 診斷失敗: ${err.message}`, 'mod5');
       } finally {
         if (mine === m5ReqRef.current) setM5Loading(false);
       }
@@ -553,6 +572,10 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   const expanded = isMobile || sidebarOpen; // 手機選單一律顯示文字
+  // 切頁（含個股頁的三個分頁）時回到頁面頂端，避免停在上一頁捲到的位置
+  useEffect(() => {
+    document.querySelector('main')?.parentElement?.scrollTo?.({ top: 0 });
+  }, [activeTab]);
   const goTab = (id) => {
     handleSwitchTab(id);
     setMenuOpen(false);
@@ -744,8 +767,18 @@ function App() {
     testSuiteRunning,
   };
 
-  const groups: string[] = [...new Set<string>(NAV_ITEMS.map((i) => i.group))];
-  const current = NAV_ITEMS.find((i) => i.id === activeTab) || NAV_ITEMS[0];
+  const navItems = NAV_ITEMS.filter((i) => !i.hidden); // 隱藏的頁面（系統自檢）仍可由設定頁進入
+  const groups: string[] = [...new Set<string>(navItems.map((i) => i.group))];
+  // 行情／技術分析／新聞判斷合併成側欄的「個股」一項；內部頁面 id 不變
+  const inStock = STOCK_TAB_IDS.includes(activeTab);
+  const current = NAV_ITEMS.find((i) => i.id === (inStock ? 'watch' : activeTab)) || NAV_ITEMS[0];
+  const stockSub = inStock ? NAV_ITEMS.find((i) => i.id === activeTab) : undefined;
+  const sampleBadge =
+    activeTab === 'mod4' && JSON.stringify(m4Holdings) === JSON.stringify(DEFAULT_HOLDINGS)
+      ? '目前用的是內建範例持股，不是你的持股'
+      : activeTab === 'mod5' && m5Source === 'sample'
+        ? '目前用的是內建範例交易，不是你的交易'
+        : '';
   const ai = useAISettings();
   const aiProfile = ai.profiles.find((p) => p.id === ai.activeId);
 
@@ -790,8 +823,8 @@ function App() {
               ) : (
                 <div className="mx-3 my-1 border-t border-slate-800" />
               )}
-              {NAV_ITEMS.filter((i) => i.group === g).map((item) => {
-                const isActive = activeTab === item.id;
+              {navItems.filter((i) => i.group === g).map((item) => {
+                const isActive = activeTab === item.id || (item.id === 'watch' && inStock);
                 return (
                   <button
                     type="button"
@@ -874,9 +907,18 @@ function App() {
               <div className="min-w-0">
                 <h1 className="text-base font-bold text-white truncate">
                   {isMobile ? current.short : current.title}
+                  {/* 範例資料標示：避免把內建範例的數字當成自己的持股或交易 */}
+                  {sampleBadge && (
+                    <span
+                      className="ml-2 align-middle text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-200"
+                      title={sampleBadge}
+                    >
+                      範例資料
+                    </span>
+                  )}
                 </h1>
                 <p className="hidden md:block text-[11px] text-slate-500 truncate">
-                  {current.subtitle}
+                  {stockSub ? stockSub.subtitle : current.subtitle}
                 </p>
               </div>
             </div>
@@ -908,6 +950,7 @@ function App() {
 
         <div className="flex-1 overflow-y-auto p-3 md:p-6">
           <main className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
+            {inStock && <StockTabs active={activeTab} onGo={goTab} />}
             {activeTab === 'watch' && (
               <WatchPage
                 onSendToMod1={sendToMod1}
@@ -939,8 +982,16 @@ function App() {
 
             {/* ================= TEST 12: 系統底層 12 項自檢中心 ================= */}
             {activeTab === 'settings' && <SettingsPage />}
-            {activeTab === 'mod1' && <Mod1Panel ctx={ctx} />}
-            {activeTab === 'mod2' && <Mod2Panel ctx={ctx} />}
+            {activeTab === 'mod1' && (
+              <div key="mod1" className="ta-fade-up">
+                <Mod1Panel ctx={ctx} />
+              </div>
+            )}
+            {activeTab === 'mod2' && (
+              <div key="mod2" className="ta-fade-up">
+                <Mod2Panel ctx={ctx} />
+              </div>
+            )}
             {activeTab === 'mod3' && <Mod3Panel ctx={ctx} />}
             {activeTab === 'mod4' && <Mod4Panel ctx={ctx} />}
             {activeTab === 'mod5' && <Mod5Panel ctx={ctx} />}
@@ -1068,12 +1119,19 @@ function App() {
       {/* 全站提醒引擎：不論在哪一頁都檢查提醒 */}
       <AlertWatcher say={showToast} />
 
-      {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 bg-emerald-950/95 border border-emerald-500/40 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-medium">
-          <span>✅</span>
-          <span>{toastMsg}</span>
-        </div>
-      )}
+      {toastMsg &&
+        (() => {
+          const t = splitToast(toastMsg);
+          return (
+            <div
+              role={t.tone === 'warn' ? 'alert' : 'status'}
+              className={`fixed bottom-6 right-6 z-50 border px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-medium max-w-[min(32rem,calc(100vw-3rem))] ${TOAST_TONES[t.tone]}`}
+            >
+              <span aria-hidden="true">{t.icon}</span>
+              <span>{t.body}</span>
+            </div>
+          );
+        })()}
     </div>
   );
 }

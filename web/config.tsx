@@ -127,10 +127,10 @@ const NAV_ITEMS = [
   {
     id: 'watch',
     group: '行情',
-    short: '看盤',
+    short: '個股',
     code: 'START',
-    title: '看盤',
-    subtitle: '自選股、我的持股、即時報價與模擬下單',
+    title: '個股',
+    subtitle: '行情：自選股、我的持股、即時報價與模擬下單',
     icon: 'candles',
   },
   {
@@ -159,18 +159,20 @@ const NAV_ITEMS = [
   },
   {
     id: 'mod1',
+    hidden: true, // 併入「個股」頁頂端分頁
     group: '分析',
     short: '技術分析',
     title: '技術分析',
-    subtitle: 'K 線、均線、支撐壓力與多空情境',
+    subtitle: '技術分析：K 線、買賣訊號、均線、支撐壓力與多空情境',
     icon: 'trend',
   },
   {
     id: 'mod2',
+    hidden: true, // 併入「個股」頁頂端分頁
     group: '分析',
     short: '新聞判斷',
     title: '新聞判斷',
-    subtitle: '新聞影響、是否已反映在股價、預期波動區間',
+    subtitle: '新聞判斷：新聞語氣、是否已反映在股價、預期波動區間',
     icon: 'news',
   },
   {
@@ -212,6 +214,7 @@ const NAV_ITEMS = [
     title: '系統自檢',
     subtitle: '核心計算規則的自動檢查',
     icon: 'selfcheck',
+    hidden: true, // 不放在左側導覽；從「設定」頁底部進入
   },
   {
     id: 'settings',

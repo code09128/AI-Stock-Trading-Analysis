@@ -114,6 +114,14 @@
     }
     h1, h2 { letter-spacing: -0.01em; }
 
+    /* 共用的進場動畫（新聞研究摘要等）：交錯淡入；使用者設定「減少動態效果」時全部停用 */
+    @keyframes ta-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes ta-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .ta-fade-up { animation: ta-fade-up .4s cubic-bezier(.2, .8, .2, 1) both; }
+    .ta-grow-x { transform-origin: left center; animation: ta-grow-x .7s cubic-bezier(.2, .8, .2, 1) both; }
+    .ta-tab-ind { transition: transform .28s cubic-bezier(.2, .8, .2, 1); }
+    @media (prefers-reduced-motion: reduce) { .ta-fade-up, .ta-grow-x { animation: none; } .ta-tab-ind { transition: none; } }
+
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
