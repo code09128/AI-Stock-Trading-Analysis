@@ -232,7 +232,7 @@ function Mod2Panel({ ctx }) {
       sentiment: lead.sentiment || 'NEUTRAL',
     };
     setM2Form(f);
-    await runMod2({ ...f, sentiment_source: '標題關鍵字規則（粗估）' });
+    await runMod2({ ...f, sentiment_source: lead.sentiment_by === 'AI' ? 'AI 逐則判斷（整理新聞時，只看標題與摘要）' : '標題關鍵字規則（粗估）' });
     setStep('');
   };
   // 從看盤頁熱力圖「查今天的新聞」過來：自動分析一次
@@ -253,7 +253,7 @@ function Mod2Panel({ ctx }) {
       sentiment: it.sentiment || m2Form.sentiment,
     };
     setM2Form(f);
-    await runMod2({ ...f, sentiment_source: '標題關鍵字規則（粗估）' });
+    await runMod2({ ...f, sentiment_source: it.sentiment_by === 'AI' ? 'AI 逐則判斷（整理新聞時，只看標題與摘要）' : '標題關鍵字規則（粗估）' });
   };
   return (
     <div className="space-y-5">
@@ -489,6 +489,7 @@ function Mod2Panel({ ctx }) {
                   counts: digest.d.summary.counts,
                   gaps: digest.d.summary.gaps,
                   lead: digest.d.summary.lead,
+                  risk_lead: digest.d.summary.risk_lead,
                   mode: digest.d.mode,
                   evidence: (digest.d.items || [])
                     .filter((it) => it.kind !== '分析專欄')
@@ -500,6 +501,7 @@ function Mod2Panel({ ctx }) {
                       source: it.source,
                       title: it.title,
                       sentiment: it.sentiment,
+                      timing: it.timing,
                       reaction_pct: it.reaction?.pct ?? null,
                     })),
                 }

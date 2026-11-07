@@ -123,6 +123,13 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual([t["title"] for t in tl], sorted([t["title"] for t in tl], key=lambda x: int(x[1:])))
         self.assertEqual(tl[-1]["title"], "t8")  # 保留最新的 8 則
 
+    def test_timeline_keeps_links_for_clicking(self):
+        rows = [{"kw": {"title": "a", "iso": "2026-11-01T10:00"}, "s": "NEUTRAL"}]
+        items = self.mk(*rows)
+        items[0]["link"] = "https://example.com/a"
+        tl = nd.summarize(items, [], "AI")["timeline"]
+        self.assertEqual(tl[0]["link"], "https://example.com/a")
+
     def test_build_attaches_summary_and_sentiment(self):
         bars = [Bar(f"2026-10-{d:02d}", 100, 101, 99, 100 + d % 3, 1000) for d in range(1, 29)]
         news = {"items": [
@@ -135,6 +142,90 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(d["summary"]["lead"]["title"], "台積電上修資本支出，外資買超")
         self.assertEqual(d["summary"]["tone"], "偏多")
         self.assertIn("未使用 AI", " ".join(d["summary"]["gaps"]))
+
+    def _build_with_ai(self, ai_by_no):
+        bars = [Bar(f"2026-10-{d:02d}", 100, 101, 99, 100 + d % 3, 1000) for d in range(1, 29)]
+        news = {"items": [
+            {"title": "0050買在112元套牢逾500萬 憂台股難創新高 勸別急著砍", "source": "S", "link": "https://x/1", "kind": "新聞",
+             "local_iso": "2026-10-20T09:00", "detail": ""},
+        ], "sources": ["S"], "errors": []}
+        res = {"by_no": ai_by_no, "reaction_changers": [], "unverified_numbers": []}
+        with patch.object(nd.ai_client, "is_enabled", return_value=True),                 patch.object(nd, "_ai_fields", return_value=res):
+            return nd.build(news, bars, "TW", 2.0, {"model": "m"}, "0050.TW", "0050")
+
+    def test_ai_sentiment_replaces_keyword_guess(self):
+        d = self._build_with_ai({1: {"sentiment": "NEUTRAL", "importance": 3}})
+        it = d["items"][0]
+        self.assertEqual(it["sentiment_rule"], "POSITIVE")  # 規則被「買」字騙了
+        self.assertEqual(it["sentiment"], "NEUTRAL")
+        self.assertEqual(it["sentiment_by"], "AI")
+        self.assertEqual(d["summary"]["counts"]["positive"], 0)
+        self.assertIn("沒讀內文", " ".join(d["summary"]["gaps"]))
+
+    def test_missing_ai_sentiment_keeps_rule_and_says_so(self):
+        d = self._build_with_ai({1: {"sentiment": None, "importance": 3}})
+        self.assertEqual(d["items"][0]["sentiment_by"], "關鍵字規則")
+        self.assertEqual(d["items"][0]["sentiment"], "POSITIVE")
+
+    def test_prompt_asks_for_sentiment_by_meaning(self):
+        sent = {}
+        def fake(profile, prompt, timeout=0):
+            sent["p"] = prompt
+            return {"items": [{"no": 1, "sentiment": "BOGUS"}], "reaction_changers": []}
+        with patch.object(nd.ai_client, "_json_call", side_effect=fake):
+            res = nd._ai_fields({"model": "m"}, "0050.TW", "0050", [item("t")])
+        self.assertIn("套牢", sent["p"])
+        self.assertIn("NEUTRAL", sent["p"])
+        self.assertIsNone(res["by_no"][1]["sentiment"])  # 不合法的值不採用
+
+    def test_risk_lead_is_listed_when_lead_is_mild(self):
+        items = self.mk({"kw": {"title": "產業合作消息", "iso": "2026-11-06T12:00"}, "s": "NEUTRAL"},
+                        {"kw": {"title": "盤中急殺賣壓湧現", "iso": "2026-11-06T11:00"}, "s": "NEGATIVE"})
+        items[1]["timing"] = "real_time"
+        s = nd.summarize(items, [], "AI")
+        self.assertEqual(s["lead"]["title"], "產業合作消息")
+        self.assertEqual(s["risk_lead"]["title"], "盤中急殺賣壓湧現")
+        self.assertEqual(s["risk_lead"]["timing"], "real_time")
+
+    def test_no_risk_lead_when_lead_is_already_negative_or_none_negative(self):
+        neg_lead = self.mk({"kw": {"title": "a"}, "s": "NEGATIVE"}, {"kw": {"title": "b"}, "s": "NEGATIVE"})
+        self.assertIsNone(nd.summarize(neg_lead, [], "AI")["risk_lead"])
+        calm = self.mk({"kw": {"title": "a"}, "s": "POSITIVE"}, {"kw": {"title": "b"}, "s": "NEUTRAL"})
+        self.assertIsNone(nd.summarize(calm, [], "AI")["risk_lead"])
+
+    def test_fulltext_hint_and_timing_parse(self):
+        d = self._build_with_ai({1: {"sentiment": "NEGATIVE", "timing": "real_time", "importance": 4}})
+        self.assertIn(d["items"][0]["timing"], ("real_time",))
+        self.assertTrue(nd.CHECK_TEXT_RE.search("台股一度重挫刷新最大跌點"))
+        self.assertFalse(nd.CHECK_TEXT_RE.search("公司召開股東會"))
+
+    def test_prompt_separates_retrospective_from_new_information(self):
+        sent = {}
+        def fake(profile, prompt, timeout=0):
+            sent["p"] = prompt
+            return {"items": [{"no": 1, "sentiment": "NEGATIVE", "timing": "weird"}], "reaction_changers": []}
+        with patch.object(nd.ai_client, "_json_call", side_effect=fake):
+            res = nd._ai_fields({"model": "m"}, "0050.TW", "0050", [item("t")])
+        for word in ("retrospective", "catalyst", "real_time", "造成大跌的新資訊"):
+            self.assertIn(word, sent["p"])
+        self.assertIsNone(res["by_no"][1]["timing"])  # 不合法的類型不採用
+
+    def test_ai_key_facts_include_risk_lead_and_timing(self):
+        from src.ai.ai_client import key_facts
+        text = key_facts("mod2", {"symbol": "0050.TW", "headline": "x", "news_research": {
+            "tone": "中性", "counts": {}, "gaps": [],
+            "risk_lead": {"title": "盤中急殺", "source": "S", "local_iso": "2026-11-06T11:00", "timing": "real_time"},
+            "evidence": [{"no": 1, "time": "t", "kind": "新聞", "source": "S", "title": "盤中急殺", "sentiment": "NEGATIVE",
+                          "timing": "real_time", "reaction_pct": -1}]}})
+        self.assertIn("風險重點", text)
+        self.assertIn("即時市場事件", text)
+
+    def test_conflict_between_ai_and_rule_is_flagged(self):
+        d = self._build_with_ai({1: {"sentiment": "NEGATIVE", "importance": 3}})  # 規則因「創新高」判利多
+        self.assertTrue(d["items"][0]["sentiment_conflict"])
+        self.assertIn("完全相反", " ".join(d["summary"]["gaps"]))
+        d2 = self._build_with_ai({1: {"sentiment": "NEUTRAL", "importance": 3}})
+        self.assertFalse(d2["items"][0]["sentiment_conflict"])
 
     def test_ai_gets_evidence_gaps_and_rules(self):
         # 功能改了，AI 看到的資料與提示也要跟著改：證據編號、缺口、語氣規則都要進關鍵數字卡與任務指示

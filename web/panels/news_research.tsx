@@ -51,6 +51,10 @@ const SENT = {
 };
 
 const fmtTime = (iso) => String(iso || '').replace('T', ' ').slice(0, 16);
+// 新聞連結來自外部來源，只開 http／https，避免 javascript: 之類的網址
+const safeUrl = (u) => (/^https?:\/\//i.test(String(u || '')) ? u : '');
+// AI 判斷的新聞類型：事後回顧的漲跌不當新催化劑；即時市場事件是市場反應不是基本面
+const TIMING_LABEL = { retrospective: '事後回顧', catalyst: '新消息', real_time: '即時市場事件' };
 const sign = (v) => (v == null ? '--' : `${v > 0 ? '+' : ''}${v}%`);
 
 // 事件前漲幅與 Priced-in 門檻（news_strategy：20 日 ≥10% 或 5 日 ≥6% 視為可能已反映）
@@ -125,7 +129,7 @@ function ResearchSummary({ d, m2Data, onPick }) {
   const sentimentNote =
     d.mode === 'RULES'
       ? '語氣由標題關鍵字規則計算（官方公告權重 ×3），看不懂否定與反話。'
-      : '語氣仍由標題關鍵字規則計算（官方公告權重 ×3）；AI 只負責逐則整理，不改這個統計。';
+      : '每則新聞的方向由 AI 看標題與摘要判斷（沒讀內文，仍可能誤判）；整體語氣統計時官方公告權重 ×3。';
   // 結論句：全部由資料拼出來，不加任何新事實
   const sentence =
     events === 0
@@ -154,9 +158,9 @@ function ResearchSummary({ d, m2Data, onPick }) {
           <>
             {' '}
             系統選出的重點新聞：
-            {lead.link ? (
+            {safeUrl(lead.link) ? (
               <a
-                href={lead.link}
+                href={safeUrl(lead.link)}
                 target="_blank"
                 rel="noreferrer"
                 className="text-sky-300 hover:underline"
@@ -167,6 +171,26 @@ function ResearchSummary({ d, m2Data, onPick }) {
               <>「{lead.title}」</>
             )}
             （{lead.source}，{fmtTime(lead.local_iso)}）。
+          </>
+        )}
+        {s.risk_lead && (
+          <>
+            {' '}
+            另外要留意的風險消息（和重點新聞分開列）：
+            {safeUrl(s.risk_lead.link) ? (
+              <a
+                href={safeUrl(s.risk_lead.link)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-300 hover:underline"
+              >
+                「{s.risk_lead.title}」
+              </a>
+            ) : (
+              <>「{s.risk_lead.title}」</>
+            )}
+            （{s.risk_lead.source}，{fmtTime(s.risk_lead.local_iso)}
+            {TIMING_LABEL[s.risk_lead.timing] ? `，${TIMING_LABEL[s.risk_lead.timing]}` : ''}）。
           </>
         )}
         {pi && lead && (
@@ -222,11 +246,11 @@ function ResearchSummary({ d, m2Data, onPick }) {
               return (
                 <li
                   key={`${t.local_iso}-${t.title}`}
-                  className="ml-4 ta-fade-up"
+                  className="relative ml-4 ta-fade-up"
                   style={{ animationDelay: `${300 + i * 60}ms` }}
                 >
                   <span
-                    className={`absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full border border-slate-900 ${
+                    className={`absolute -left-[22px] top-1.5 h-2.5 w-2.5 rounded-full border border-slate-900 ${
                       t.sentiment === 'POSITIVE'
                         ? 'bg-rose-500'
                         : t.sentiment === 'NEGATIVE'
@@ -238,18 +262,32 @@ function ResearchSummary({ d, m2Data, onPick }) {
                   <div className="text-[11px] text-slate-500 font-mono">
                     {fmtTime(t.local_iso)}・{t.source}
                   </div>
-                  <div className="text-xs text-slate-200">
+                  <div className="mt-0.5 flex items-start gap-1.5 text-xs text-slate-200">
                     <span
-                      className={`mr-1 text-[10px] px-1 rounded ${
+                      className={`mt-px shrink-0 text-[10px] px-1 rounded ${
                         OFFICIAL.includes(t.kind) ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-800 text-sky-300'
                       }`}
                     >
                       {t.kind}
                     </span>
-                    {t.title}
-                    <span className={`ml-2 ${st.cls}`}>{st.label}</span>
+                    {safeUrl(t.link) ? (
+                      <a
+                        href={safeUrl(t.link)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-w-0 break-words text-slate-200 hover:text-sky-300 underline decoration-slate-600 underline-offset-2"
+                        title="開啟原文（新分頁）"
+                      >
+                        {t.title}
+                      </a>
+                    ) : (
+                      <span className="min-w-0 break-words">{t.title}</span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                    <span className={st.cls}>{st.label}</span>
                     {t.pct != null && (
-                      <span className="ml-2 text-slate-400 font-mono">發布後首個收盤 {sign(t.pct)}</span>
+                      <span className="text-slate-400 font-mono">發布後首個收盤 {sign(t.pct)}</span>
                     )}
                   </div>
                 </li>
@@ -269,34 +307,62 @@ function ResearchSummary({ d, m2Data, onPick }) {
               const st = SENT[it.sentiment] || SENT.NEUTRAL;
               const isLead = lead && it.title === lead.title && it.local_iso === lead.local_iso;
               return (
-                <button
-                  type="button"
+                <div
                   key={`${it.local_iso}-${it.title}`}
-                  onClick={() => onPick?.(it)}
-                  aria-pressed={isLead}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition ${
-                    isLead
-                      ? 'border-sky-400 bg-sky-500/10'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-600'
+                  className={`flex items-stretch gap-1 rounded-lg border text-xs transition ${
+                    isLead ? 'border-sky-400 bg-sky-500/10' : 'border-slate-800 bg-slate-950/60 hover:border-slate-600'
                   }`}
                 >
-                  <span className="text-slate-500 font-mono mr-2">{fmtTime(it.local_iso)}</span>
-                  <span
-                    className={`mr-1 text-[10px] px-1 rounded ${
-                      OFFICIAL.includes(it.kind)
-                        ? 'bg-amber-500/15 text-amber-300'
-                        : it.kind === '分析專欄'
-                          ? 'bg-slate-700/60 text-slate-300'
-                          : 'bg-slate-800 text-sky-300'
-                    }`}
+                  <button
+                    type="button"
+                    onClick={() => onPick?.(it)}
+                    aria-pressed={isLead}
+                    title="改用這則新聞來評估"
+                    className="min-w-0 flex-1 text-left px-3 py-1.5 cursor-pointer"
                   >
-                    {it.kind}
-                  </span>
-                  <span className="text-slate-200">{it.title}</span>
-                  <span className="text-slate-500 ml-2">— {it.source}</span>
-                  <span className={`ml-2 ${st.cls}`}>{st.label}</span>
-                  {isLead && <span className="ml-2 text-sky-300">已選為重點</span>}
-                </button>
+                    <span className="text-slate-500 font-mono mr-2">{fmtTime(it.local_iso)}</span>
+                    <span
+                      className={`mr-1 text-[10px] px-1 rounded ${
+                        OFFICIAL.includes(it.kind)
+                          ? 'bg-amber-500/15 text-amber-300'
+                          : it.kind === '分析專欄'
+                            ? 'bg-slate-700/60 text-slate-300'
+                            : 'bg-slate-800 text-sky-300'
+                      }`}
+                    >
+                      {it.kind}
+                    </span>
+                    <span className="text-slate-200 break-words">{it.title}</span>
+                    <span className="text-slate-500 ml-2">— {it.source}</span>
+                    <span className={`ml-2 ${st.cls}`}>{st.label}</span>
+                    {TIMING_LABEL[it.timing] && (
+                      <span className="ml-1 text-[10px] px-1 rounded bg-slate-800 text-slate-300">{TIMING_LABEL[it.timing]}</span>
+                    )}
+                    {it.sentiment_conflict && (
+                      <span className="ml-1 text-[10px] text-rose-300" title={`AI 判斷${st.label}，但關鍵字規則判斷相反；兩者至少一個錯，請點原文確認`}>
+                        AI 與規則相反
+                      </span>
+                    )}
+                    {it.check_fulltext && (
+                      <span className="ml-1 text-[10px] text-amber-300" title="標題含大跌、跌破、避險等字眼，標題常低估內文的嚴重程度；我們只讀標題與摘要，建議點「原文」確認">
+                        建議讀原文
+                      </span>
+                    )}
+                    {isLead && <span className="ml-2 text-sky-300">已選為重點</span>}
+                  </button>
+                  {safeUrl(it.link) && (
+                    <a
+                      href={safeUrl(it.link)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 self-center px-2 py-1 text-[11px] text-sky-300 hover:text-white"
+                      title="開啟原文（新分頁）"
+                      aria-label={`開啟原文：${it.title}`}
+                    >
+                      原文↗
+                    </a>
+                  )}
+                </div>
               );
             })}
           </div>

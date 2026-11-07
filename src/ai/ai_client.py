@@ -674,11 +674,16 @@ def key_facts(module: str, data: Any) -> str:
             nr = data.get("news_research") or {}
             if nr:
                 c = nr.get("counts") or {}
-                out.append(f"新聞語氣（關鍵字規則，官方公告權重×3，粗略）：{nr.get('tone')}｜利多 {c.get('positive')}、"
+                how = "AI 逐則判斷標題與摘要" if str(nr.get("mode", "")).startswith("AI") else "關鍵字規則"
+                out.append(f"新聞語氣（{how}，官方公告權重×3，粗略）：{nr.get('tone')}｜利多 {c.get('positive')}、"
                            f"利空 {c.get('negative')}、中性 {c.get('neutral')}｜官方公告 {c.get('official')} 則、一般新聞 {c.get('news')} 則")
                 for e in (nr.get("evidence") or [])[:6]:
                     out.append(f"證據{e.get('no')}：{e.get('time')} {e.get('kind')}（{e.get('source')}）{e.get('title')}"
-                               f"｜規則方向 {e.get('sentiment')}｜發布後首個收盤 {e.get('reaction_pct')}%")
+                               f"｜方向 {e.get('sentiment')}{('（' + {'retrospective': '事後回顧', 'catalyst': '新消息', 'real_time': '即時市場事件'}.get(e.get('timing'), '') + '）') if e.get('timing') else ''}｜發布後首個收盤 {e.get('reaction_pct')}%")
+                rl = nr.get("risk_lead")
+                if isinstance(rl, dict) and rl.get("title"):
+                    out.append(f"風險重點（與重點新聞分開列出的利空消息）：{rl.get('title')}（{rl.get('source')}，{rl.get('local_iso')}）"
+                               f"｜類型 {rl.get('timing') or '未判斷'}")
                 for g in nr.get("gaps") or []:
                     out.append(f"資料缺口：{g}")
         elif module == "mod4":

@@ -33,6 +33,9 @@ METRIC_RULES = [
 LONG_TERM = re.compile(r"擴產|建廠|產能|併購|收購|新產品|技術|製程|政策|法規|關稅|管制|策略|合作|capacity|acqui|merger|tariff|regulat|partnership|launch", re.I)
 SHORT_TERM = re.compile(r"財報|季報|月營收|營收|法說|除息|目標價|評等|EPS|earnings|guidance|price target|upgrade|downgrade", re.I)
 OFFICIAL_KINDS = ("重大訊息", "公司公告", "8-K")
+TIMINGS = ("retrospective", "catalyst", "real_time")
+# 標題常低估內文的負面程度：含這些字的新聞在畫面上提醒「點原文確認」（我們只讀標題與摘要，沒有抓內文）
+CHECK_TEXT_RE = re.compile(r"大跌|重挫|崩|殺低|恐慌|賣壓|跌破|熔斷|避險|下修|警示|停損|爆量|暴跌|急殺|斷頭|違約|調降")
 COLUMN_KIND = "分析專欄"  # 觀點文章，不是事件；新聞不夠 MAX_ITEMS 則時才補進來
 HORIZONS = ("短期", "長期", "短期與長期")
 
@@ -141,7 +144,16 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
     lead = None
     if events:
         e = events[0]
-        lead = {k: e.get(k) for k in ("title", "source", "kind", "local_iso", "link", "sentiment", "reaction")}
+        lead = {k: e.get(k) for k in ("title", "source", "kind", "local_iso", "link", "sentiment", "sentiment_by", "timing", "reaction")}
+
+    # 風險重點：重點新聞是溫和題材時，高波動的風險事件（利空）不能被蓋掉，另外列出一則
+    risk_lead = None
+    for e in events:
+        if e.get("sentiment") == "NEGATIVE" and not (lead and e["title"] == lead["title"] and e["local_iso"] == lead["local_iso"]):
+            risk_lead = {k: e.get(k) for k in ("title", "source", "kind", "local_iso", "link", "sentiment_by", "timing", "check_fulltext")}
+            break
+    if lead and lead.get("sentiment") == "NEGATIVE":
+        risk_lead = None  # 重點新聞本身就是利空，不用重複
 
     gaps: List[str] = []
     if not events:
@@ -161,13 +173,18 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
         gaps.append("重點新聞發布後還沒有收盤，價格反應尚未出現")
     if mode == "RULES" and events:
         gaps.append("未使用 AI：只有關鍵字規則，看不懂否定或標題以外的細節")
+    elif events:
+        gaps.append("新聞方向由 AI 只依標題與摘要判斷，沒讀內文，仍可能誤判")
+        n_conf = sum(1 for x in events if x.get("sentiment_conflict"))
+        if n_conf:
+            gaps.append(f"{n_conf} 則的 AI 方向和關鍵字規則完全相反（一個利多、一個利空），其中至少一個判斷有誤，語氣請保守看待，建議點原文確認")
 
     timeline = [
         {"local_iso": x["local_iso"], "title": x["title"], "source": x["source"], "kind": x["kind"],
-         "sentiment": x.get("sentiment"), "pct": (x.get("reaction") or {}).get("pct")}
+         "link": x.get("link") or "", "sentiment": x.get("sentiment"), "pct": (x.get("reaction") or {}).get("pct")}
         for x in sorted(events, key=lambda x: x["local_iso"])[-TIMELINE_MAX:]
     ]
-    return {"tone": tone, "counts": counts, "lead": lead, "gaps": gaps, "timeline": timeline}
+    return {"tone": tone, "counts": counts, "lead": lead, "risk_lead": risk_lead, "gaps": gaps, "timeline": timeline}
 
 
 def _rule_score(it: Dict[str, Any], atr_pct: Optional[float]) -> float:
@@ -189,10 +206,17 @@ def _ai_fields(profile: Dict[str, Any], symbol: str, name: str, items: List[Dict
     out = ai_client._json_call(profile, (
         f"以下是 {name or symbol}（{symbol}）近期的新聞標題（部分附 summary 摘要），kind＝分析專欄的是觀點文章不是事件；price_reaction_pct 是發布前最後收盤到發布後第一個收盤的真實漲跌幅（null＝尚無）。"
         "請逐則整理，只能根據標題、摘要與提供的數字，不要編造以外的細節或數字；資訊不足就寫「標題資訊不足」。\n"
+        f"sentiment＝這則消息對 {name or symbol} 股價的方向：POSITIVE（實質利多，如財報／營收／訂單優於預期、上修財測、正面事件）、"
+        "NEGATIVE（實質利空）、NEUTRAL（無明確方向）。要看語意而不是字眼。先判斷 timing：retrospective＝事後行情回顧"
+        "（例如收盤後的「收跌多少」「昨日重挫」）、catalyst＝帶有新資訊的消息（財測、法說、政策、總經數據、供應鏈、評等調整、資金流向變化）、"
+        "real_time＝盤中或開盤前正在發展的市場事件（例如盤中跌破整數關卡、賣壓湧現、避險升溫）。"
+        "再給方向：retrospective 除非內文提出新的前瞻原因，一律 NEUTRAL；catalyst 依資訊本身判斷方向，即使標題同時描述已發生的漲跌；"
+        "real_time 可以判 NEGATIVE／POSITIVE（代表風險或動能升高，是市場反應而不是基本面）。"
+        "「價格已經大跌」和「造成大跌的新資訊」要分開看。投資人套牢或虧損心得、盤勢流水帳、排行榜與成交量統計、與這檔無關的新聞一律 NEUTRAL。\n"
         f"【新聞】{data}\n"
         '回傳 JSON：{"items": [{"no": 編號, "what": "實際發生什麼事（一句話）", "why": "投資人為何需要關注", '
         '"horizon": "短期"|"長期"|"短期與長期", "metrics": ["可能受影響的財務指標，如營收、毛利率、EPS、資本支出"], '
-        '"assumptions": "市場可能隱含的假設", "importance": 1到5的整數（5 最重要）}], '
+        '"assumptions": "市場可能隱含的假設", "importance": 1到5的整數（5 最重要）, "sentiment": "POSITIVE"|"NEGATIVE"|"NEUTRAL", "timing": "retrospective"|"catalyst"|"real_time"}], '
         '"reaction_changers": ["哪些因素可能改變目前的市場反應（2 到 4 點）"]}'
     ), timeout=180)
     got = out.get("items")
@@ -212,6 +236,8 @@ def _ai_fields(profile: Dict[str, Any], symbol: str, name: str, items: List[Dict
                 "metrics": [str(m)[:20] for m in (g.get("metrics") or []) if m][:4],
                 "assumptions": str(g.get("assumptions", ""))[:200],
                 "importance": int(imp) if isinstance(imp, (int, float)) and 1 <= imp <= 5 else None,
+                "sentiment": g.get("sentiment") if g.get("sentiment") in ("POSITIVE", "NEGATIVE", "NEUTRAL") else None,
+                "timing": g.get("timing") if g.get("timing") in TIMINGS else None,
             }
     if not by_no:
         raise ai_client.AIError("AI 回傳的新聞編號都對不上")
@@ -235,6 +261,8 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
         x["reaction"] = price_reaction(bars, it["local_iso"], market)
         x.update(_rule_fields(it["title"], it["kind"], x["detail"]))
         x["sentiment"], x["sentiment_hits"] = rule_sentiment(f"{it['title']} {x['detail']}")
+        x["sentiment_by"] = "關鍵字規則"
+        x["check_fulltext"] = bool(CHECK_TEXT_RE.search(f"{it['title']} {x['detail']}"))
         x["mentions"] = x["official"] or _mentions(it["title"], symbol, name)
         x["rule_score"] = _rule_score(x, atr_pct)
         items.append(x)
@@ -247,6 +275,11 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
                 f = res["by_no"].get(i)
                 if f:
                     x["ai"] = f
+                    x["timing"] = f.get("timing")
+                    if f.get("sentiment"):  # AI 看語意判斷方向，取代關鍵字規則（規則的結果留在 sentiment_rule 供對照）
+                        x["sentiment_rule"], x["sentiment"], x["sentiment_by"] = x["sentiment"], f["sentiment"], "AI"
+                        # 兩種方法方向完全相反（一個利多、一個利空）時，至少有一個錯：標出來請使用者點原文確認
+                        x["sentiment_conflict"] = {x["sentiment_rule"], x["sentiment"]} == {"POSITIVE", "NEGATIVE"}
             changers, unverified = res["reaction_changers"], res["unverified_numbers"]
             mode = f"AI（{profile.get('model')}）"
         except ai_client.AIError as e:
