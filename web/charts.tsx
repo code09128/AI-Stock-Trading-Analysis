@@ -29,14 +29,33 @@ const readShowBB = () => {
 };
 
 // signals：[{date, type: 'buy'|'sell', reason, confirmed}]，由後端依固定規則算出，只在 K 線上標記
-function CandlestickChart({ bars: allBars, supports, resistances, signals = [], signalsError = null, barCount = 60, unit = '日' }: { bars: any; supports?: any; resistances?: any; signals?: any[]; signalsError?: string | null; barCount?: number; unit?: string }) {
+function CandlestickChart({
+  bars: allBars,
+  supports,
+  resistances,
+  signals = [],
+  signalsError = null,
+  hideSignals = false,
+  barCount = 60,
+  unit = '日',
+}: {
+  bars: any;
+  hideSignals?: boolean;
+  supports?: any;
+  resistances?: any;
+  signals?: any[];
+  signalsError?: string | null;
+  barCount?: number;
+  unit?: string;
+}) {
   const { useRef, useEffect } = React;
   const total = allBars?.length || 0;
   // view：顯示幾根（count）與最右邊離最新差幾根（offset，0＝貼齊最新）
   const [view, setView] = useState({ count: barCount, offset: 0 });
   const [hoverIdx, setHoverIdx] = useState(null);
   const [expanded, setExpanded] = useState(false);
-  const [showSignals, setShowSignals] = useState(readShowSignals);
+  const [showSignalsPref, setShowSignals] = useState(readShowSignals);
+  const showSignals = showSignalsPref && !hideSignals; // 分 K 不標訊號（歷史統計只驗證過日 K）
   const [showBB, setShowBB] = useState(readShowBB);
   const svgRef = useRef(null);
   const drag = useRef(null);
@@ -175,7 +194,9 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
   const ma20Points = line('ma20');
   const ma60Points = line('ma60');
   // 布林通道：上下軌＝MA20 ± 2 個標準差；畫成淡色帶狀範圍＋兩條虛線
-  const bbBars = showBB ? bars.map((b, idx) => ({ b, idx })).filter(({ b }) => b.bb_upper != null && b.bb_lower != null) : [];
+  const bbBars = showBB
+    ? bars.map((b, idx) => ({ b, idx })).filter(({ b }) => b.bb_upper != null && b.bb_lower != null)
+    : [];
   const bbX = (idx) => padLeft + idx * stepX + stepX / 2;
   const bbUpper = bbBars.map(({ b, idx }) => `${bbX(idx)},${toY(b.bb_upper)}`);
   const bbLower = bbBars.map(({ b, idx }) => `${bbX(idx)},${toY(b.bb_lower)}`);
@@ -202,9 +223,7 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
       {/* 頂部工具列：範圍、縮放、放大 + 圖例 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-300">
-            互動式還權 K 線與成交量副圖
-          </span>
+          <span className="text-xs font-semibold text-slate-300">互動式還權 K 線與成交量副圖</span>
           <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
             {RANGE_PRESETS.map(([label, n]) => {
               const count = Math.min(
@@ -262,27 +281,29 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
               {expanded ? '✕ 關閉' : '⛶ 放大'}
             </button>
           </div>
-          <button
-            type="button"
-            aria-pressed={showSignals}
-            title="依固定規則標出買賣訊號：收盤突破近 20 日高點＋MACD 金叉或紅柱放大＝買；跌破近 20 日低點＋死叉或綠柱放大＝賣。歷史統計相對隨機進場優勢很小（見說明頁 K 線怎麼看），僅供參考，不是投資建議。"
-            onClick={() => {
-              const next = !showSignals;
-              setShowSignals(next);
-              try {
-                localStorage.setItem(SIGNAL_LS_KEY, next ? '1' : '0');
-              } catch {
-                /* 瀏覽器不給存也不影響顯示 */
-              }
-            }}
-            className={`${btn} border ${
-              showSignals
-                ? 'bg-amber-500/20 border-amber-400 text-amber-100'
-                : 'border-slate-700 text-slate-400 hover:text-white'
-            }`}
-          >
-            買賣訊號
-          </button>
+          {!hideSignals && (
+            <button
+              type="button"
+              aria-pressed={showSignals}
+              title="依固定規則標出買賣訊號：收盤突破近 20 日高點＋MACD 金叉或紅柱放大＝買；跌破近 20 日低點＋死叉或綠柱放大＝賣。歷史統計相對隨機進場優勢很小（見說明頁 K 線怎麼看），僅供參考，不是投資建議。"
+              onClick={() => {
+                const next = !showSignalsPref;
+                setShowSignals(next);
+                try {
+                  localStorage.setItem(SIGNAL_LS_KEY, next ? '1' : '0');
+                } catch {
+                  /* 瀏覽器不給存也不影響顯示 */
+                }
+              }}
+              className={`${btn} border ${
+                showSignals
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-100'
+                  : 'border-slate-700 text-slate-400 hover:text-white'
+              }`}
+            >
+              買賣訊號
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={showBB}
@@ -311,8 +332,7 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
             <span className="w-3 h-0.5 bg-yellow-400 inline-block" /> MA5
           </span>
           <span className="flex items-center gap-1" style={{ color: '#38bdf8' }}>
-            <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: '#38bdf8' }} />{' '}
-            MA20
+            <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: '#38bdf8' }} /> MA20
           </span>
           {hasMa60 && (
             <span className="flex items-center gap-1 text-emerald-400">
@@ -327,8 +347,7 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
             支撐
           </span>
           <span className="flex items-center gap-1 text-rose-400">
-            <span className="w-3 h-0.5 border-b border-dashed border-rose-400 inline-block" />{' '}
-            壓力
+            <span className="w-3 h-0.5 border-b border-dashed border-rose-400 inline-block" /> 壓力
           </span>
           {showSignals && (
             <>
@@ -349,8 +368,7 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
           ['收', activeBar.close],
         ].map(([k, v]) => (
           <span key={k}>
-            {k}:{' '}
-            <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>{v}</strong>
+            {k}: <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>{v}</strong>
           </span>
         ))}
         <span
@@ -369,9 +387,7 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
         </span>
         <span className="text-yellow-400">MA5: {activeBar.ma5 ?? '-'}</span>
         <span style={{ color: '#38bdf8' }}>MA20: {activeBar.ma20 ?? '-'}</span>
-        {activeBar.ma60 != null && (
-          <span className="text-emerald-400">MA60: {activeBar.ma60}</span>
-        )}
+        {activeBar.ma60 != null && <span className="text-emerald-400">MA60: {activeBar.ma60}</span>}
         {showBB && activeBar.bb_upper != null && (
           <span className="text-violet-300">
             布林 上{activeBar.bb_upper} / 下{activeBar.bb_lower}
@@ -600,8 +616,22 @@ function CandlestickChart({ bars: allBars, supports, resistances, signals = [], 
         {showBB && bbBars.length > 1 && (
           <g pointerEvents="none">
             <polygon points={bbBand} fill="#a78bfa" opacity="0.10" />
-            <polyline fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeDasharray="4 3" points={bbUpper.join(' ')} opacity="0.9" />
-            <polyline fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeDasharray="4 3" points={bbLower.join(' ')} opacity="0.9" />
+            <polyline
+              fill="none"
+              stroke="#a78bfa"
+              strokeWidth="1.2"
+              strokeDasharray="4 3"
+              points={bbUpper.join(' ')}
+              opacity="0.9"
+            />
+            <polyline
+              fill="none"
+              stroke="#a78bfa"
+              strokeWidth="1.2"
+              strokeDasharray="4 3"
+              points={bbLower.join(' ')}
+              opacity="0.9"
+            />
           </g>
         )}
         {ma60Points && (

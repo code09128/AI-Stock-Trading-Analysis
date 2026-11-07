@@ -33,7 +33,15 @@ def mark_bond_snapshot(snapshot: Dict[str, Any], ticker: str) -> None:
 
 
 class TechnicalHandlers:
-    """技術分析（/api/mod1/analyze）"""
+    """技術分析（/api/mod1/analyze、/api/mod1/minutes）"""
+
+    def handle_mod1_minutes(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """分 K（5／15／60 分）。只畫圖用：不算買賣訊號（歷史統計只驗證過日 K）、不呼叫 AI。"""
+        from src.market import chart_data
+
+        ticker = arg_ticker(payload, "ticker")
+        interval = int(arg_num(payload, "interval", 5, "分 K 週期", integer=True))
+        return chart_data.minute_bars(ticker, interval)
 
     def handle_mod1_analyze(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         ticker = arg_ticker(payload, "ticker")

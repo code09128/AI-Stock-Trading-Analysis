@@ -219,6 +219,54 @@ function ScenarioPanel({ data }) {
   );
 }
 
+// 分 K 圖：自己抓資料、盤中每 30 秒更新；不標買賣訊號（歷史統計只驗證過日 K），支撐壓力與 AI 仍以日線為準
+function MinuteKline({ symbol, interval }) {
+  const [state, setState] = useState({ bars: null, err: '', loading: true });
+  React.useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/mod1/minutes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: symbol, interval }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+        if (alive) setState({ bars: j.bars, err: '', loading: false });
+      } catch (e) {
+        if (alive) setState((s) => ({ ...s, err: String(e.message || e), loading: false }));
+      }
+    };
+    load();
+    const t = setInterval(() => {
+      if (!document.hidden && bus.currentPage === 'mod1') load();
+    }, 30000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [symbol, interval]);
+  return (
+    <div className="space-y-2">
+      {state.err && (
+        <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
+          ⚠️ {interval} 分 K 取得失敗：{state.err}。日線與下方分析不受影響，可切回日線。
+        </div>
+      )}
+      {state.loading && !state.bars && <div className="text-xs text-slate-400 ta-fade-up">分 K 載入中…</div>}
+      {state.bars && (
+        <>
+          <CandlestickChart bars={state.bars} hideSignals barCount={80} unit="分" />
+          <p className="text-[11px] text-slate-500">
+            {interval} 分 K 只含已收完的棒、每 30 秒更新；台股報價可能延遲。不標買賣訊號（歷史統計只驗證過日 K），下方支撐壓力、趨勢評分與 AI 解讀仍以日線為準。
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Mod1Panel({ ctx }) {
   const {
     aiDecisionOn,
@@ -240,7 +288,8 @@ function Mod1Panel({ ctx }) {
     setM1Ticker,
     setM1Timeframe,
   } = ctx;
-  
+  const [minuteIv, setMinuteIv] = useState(0); // 0＝日／週線；5／15／60＝分 K
+
   return (
     <div className="space-y-5">
       <RulesReminder />
@@ -476,16 +525,33 @@ function Mod1Panel({ ctx }) {
                 type="button"
                 key={tf}
                 onClick={() => {
+                  setMinuteIv(0);
                   setM1Timeframe(tf);
                   runMod1({ overrideTimeframe: tf, simulateTick: false });
                 }}
                 className={`px-3 py-1.5 rounded-lg border cursor-pointer ${
-                  m1Timeframe === tf
+                  m1Timeframe === tf && !minuteIv
                     ? 'bg-sky-500/20 border-sky-400 text-white'
                     : 'bg-slate-950 border-slate-800 text-slate-400'
                 }`}
               >
                 {label}
+              </button>
+            ))}
+            {[5, 15, 60].map((iv) => (
+              <button
+                type="button"
+                key={iv}
+                aria-pressed={minuteIv === iv}
+                onClick={() => setMinuteIv(iv)}
+                title="分 K：Yahoo 已收完的棒，只畫圖（均線、布林），不標買賣訊號；AI 與支撐壓力仍以日線為準"
+                className={`px-3 py-1.5 rounded-lg border cursor-pointer ${
+                  minuteIv === iv
+                    ? 'bg-sky-500/20 border-sky-400 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400'
+                }`}
+              >
+                {iv === 60 ? '60 分' : `${iv} 分`}
               </button>
             ))}
             <button
@@ -524,6 +590,9 @@ function Mod1Panel({ ctx }) {
           </div>
 
           {/* 互動式 K 線 + 十字準星 + 成交量副圖 */}
+          {minuteIv ? (
+            <MinuteKline key={`${m1Data.snapshot.symbol}-${minuteIv}`} symbol={m1Data.snapshot.symbol} interval={minuteIv} />
+          ) : (
           <CandlestickChart
             bars={m1Data.recent_bars}
             signals={m1Data.signals}
@@ -534,6 +603,7 @@ function Mod1Panel({ ctx }) {
             barCount={m1Timeframe === 'W' ? 52 : 60}
             unit={m1Timeframe === 'W' ? '週' : '日'}
           />
+          )}
 
           {/* 支撐壓力檔位與 AI 決策依據 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

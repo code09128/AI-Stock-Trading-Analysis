@@ -123,6 +123,12 @@ class BollingerContextTests(unittest.TestCase):
         self.assertGreater(bb[30]["upper"], bb[30]["mid"])
         self.assertLess(bb[30]["lower"], bb[30]["mid"])
 
+    def test_prompt_does_not_tell_holders_not_to_enter(self):
+        from src.ai.ai_prompts import MODULE_TASKS
+        t = MODULE_TASKS["mod1"]
+        self.assertIn("空手者賺賠比低於", t)
+        self.assertIn("已持有者不要用這句", t)
+
 
 if __name__ == "__main__":
     unittest.main()

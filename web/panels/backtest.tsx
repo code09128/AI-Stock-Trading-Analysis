@@ -18,6 +18,9 @@ const MODES = [
   ['custom', '🧱 自訂策略'],
   ['pine', '📤 匯出 Pine v5'],
 ];
+// 新手預設只看「單檔回測」的績效與交易明細；其餘收進「進階」折疊（選到的項目會自動展開）
+const BASIC_MODES = ['backtest'];
+const BASIC_TABS = ['perf', 'trades'];
 const TABS = [
   ['perf', '績效總覽'],
   ['trades', '交易明細'],
@@ -355,6 +358,8 @@ function Mod3Panel({ ctx }) {
   const [catalog, setCatalog] = React.useState(bus._btCatalog || null);
   const [tab, setTab] = React.useState('perf');
   const [view, setView] = React.useState('backtest');
+  const [advMode, setAdvMode] = React.useState(false);
+  const [advTab, setAdvTab] = React.useState(false);
   // 今日訊號 →「回測這檔」：換標的、切回單檔回測，使用者確認後按執行
   const backtestSymbol = (sym) => {
     setM3Form({ ...m3Form, target_asset: sym });
@@ -441,8 +446,8 @@ function Mod3Panel({ ctx }) {
           ctx.backtestThis(sym);
         }}
       />
-      <div className="flex flex-wrap gap-2">
-        {MODES.map(([k, label]) => (
+      <div className="flex flex-wrap gap-2" data-tour="mod3-modes">
+        {MODES.filter(([k]) => BASIC_MODES.includes(k) || advMode || view === k).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -456,8 +461,17 @@ function Mod3Panel({ ctx }) {
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          aria-expanded={advMode}
+          onClick={() => setAdvMode(!advMode)}
+          className="px-3 py-2 rounded-xl text-xs cursor-pointer border border-dashed border-slate-700 text-slate-400 hover:text-slate-200"
+          title="今日訊號、策略組合、自訂策略、匯出 Pine v5"
+        >
+          {advMode ? '收起進階功能 ▴' : '進階功能 ▾（今日訊號・策略組合・自訂策略・Pine）'}
+        </button>
       </div>
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4" data-tour="mod3-params">
         <div>
           <h2 className="text-base font-semibold text-white">回測參數</h2>
           <span className="block mt-1 text-xs text-slate-500">
@@ -692,8 +706,8 @@ function Mod3Panel({ ctx }) {
       )}
       {view === 'backtest' && r && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {TABS.map(([k, label]) => (
+          <div className="flex flex-wrap items-center gap-2" data-tour="mod3-tabs">
+            {TABS.filter(([k]) => BASIC_TABS.includes(k) || advTab || tab === k).map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -708,6 +722,15 @@ function Mod3Panel({ ctx }) {
                 {k === 'trades' ? `（${r.total_trades}）` : ''}
               </button>
             ))}
+            <button
+              type="button"
+              aria-expanded={advTab}
+              onClick={() => setAdvTab(!advTab)}
+              className="px-3 py-1.5 rounded-lg text-xs cursor-pointer border border-dashed border-slate-700 text-slate-400 hover:text-slate-200"
+              title="環境與前後段驗證、參數最佳化、蒙地卡羅、K 線回放"
+            >
+              {advTab ? '收起驗證與工具 ▴' : '更多驗證與工具 ▾'}
+            </button>
             <span className="ml-auto text-[11px] text-slate-500">
               {m3Data.symbol}｜{m3Data.strategy?.label || '雙均線交叉'}（
               {m3Data.strategy?.params_text}）｜{m3Data.period}

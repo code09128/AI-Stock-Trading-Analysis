@@ -76,6 +76,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/trade_rules": lambda p: trade_rules.rules_for(arg_ticker(p, "symbol")),
     # 五個分析功能
     "/api/mod1/analyze": D.handle_mod1_analyze,
+    "/api/mod1/minutes": D.handle_mod1_minutes,
     "/api/news": D.handle_news,
     "/api/news/digest": D.handle_news_digest,
     "/api/mod2/news": D.handle_mod2_news,

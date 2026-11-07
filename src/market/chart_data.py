@@ -166,6 +166,68 @@ def intraday(symbol: str) -> Optional[Dict[str, Any]]:
     return {"symbol": symbol, "points": [], "error": last_err or "查無分時資料"}
 
 
+# 分 K 週期（分鐘）→ Yahoo 取樣範圍（Yahoo 對分 K 有天數上限：5 分最多 60 天、15 分 60 天、60 分 730 天）
+MINUTE_RANGES = {5: "5d", 15: "1mo", 60: "3mo"}
+MINUTE_TTL = 30
+
+
+def minute_bars(symbol: str, interval_min: int) -> Dict[str, Any]:
+    """技術分析圖用的分 K：只含已收完的棒（進行中那根不算，避免畫面上的棒跟著跳動又沒有收盤價）。
+    回傳 {interval, bars:[{date 'YYYY-MM-DD HH:MM'(當地時間), open, high, low, close, volume, change_pct, ma5, ma20, ma60, bb_upper, bb_lower}]}。
+    取不到就拋錯，不填假資料。限制：Yahoo 分 K 台股有延遲、量可能缺值（缺值記 0）。"""
+    import time as _time
+
+    from src.technical.indicators import calculate_ma
+    from src.technical.intraday import bollinger, closed_bars_only
+
+    if interval_min not in MINUTE_RANGES:
+        raise ValueError(f"分 K 週期只支援 {sorted(MINUTE_RANGES)} 分鐘")
+    key = f"minutes:{symbol}:{interval_min}"
+    cached = _get(key, MINUTE_TTL)
+    if cached:
+        return cached
+    last_err = None
+    for ysym in _yahoo_symbols(symbol):
+        try:
+            res = _chart(ysym, f"{interval_min}m", MINUTE_RANGES[interval_min])
+        except Exception as e:
+            last_err = str(e)
+            continue
+        q = (res.get("indicators", {}).get("quote") or [{}])[0]
+        stamps = res.get("timestamp") or []
+        rows = [
+            (ts, (q.get("open") or [])[i], (q.get("high") or [])[i], (q.get("low") or [])[i],
+             (q.get("close") or [])[i], (q.get("volume") or [])[i])
+            for i, ts in enumerate(stamps) if i < len(q.get("close") or [])
+        ]
+        bars = closed_bars_only(rows, _time.time(), interval_min * 60)
+        if not bars:
+            last_err = "Yahoo 沒有回傳可用的分 K"
+            continue
+        gmt = (res.get("meta") or {}).get("gmtoffset", 0)
+        closes = [b.close for b in bars]
+        ma5, ma20, ma60 = (calculate_ma(closes, n) for n in (5, 20, 60))
+        bb = bollinger(closes, 20, 2.0)
+        out = []
+        for i, b in enumerate(bars):
+            prev = bars[i - 1].close if i else b.open
+            local = datetime.utcfromtimestamp(int(b.timestamp) + gmt)
+            out.append({
+                "date": local.strftime("%Y-%m-%d %H:%M"),
+                "open": round(b.open, 2), "high": round(b.high, 2), "low": round(b.low, 2), "close": round(b.close, 2),
+                "volume": int(b.volume), "change_pct": round((b.close / prev - 1) * 100, 2) if prev else 0.0,
+                "ma5": round(ma5[i], 2) if ma5[i] is not None else None,
+                "ma20": round(ma20[i], 2) if ma20[i] is not None else None,
+                "ma60": round(ma60[i], 2) if ma60[i] is not None else None,
+                "bb_upper": round(bb[i]["upper"], 2) if bb[i] else None,
+                "bb_lower": round(bb[i]["lower"], 2) if bb[i] else None,
+            })
+        result = {"symbol": symbol, "interval": interval_min, "bars": out}
+        _put(key, result)
+        return result
+    raise RuntimeError(f"取不到 {symbol} 的 {interval_min} 分 K：{last_err}")
+
+
 def _spark_one(symbol: str) -> List[float]:
     key = f"spark:{symbol}"
     cached = _get(key, SPARK_TTL)
