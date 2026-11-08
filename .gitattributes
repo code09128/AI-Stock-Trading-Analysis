@@ -1,3 +1,5 @@
+# 其他文字檔一律以 LF 存放，在 Windows 工作目錄也維持 LF，避免 "LF will be replaced by CRLF" 警告與換行混用
+* text=auto eol=lf
 # Windows 批次檔必須是 CRLF，否則 cmd 會把中文切成亂碼指令
 *.bat text eol=crlf
 # Mac／Linux 的 shell 腳本必須是 LF，否則 bash 會把行尾的 \r 當成指令的一部分
