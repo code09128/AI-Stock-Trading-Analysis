@@ -9,6 +9,7 @@ import { KeysPanel, UpdatePanel } from './settings_keys';
 import { AI_TYPES as TYPES, LocalDetect, ProfileEditor, newAIProfile as newProfile } from './settings_ai';
 import { BackgroundServicePanel } from './settings_background';
 import { ZoomSettings } from '../desktop_bridge';
+import { AppearanceSettings } from './settings_appearance';
 
 const { useState, useEffect } = React;
 
@@ -31,6 +32,7 @@ const DATA_KEYS = [
   ['tw_us_mkt_filter_v1', '介面偏好：看盤市場篩選', null],
   ['tw_us_bg_alerts_v1', '介面偏好：按 X 時預設縮到系統匣', null],
   ['tw_us_zoom_v1', '介面偏好：畫面縮放', null],
+  ['tw_us_ui_prefs_v1', '介面偏好：動態效果與資訊密度', null],
   ['tw_us_bt_portfolio_v1', '策略回測：策略組合清單', null],
   ['tw_us_bt_custom_v1', '策略回測：自訂策略（條件積木）', null],
   ['tw_us_tour_done_v1', '新手導覽狀態（清除後會再次顯示導覽）', null],
@@ -281,6 +283,8 @@ function SettingsPage() {
       <ActivityPanel />
 
       <ZoomSettings />
+
+      <AppearanceSettings />
 
       <BackgroundServicePanel />
 

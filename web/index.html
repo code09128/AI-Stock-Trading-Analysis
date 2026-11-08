@@ -106,8 +106,8 @@
     /* 最小字級拉高一點；圓角收斂成專業看盤軟體常見的 8～12px；去掉彩色光暈 */
     .text-\[10px\] { font-size: 11px !important; }
     .text-\[11px\] { font-size: 12px !important; }
-    .rounded-2xl { border-radius: 12px !important; }
-    .rounded-xl { border-radius: 10px !important; }
+    .rounded-2xl { border-radius: 16px !important; }
+    .rounded-xl { border-radius: 12px !important; }
     [class*="shadow-sky-"], [class*="shadow-blue-"], [class*="shadow-emerald-"], [class*="shadow-rose-"] {
       --tw-shadow-color: transparent !important;
       box-shadow: none !important;
@@ -121,6 +121,108 @@
     .ta-grow-x { transform-origin: left center; animation: ta-grow-x .7s cubic-bezier(.2, .8, .2, 1) both; }
     .ta-tab-ind { transition: transform .28s cubic-bezier(.2, .8, .2, 1); }
     @media (prefers-reduced-motion: reduce) { .ta-fade-up, .ta-grow-x { animation: none; } .ta-tab-ind { transition: none; } }
+
+    /* ===== 卡片式質感（只改外觀，不動版面與功能）=====
+       只改 box-shadow、背景、hover，不改 border-color 的語意色（琥珀警示、選取藍框等照舊）。
+       全部動態在「減少動態效果」下停用（檔尾 media）。 */
+    body {
+      background:
+        radial-gradient(900px 520px at 88% -8%, rgba(56, 189, 248, 0.10), transparent 62%),
+        radial-gradient(800px 520px at -8% 6%, rgba(99, 102, 241, 0.10), transparent 60%),
+        #0d1117;
+      background-attachment: fixed;
+    }
+    #root > .bg-slate-950 { background: transparent; }
+    /* 側欄與頂欄：半透明毛玻璃，露出背景的柔和漸層 */
+    #root aside, #root header.shrink-0 {
+      background-color: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+    }
+    /* 大卡片：細微漸層、頂部高光、柔和陰影；滑過時邊框微亮 */
+    .rounded-2xl[class*="bg-slate-900"], .rounded-xl[class*="bg-slate-900"] {
+      background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 45%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .rounded-2xl[class*="bg-slate-900"][class*="border-slate-"]:hover,
+    .rounded-xl[class*="bg-slate-900"][class*="border-slate-"]:hover {
+      border-color: rgba(56, 189, 248, 0.32);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 12px 28px -12px rgba(14, 165, 233, 0.25);
+    }
+    /* 內層小卡：淡淡的內框，層次比純色塊清楚 */
+    .rounded-xl[class*="bg-slate-950"], .rounded-lg[class*="bg-slate-950"] {
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.05);
+    }
+    /* 可點擊的卡片與清單列：滑過微浮起，按下回彈 */
+    button.rounded-lg[class*="border-slate-"], button.rounded-xl[class*="border-slate-"],
+    .cursor-pointer.rounded-xl, .cursor-pointer.rounded-lg[class*="border"] {
+      transition: transform .16s cubic-bezier(.2, .8, .2, 1), box-shadow .16s ease, border-color .16s ease, background-color .16s ease;
+    }
+    button.rounded-lg[class*="border-slate-"]:hover, button.rounded-xl[class*="border-slate-"]:hover,
+    .cursor-pointer.rounded-xl:hover, .cursor-pointer.rounded-lg[class*="border"]:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.6);
+    }
+    button:active:not(:disabled) { transform: scale(0.975); }
+    /* 主要按鈕：藍到靛的柔和漸層與光暈 */
+    button.bg-sky-600, button.bg-blue-600, button.bg-violet-600 {
+      background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 55%),
+        linear-gradient(135deg, #0ea5e9, #4f6df0);
+      box-shadow: 0 6px 16px -8px rgba(56, 189, 248, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      transition: transform .16s cubic-bezier(.2, .8, .2, 1), filter .16s ease, box-shadow .16s ease;
+    }
+    button.bg-sky-600:hover:not(:disabled), button.bg-blue-600:hover:not(:disabled), button.bg-violet-600:hover:not(:disabled) {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+    button.bg-violet-600 { background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 55%), linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 6px 16px -8px rgba(139, 92, 246, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+    /* 輸入框：聚焦時的柔光環，不靠生硬外框 */
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: none;
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+    }
+    /* 切換頁面時整個內容區淡入上浮（由主內容區的 key 觸發） */
+    .ta-page { animation: ta-fade-up .35s cubic-bezier(.2, .8, .2, 1) both; }
+    /* 報價跳動：數字短暫上浮／下沉並發光（紅漲綠跌，台股慣例） */
+    @keyframes ta-tick-up { 0% { transform: translateY(4px); opacity: .55; text-shadow: 0 0 10px rgba(244, 63, 94, .9); } 100% { transform: none; opacity: 1; text-shadow: none; } }
+    @keyframes ta-tick-down { 0% { transform: translateY(-4px); opacity: .55; text-shadow: 0 0 10px rgba(16, 185, 129, .9); } 100% { transform: none; opacity: 1; text-shadow: none; } }
+    .ta-tick-up { display: inline-block; animation: ta-tick-up .7s cubic-bezier(.2, .8, .2, 1); }
+    .ta-tick-down { display: inline-block; animation: ta-tick-down .7s cubic-bezier(.2, .8, .2, 1); }
+    /* AI 分析步驟條：目前步驟的光環脈動 */
+    @keyframes ta-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(167, 139, 250, .55); } 50% { box-shadow: 0 0 0 5px rgba(167, 139, 250, 0); } }
+    .ta-pulse { animation: ta-pulse 1.4s ease-in-out infinite; }
+    /* 彈窗、導覽框：半透明毛玻璃（底下已有暗色遮罩，文字仍清楚） */
+    .fixed .rounded-2xl[class*="bg-slate-900"] {
+      background-color: rgba(15, 23, 42, 0.82);
+      background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 45%);
+      backdrop-filter: blur(18px) saturate(150%);
+      -webkit-backdrop-filter: blur(18px) saturate(150%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px -20px rgba(0, 0, 0, 0.75);
+    }
+    /* 資訊密度：緊湊＝卡片內距與垂直間距縮小（只動 main 內，不影響側欄與彈窗） */
+    html[data-density="compact"] main .p-5 { padding: 0.9rem; }
+    html[data-density="compact"] main .p-4 { padding: 0.75rem; }
+    html[data-density="compact"] main .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.85rem; }
+    html[data-density="compact"] main .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.7rem; }
+    html[data-density="compact"] main .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
+    html[data-density="compact"] main .gap-4 { gap: 0.65rem; }
+    /* 減少動態效果：作業系統設定，或設定頁選「減少」 */
+    @media (prefers-reduced-motion: reduce) {
+      html:not([data-motion="reduce"]) .ta-page, html:not([data-motion="reduce"]) .ta-tick-up,
+      html:not([data-motion="reduce"]) .ta-tick-down, html:not([data-motion="reduce"]) .ta-pulse { animation: none; }
+      html:not([data-motion="reduce"]) button, html:not([data-motion="reduce"]) .rounded-2xl,
+      html:not([data-motion="reduce"]) .rounded-xl, html:not([data-motion="reduce"]) .rounded-lg { transition: none !important; }
+      html:not([data-motion="reduce"]) button:hover, html:not([data-motion="reduce"]) button:active,
+      html:not([data-motion="reduce"]) .cursor-pointer:hover { transform: none !important; }
+    }
+    html[data-motion="reduce"] .ta-page, html[data-motion="reduce"] .ta-fade-up, html[data-motion="reduce"] .ta-grow-x,
+    html[data-motion="reduce"] .ta-tick-up, html[data-motion="reduce"] .ta-tick-down, html[data-motion="reduce"] .ta-pulse { animation: none !important; }
+    html[data-motion="reduce"] .ta-tab-ind, html[data-motion="reduce"] button, html[data-motion="reduce"] .rounded-2xl,
+    html[data-motion="reduce"] .rounded-xl, html[data-motion="reduce"] .rounded-lg { transition: none !important; }
+    html[data-motion="reduce"] button:hover, html[data-motion="reduce"] button:active,
+    html[data-motion="reduce"] .cursor-pointer:hover { transform: none !important; }
 
     ::-webkit-scrollbar {
       width: 6px;

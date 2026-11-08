@@ -64,7 +64,12 @@ function Row({ sym, quote, active, onClick, action, rank, nameOverride, sub, spa
         <span className="text-[11px] text-rose-400">抓取失敗</span>
       ) : quote ? (
         <div className="text-right mono">
-          <div className={`text-sm font-bold ${colorOf(chg)}`}>{fmt(quote.price)}</div>
+          <div className={`text-sm font-bold ${colorOf(chg)}`}>
+            {/* key 隨價格變動：重新掛載才會重播跳動動畫 */}
+            <span key={quote.price} className={flash ? `ta-tick-${flash}` : ''}>
+              {fmt(quote.price)}
+            </span>
+          </div>
           <div className={`text-[11px] ${colorOf(chg)}`}>
             {quote.change_pct > 0 ? '+' : ''}
             {fmt(quote.change_pct)}%

@@ -43,6 +43,7 @@ import './pages/settings_monitor';
 import './pages/settings_keys';
 import './pages/settings_ai';
 import './pages/settings_background';
+import './pages/settings_appearance';
 import './pages/settings';
 import './pages/tour';
 import './pages/guide';

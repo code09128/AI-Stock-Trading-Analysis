@@ -949,15 +949,21 @@ function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-3 md:p-6">
-          <main className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
+          {/* key：換頁時整區淡入上浮；個股三個分頁共用同一個 key，才不會讓分頁列的滑動指示條被重建 */}
+          <main
+            key={inStock ? 'stock' : activeTab}
+            className="ta-page space-y-4 md:space-y-6 max-w-[1600px] mx-auto"
+          >
             {inStock && <StockTabs active={activeTab} onGo={goTab} />}
             {activeTab === 'watch' && (
-              <WatchPage
-                onSendToMod1={sendToMod1}
-                onSendToMod2={sendToMod2}
-                onSendHoldings={sendHoldings}
-                onShowTour={() => bus.startTour('watch')}
-              />
+              <div key="watch" className="ta-fade-up">
+                <WatchPage
+                  onSendToMod1={sendToMod1}
+                  onSendToMod2={sendToMod2}
+                  onSendHoldings={sendHoldings}
+                  onShowTour={() => bus.startTour('watch')}
+                />
+              </div>
             )}
             {activeTab === 'board' && <MarketBoardPage />}
             {activeTab === 'chains' && <IndustryChainPage />}

@@ -327,6 +327,78 @@ function suggestQuestions(module, d, pos) {
   return [];
 }
 
+// AI 分析步驟條：只顯示真的發生的階段（整理資料 → 連線 → 產生回答 → 核對數字），並列出實際送給 AI 的資料項目，
+// 讓使用者知道 AI 看到什麼、數字有沒有被查核。步驟判斷來自串流的狀態文字，不是假進度。
+function AiSteps({ task, sent }) {
+  const { busy, out, status } = task;
+  const failed = !!out?.error;
+  const unverified = Array.isArray(out?.unverified_numbers) ? out.unverified_numbers.length : null;
+  const active = busy ? (/連線/.test(status || '') ? 1 : 2) : 4;
+  const verifyLabel = busy
+    ? '核對數字'
+    : failed
+      ? '核對數字（未完成）'
+      : unverified == null
+        ? '核對數字'
+        : unverified === 0
+          ? '核對數字：全部找得到'
+          : `核對數字：${unverified} 個找不到`;
+  const steps = [
+    `整理資料（${sent?.keys?.length ?? 0} 項）`,
+    '連線 AI',
+    '產生回答',
+    verifyLabel,
+  ];
+  return (
+    <div className="space-y-1.5">
+      <ol aria-label="AI 分析進度" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        {steps.map((label, i) => {
+          const done = i < active || (!busy && !(failed && i >= 2));
+          const now = busy && i === active;
+          const warn = !busy && i === 3 && (failed || (unverified ?? 0) > 0);
+          return (
+            <li key={label} className="flex items-center gap-1.5" aria-current={now ? 'step' : undefined}>
+              <span
+                aria-hidden="true"
+                className={`grid h-4 w-4 place-items-center rounded-full text-[10px] font-bold ${
+                  warn
+                    ? 'bg-amber-500 text-slate-950'
+                    : done
+                      ? 'bg-emerald-500 text-slate-950'
+                      : now
+                        ? 'border border-violet-400 bg-violet-500/30 ta-pulse'
+                        : 'border border-slate-600'
+                }`}
+              >
+                {warn ? '!' : done ? '✓' : ''}
+              </span>
+              <span className={warn ? 'text-amber-300' : done ? 'text-slate-200' : now ? 'text-violet-200' : 'text-slate-500'}>
+                {label}
+              </span>
+              {i < steps.length - 1 && <span aria-hidden="true" className="text-slate-700">›</span>}
+            </li>
+          );
+        })}
+      </ol>
+      {sent?.keys?.length > 0 && (
+        <details className="text-[11px] text-slate-400">
+          <summary className="cursor-pointer select-none hover:text-slate-200">
+            這次實際送給 AI 的資料（{sent.keys.length} 項，點開看項目）
+          </summary>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {sent.keys.map((k) => (
+              <span key={k} className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                {k}
+              </span>
+            ))}
+          </div>
+          <div className="mt-1 text-slate-500">AI 只負責解釋這些資料，不負責算數字；回答裡的數字會逐一回頭比對。</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function AiExplain({ module, data, title = 'AI 解讀', provenance = [] }) {
   const cfg = useAISettings();
   const { holdings } = usePortfolio();
@@ -341,18 +413,17 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [] }) {
   const label = `${MODULE_NAMES[module] || module}${code ? ` ${code}` : ''}`;
   const pos = myPosition(module, data, holdings);
   const suggestions = suggestQuestions(module, data, pos);
-  const run = () =>
-    startExplain(key, label, {
-      module,
-      data: {
-        ...data,
-        ...(provenance.length ? { 資料來源說明: provenance.map((x) => x.text) } : {}),
-        // 使用者在這檔的實際部位：讓建議針對「已持有」的情況（續抱／加減碼／停損），而不是泛泛而談
-        ...(pos ? { 我的持股部位: pos } : {}),
-      },
-      question,
-      profile: cleanProfile(profile),
-    });
+  const run = () => {
+    const payload = {
+      ...data,
+      ...(provenance.length ? { 資料來源說明: provenance.map((x) => x.text) } : {}),
+      // 使用者在這檔的實際部位：讓建議針對「已持有」的情況（續抱／加減碼／停損），而不是泛泛而談
+      ...(pos ? { 我的持股部位: pos } : {}),
+    };
+    if (task.busy) return;
+    setTask(key, { sent: { keys: Object.keys(payload).filter((k) => payload[k] != null) } });
+    startExplain(key, label, { module, data: payload, question, profile: cleanProfile(profile) });
+  };
   return (
     <div
       className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3"
@@ -447,6 +518,7 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [] }) {
               ），AI 會針對你的部位給建議。
             </div>
           )}
+          {(busy || out) && <AiSteps task={task} sent={task.sent} />}
           {busy && (
             <div className="text-[11px] text-violet-300">
               {task.status || 'AI 正在處理中…'}{' '}
