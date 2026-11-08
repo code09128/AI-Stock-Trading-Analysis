@@ -36,6 +36,21 @@ const DATA_KEYS = [
   ['tw_us_bt_portfolio_v1', '策略回測：策略組合清單', null],
   ['tw_us_bt_custom_v1', '策略回測：自訂策略（條件積木）', null],
   ['tw_us_tour_done_v1', '新手導覽狀態（清除後會再次顯示導覽）', null],
+  // 下面這些原本沒有放進備份清單，備份／還原會漏掉（自動存檔是存全部 tw_us_*，所以平常不會發現）
+  ['tw_us_cash_v1', '我的持股：帳戶現金', null],
+  ['tw_us_invested_v1', '我的持股：投資金額', null],
+  ['tw_us_div_received_v1', '我的持股：已領現金配息', null],
+  ['tw_us_hold_basis_v1', '介面偏好：持股市值計算（即時價／昨收）', null],
+  ['tw_us_heatmap_pool_v1', '介面偏好：熱力圖股票池', null],
+  ['tw_us_heatmap_size_v1', '介面偏好：熱力圖方塊大小', null],
+  ['tw_us_fee_discount_v1', '模擬下單：手續費折數', null],
+  ['tw_us_savings_plan_v1', '存股計畫：試算條件', null],
+  ['tw_us_savings_portfolios_v1', '存股計畫：投資組合清單', null],
+  ['tw_us_multichart_v1', '多圖走勢：版面', null],
+  // 這兩個不是 tw_us_ 開頭，不會自動存進資料檔，只有靠備份檔才帶得走
+  ['ta_show_signals_v1', '介面偏好：技術分析圖顯示買賣訊號', null],
+  ['ta_show_bollinger_v1', '介面偏好：技術分析圖顯示布林通道', null],
+  ['tw_us_chart_news_v1', '介面偏好：分時走勢圖標出新聞發布時間', null],
 ];
 const describe = (k) => {
   try {

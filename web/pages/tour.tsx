@@ -68,7 +68,7 @@ const TOUR_STEPS = [
   {
     chapter: 'watch',
     title: '右側：行情',
-    body: '最新成交價、當日分時圖（滑鼠移上去看每 5 分鐘）、今日與 52 週區間位置、開高低收、五檔。',
+    body: '最新成交價、當日分時圖（滑鼠移上去看每 5 分鐘；勾選圖上方「在走勢圖上標出新聞發布時間」會多出青色圓點，停上去看標題、點一下開原文）、今日與 52 週區間位置、開高低收、五檔。',
     go: 'watch',
     watch: { rightTab: 'quote' },
     target: 'watch-quote',

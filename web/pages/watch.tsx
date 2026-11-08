@@ -39,6 +39,9 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
   const [cart, setCart] = useState(() => readLS(LS_CART, []));
   const [sparks, setSparks] = useState({});
   const [intraday, setIntraday] = useState(null);
+  // 走勢圖上的新聞點：預設關閉（打開才會去抓新聞，新聞要連 7 個來源，不要每換一檔就抓）
+  const [showNews, setShowNews] = useState(() => readLS('tw_us_chart_news_v1', false) === true);
+  const [chartNews, setChartNews] = useState<{ symbol: string; items: any[]; error: string; loading: boolean } | null>(null);
   const [sortKey, setSortKey] = useState('default');
   // 持股改用跨頁共用的資料（組合風控、交易檢討也讀同一份）
   const portfolio = usePortfolio();
@@ -102,6 +105,37 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
   const { alerts, setAlerts, log: alertLog } = useAlerts(); // 檢查由 App 上的 AlertWatcher 負責
 
   useEffect(() => writeLS(LS_WATCH, watch), [watch]);
+  useEffect(() => writeLS('tw_us_chart_news_v1', showNews), [showNews]);
+  // 打開「新聞點」才抓；換標的重抓（後端有 5 分鐘快取）；過期的回應不要蓋掉新標的
+  useEffect(() => {
+    if (!showNews) {
+      setChartNews(null);
+      return undefined;
+    }
+    let stop = false;
+    setChartNews({ symbol: selected, items: [], error: '', loading: true });
+    fetch('/api/news', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: selected }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (stop) return;
+        const items = Array.isArray(d?.items) ? d.items : [];
+        const errs = Array.isArray(d?.errors) ? d.errors : [];
+        setChartNews({
+          symbol: selected,
+          items,
+          error: d?.error ? String(d.error) : !items.length && errs.length ? '新聞來源暫時抓不到' : '',
+          loading: false,
+        });
+      })
+      .catch((e) => !stop && setChartNews({ symbol: selected, items: [], error: `新聞載入失敗：${e.message}`, loading: false }));
+    return () => {
+      stop = true;
+    };
+  }, [showNews, selected]);
   useEffect(() => writeLS(LS_CART, cart), [cart]);
 
   useEffect(() => {
@@ -1085,10 +1119,25 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                   </div>
                 </div>
 
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs" data-tour="watch-news-dots">
+                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showNews}
+                      onChange={(e) => setShowNews(e.target.checked)}
+                      aria-label="在走勢圖上標出新聞發布時間"
+                    />
+                    在走勢圖上標出新聞發布時間
+                    <Tip text="打開後會抓這檔的新聞（要連多個新聞來源，約數秒），把發布時間落在這段走勢內的新聞用青色圓點標在走勢線上，方便對照「消息出來時股價怎麼動」。點圓點可另開分頁看原文。預設關閉。" />
+                  </label>
+                  {showNews && chartNews?.loading && <span className="text-slate-500">新聞載入中…</span>}
+                  {showNews && chartNews?.error && <span className="text-amber-300">⚠️ {chartNews.error}</span>}
+                </div>
                 <IntradayChart
                   data={intraday}
                   lastTrade={q?.quote_time}
                   tz={tzOf(selected)}
+                  news={showNews && chartNews && !chartNews.loading && !chartNews.error ? chartNews.items : undefined}
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <RangeBar label="今日區間（低—高）" low={q.low} high={q.high} value={q.price} />

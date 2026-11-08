@@ -63,7 +63,11 @@ const TZ_LABEL = {
 };
 
 // ---------- 當日分時圖 (TradingView / Yahoo 風格)：折線 + 昨收虛線 + 成交量 + 十字游標 ----------
-const IntradayChart = ({ data, lastTrade, tz }) => {
+// 新聞點只接受 http／https 連結（新聞資料來自外部網站，不能讓 javascript: 之類的網址被點開）
+const safeHttp = (u) => (/^https?:\/\//i.test(String(u || '')) ? u : '');
+
+// news：選填，新聞清單（/api/news 的 items）。有給才會在走勢圖上標出「發布時間落在這段走勢內」的新聞點；沒給就跟以前完全一樣
+const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: any; tz?: any; news?: any[] }) => {
   const [hover, setHover] = useState(null);
   const pts = data?.points || [];
 
@@ -147,6 +151,23 @@ const IntradayChart = ({ data, lastTrade, tz }) => {
   const line = pts.map((p) => `${x(p.ts)},${y(p.close)}`).join(' ');
   const area = `${x(pts[0].ts)},${padT + priceH} ${line} ${x(last.ts)},${padT + priceH}`;
   const act = hover != null ? pts[hover] : last;
+  // 新聞點：用發布時間（UTC）對到最近的分時點；發布在開盤前、收盤後或這段走勢之外的不畫（只在說明裡算進「其他」）
+  const newsDots = (news || [])
+    .map((n) => {
+      const ts = Date.parse(n.published_utc) / 1000;
+      if (!(ts >= pts[0].ts && ts <= last.ts)) return null;
+      let bi = 0;
+      let bd = Infinity;
+      pts.forEach((p, i) => {
+        const d = Math.abs(p.ts - ts);
+        if (d < bd) {
+          bd = d;
+          bi = i;
+        }
+      });
+      return { n, cx: x(ts), cy: y(pts[bi].close), t: pts[bi].t };
+    })
+    .filter(Boolean);
   const onMove = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
@@ -227,6 +248,35 @@ const IntradayChart = ({ data, lastTrade, tz }) => {
             fill="#475569"
           />
         ))}
+        {newsDots.map((d, i) => {
+          const href = safeHttp(d.n.link);
+          const dot = (
+            <circle
+              cx={d.cx}
+              cy={d.cy}
+              r="5"
+              fill="#22d3ee"
+              stroke="#0f172a"
+              strokeWidth="2"
+              className={href ? 'cursor-pointer' : ''}
+            >
+              <title>{`${d.t}　${d.n.source || ''}：${d.n.title || ''}`}</title>
+            </circle>
+          );
+          return href ? (
+            <a
+              key={`${d.n.published_utc}-${i}`}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`新聞 ${d.t} ${d.n.title || ''}（另開分頁）`}
+            >
+              {dot}
+            </a>
+          ) : (
+            <g key={`${d.n.published_utc}-${i}`}>{dot}</g>
+          );
+        })}
         <text x={padL} y={H - 2} fontSize="10" fill="#94a3b8" className="mono">
           {pts[0].t}
         </text>
@@ -255,6 +305,16 @@ const IntradayChart = ({ data, lastTrade, tz }) => {
         )}
         {hover == null && <circle cx={x(last.ts)} cy={y(last.close)} r="3.5" fill={col} />}
       </svg>
+      {news && (
+        <div className="mt-1 text-[11px] text-slate-400" aria-live="polite">
+          <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 mr-1 align-middle" />
+          青色圓點＝新聞發布時間（滑鼠停在點上看標題，點一下另開分頁看原文）。
+          {newsDots.length
+            ? `這段走勢內有 ${newsDots.length} 則`
+            : '這段走勢內沒有新聞'}
+          {news.length > newsDots.length ? `，另有 ${news.length - newsDots.length} 則發布在這段走勢之外（盤前、盤後或其他日）` : ''}。
+        </div>
+      )}
     </div>
   );
 };

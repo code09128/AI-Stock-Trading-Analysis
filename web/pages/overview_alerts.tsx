@@ -48,6 +48,8 @@ const ALERT_TYPES = {
   },
 };
 const shownValue = (a) => (ALERT_TYPES[a.type]?.unit === '%' ? Math.abs(a.value) : a.value);
+// 資料裡的條件類型不認得時（例如降版、手動改過資料檔）：只在清單顯示「不支援」，不要整個清單畫不出來；這種提醒永遠不會觸發
+const alertTypeInfo = (type) => ALERT_TYPES[type] || { label: `不支援的條件（${type}）`, unit: '' };
 
 // 提醒與觸發紀錄是全站共用的：任何頁面改動都會廣播 'alerts-changed'
 let alertLog = [];
@@ -288,8 +290,8 @@ function AlertsPanel({ alerts, setAlerts, selected, log }) {
         >
           <span className="mono font-bold text-white">{a.symbol}</span>
           <span className="text-slate-300">
-            {ALERT_TYPES[a.type].label} {shownValue(a)}
-            {ALERT_TYPES[a.type].unit}
+            {alertTypeInfo(a.type).label} {shownValue(a)}
+            {alertTypeInfo(a.type).unit}
           </span>
           <span className="ml-auto text-[11px] text-slate-400">
             {a.active ? '監控中' : `${a.firedAt}`}
@@ -324,8 +326,8 @@ function AlertsPanel({ alerts, setAlerts, selected, log }) {
           <div className="text-slate-400">本次開啟後觸發紀錄</div>
           {log.map((f) => (
             <div key={`${f.id}-${f.firedAt}`}>
-              {f.firedAt}　{f.symbol} {ALERT_TYPES[f.type].label} {shownValue(f)}
-              {ALERT_TYPES[f.type].unit}（當時價 {fmt(f.firedValue?.price)}）
+              {f.firedAt}　{f.symbol} {alertTypeInfo(f.type).label} {shownValue(f)}
+              {alertTypeInfo(f.type).unit}（當時價 {fmt(f.firedValue?.price)}）
             </div>
           ))}
         </div>
