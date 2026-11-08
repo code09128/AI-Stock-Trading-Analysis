@@ -156,6 +156,46 @@ SECTIONS_BY_MODULE = {
 }
 
 
+SECTION_LABELS = {"price": "價格走勢", "chips": "籌碼面", "fundamentals": "基本面與評價", "earnings": "財報與市場預期",
+                  "news": "近期新聞與公告", "market": "大盤環境"}
+
+
+def _flat_facts(val: Any) -> Dict[str, str]:
+    """把一個面向的資料攤平成「欄位：值」給畫面顯示；巢狀或太長的值截短（只是預覽，實際送給 AI 的是完整資料）。"""
+    if isinstance(val, dict):
+        return {str(k): (str(v) if not isinstance(v, (dict, list)) else str(v)[:120]) for k, v in val.items() if v is not None}
+    if isinstance(val, list):
+        return {str(i + 1): str(x.get("標題") or x.get("title") or x)[:120] if isinstance(x, dict) else str(x)[:120]
+                for i, x in enumerate(val[:8])}
+    return {}
+
+
+def preview(symbol: str, module: str = "stock") -> Dict[str, Any]:
+    """各面向有沒有資料、有哪些欄位；抓不到的標「資料不足」與原因。"""
+    base = SECTIONS_BY_MODULE.get(module, ())
+    built = build(symbol, base) if symbol and base else {}
+    sections = []
+    for key in base:
+        label = SECTION_LABELS[key]
+        val = built.get(label)
+        why = val.get("資料不足") if isinstance(val, dict) else None
+        facts = {} if why else _flat_facts(val)
+        ok = bool(facts)
+        sections.append({"key": key, "label": label, "ok": ok, "facts": facts,
+                         "why": "" if ok else str(why or "這檔沒有這部分的資料")})
+    return {"symbol": symbol, "name": built.get("名稱", ""), "module": module, "sections": sections}
+
+
+def pick_sections(module: str, aspects=None) -> tuple:
+    """該頁預設的資料面向；使用者勾選了面向（aspects）就只取交集。
+    不認得的名稱直接忽略；全部都不認得或沒勾任何一個時，視為沒有指定、用預設（不會因此送出空資料）。"""
+    base = SECTIONS_BY_MODULE.get(module, ())
+    if not isinstance(aspects, (list, tuple)):
+        return base
+    chosen = tuple(s for s in base if s in aspects)
+    return chosen or base
+
+
 def summary_lines(symbol: str) -> str:
     """給「AI 決策」提示詞用的精簡摘要（只在真的要呼叫 AI 時才組）。"""
     c = build(symbol)

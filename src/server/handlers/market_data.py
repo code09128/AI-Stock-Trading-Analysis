@@ -50,6 +50,9 @@ class MarketDataHandlers:
     def handle_intraday(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return chart_data.intraday(str(payload.get("symbol", "2330")))
 
+    def handle_five_days(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return chart_data.five_days(str(payload.get("symbol", "2330")))
+
     def handle_overview(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:30]
         return {"rows": chart_data.overview(syms), "timestamp": time.strftime("%H:%M:%S")}

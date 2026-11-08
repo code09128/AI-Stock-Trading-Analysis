@@ -257,6 +257,7 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
     picked += [it for it in raw if it["kind"] == COLUMN_KIND][:MAX_ITEMS - len(picked)]
     for it in picked:
         x = {k: it[k] for k in ("title", "source", "link", "kind", "local_iso")}
+        x["published_utc"] = it.get("published_utc", "")
         x["detail"] = it.get("detail", "")
         x["reaction"] = price_reaction(bars, it["local_iso"], market)
         x.update(_rule_fields(it["title"], it["kind"], x["detail"]))
@@ -295,7 +296,7 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
         ]
     # 沒進前 MAX_ITEMS 則整理的其他新聞：只給標題、時間、出處與連結，讓使用者在同一處瀏覽完整清單（不做 AI 整理與價格反應）
     picked_ids = {id(it) for it in picked}
-    others = [{k: it.get(k, "") for k in ("title", "source", "link", "kind", "local_iso")}
+    others = [{k: it.get(k, "") for k in ("title", "source", "link", "kind", "local_iso", "published_utc")}
               for it in raw if id(it) not in picked_ids]
     return {
         "symbol": symbol, "name": name, "mode": mode, "ai_error": ai_err,

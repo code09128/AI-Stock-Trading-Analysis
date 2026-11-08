@@ -31,11 +31,13 @@ const BANDS = [
   [-5, '#1d7347', '-2～-5%'],
   [-Infinity, '#15924f', '≤ -5%'],
 ];
+// 綠漲紅跌模式：色階左右對調（BANDS 是紅到綠、中間灰，對調後第 i 階用第 6-i 階的顏色）
+const bandColor = (i) => BANDS[document.documentElement.dataset.color === 'us' ? 6 - i : i][1];
 const colorFor = (pct) => {
   if (pct == null) return '#262b33';
-  if (pct > -0.0001 && pct < 0.0001) return BANDS[3][1];
-  if (pct > 0) return pct >= 5 ? BANDS[0][1] : pct >= 2 ? BANDS[1][1] : BANDS[2][1];
-  return pct <= -5 ? BANDS[6][1] : pct <= -2 ? BANDS[5][1] : BANDS[4][1];
+  if (pct > -0.0001 && pct < 0.0001) return bandColor(3);
+  if (pct > 0) return pct >= 5 ? bandColor(0) : pct >= 2 ? bandColor(1) : bandColor(2);
+  return pct <= -5 ? bandColor(6) : pct <= -2 ? bandColor(5) : bandColor(4);
 };
 const pctText = (p) => (p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(2)}%`);
 const twdText = (v) =>
@@ -179,6 +181,13 @@ function HeatmapPanel({
   const boxRef = useRef(null);
   const reqId = useRef(0); // 只採用最後一次請求的結果（切換範圍時，慢回來的舊請求不能蓋掉新畫面）
   const busyRef = useRef(false); // 定時更新：上一輪還沒回來就跳過
+  // 頂欄切換漲跌配色時重畫（顏色是畫的時候算的）
+  const [, repaint] = useState(0);
+  useEffect(() => {
+    const on = () => repaint((n) => n + 1);
+    window.addEventListener('ui-prefs-changed', on);
+    return () => window.removeEventListener('ui-prefs-changed', on);
+  }, []);
   useEffect(() => writeLS('tw_us_heatmap_pool_v1', pool), [pool]);
   useEffect(() => writeLS('tw_us_heatmap_size_v1', sizeChoice), [sizeChoice]);
 
@@ -432,7 +441,7 @@ function HeatmapPanel({
 
       <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-400">
         <span className="mr-1">今日漲跌</span>
-        {BANDS.map(([, c, label]) => (
+        {BANDS.map(([, , label], i) => ({ c: bandColor(i), label })).map(({ c, label }) => (
           <span
             key={label}
             className="px-1.5 py-0.5 rounded text-white"

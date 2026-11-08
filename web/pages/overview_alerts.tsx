@@ -2,6 +2,7 @@
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
 import { baseCode, colorOf, fmt, normSym, readLS, signed, writeLS } from '../ui';
+import { Donut, Scatter } from './mini_charts';
 
 const { useState, useEffect, useRef } = React;
 
@@ -338,47 +339,77 @@ function AlertsPanel({ alerts, setAlerts, selected, log }) {
 
 // ---------- 技術總覽：自選股一張表 ----------
 function OverviewPanel({ symbols, rows, quotes, selected, onSelect, loading }) {
-  const [sort, setSort] = useState('symbol');
+  // 點欄位標題排序，再點一次反向；沒點過＝我的順序
+  const [sort, setSort] = useState<[string, number]>(['symbol', -1]);
   const data = symbols.map((s) => ({ s, q: quotes[baseCode(s)], o: rows[baseCode(s)] }));
   const val = {
-    symbol: () => 0,
     chg: (d) => d.q?.change_pct ?? -999,
     rsi: (d) => d.o?.rsi14 ?? -999,
     ma20: (d) => d.o?.dist_ma20_pct ?? -999,
     vol: (d) => d.o?.volume_ratio ?? -999,
-  }[sort];
-  const sorted = sort === 'symbol' ? data : [...data].sort((a, b) => val(b) - val(a));
+  }[sort[0]];
+  const sorted = !val ? data : [...data].sort((a, b) => sort[1] * (val(a) - val(b)));
   const rsiCls = (r) =>
     r >= 70 ? 'text-rose-400' : r <= 30 ? 'text-emerald-400' : 'text-slate-200';
   const trendCls = { 多頭: 'text-rose-400', 空頭: 'text-emerald-400' };
+  // 圖表只統計已算出指標的標的（還在計算或失敗的不列入）
+  const have = data.filter((d) => d.o && !d.o.error);
+  const trendBar = [
+    { label: '多頭', value: have.filter((d) => d.o.trend === '多頭').length, color: 'var(--up)' },
+    { label: '空頭', value: have.filter((d) => d.o.trend === '空頭').length, color: 'var(--down)' },
+    { label: '盤整／其他', value: have.filter((d) => d.o.trend !== '多頭' && d.o.trend !== '空頭').length, color: '#64748b' },
+  ];
+  const th = (key, label, title?) => (
+    <th title={title} className="font-medium text-right">
+      <button
+        type="button"
+        onClick={() => setSort(sort[0] === key ? [key, -sort[1]] : [key, -1])}
+        className="cursor-pointer hover:text-white"
+      >
+        {label}
+        {sort[0] === key ? (sort[1] < 0 ? ' ↓' : ' ↑') : ''}
+      </button>
+    </th>
+  );
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-[11px] text-slate-400">
-        排序
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          aria-label="總覽排序"
-          className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-slate-200"
-        >
-          <option value="symbol">我的順序</option>
-          <option value="chg">今日漲幅</option>
-          <option value="rsi">RSI 高→低</option>
-          <option value="ma20">距 MA20 遠→近</option>
-          <option value="vol">量比</option>
-        </select>
-        {loading && <span className="text-slate-500">計算中…</span>}
-      </div>
+      {have.length > 0 && (
+        <div className="space-y-1" data-tour="overview-charts">
+          <Donut items={trendBar} center={`${have.length}檔`} sub="趨勢分布" label="趨勢分布圓餅圖" />
+          <Scatter
+            dots={have.map((d) => ({
+              id: d.s,
+              label: d.q?.name || baseCode(d.s),
+              x: d.o.rsi14,
+              y: d.o.dist_ma20_pct,
+              color: (d.q?.change_pct ?? 0) >= 0 ? 'var(--up)' : 'var(--down)',
+            }))}
+            onPick={onSelect}
+            activeId={selected}
+            label="RSI 與距 MA20 象限圖"
+            xLabel="RSI →"
+            yLabel="距 MA20 %"
+            x0={20}
+            x1={90}
+          />
+          <div className="text-[11.5px] text-slate-400">右上＝RSI 高且離均線遠（偏熱），左下＝弱勢超賣。點圓點切到該股。</div>
+        </div>
+      )}
+      {loading && <div className="text-[11px] text-slate-500">計算中…</div>}
       <div className="overflow-x-auto">
         <table className="w-full text-[11px] mono">
           <thead>
             <tr className="text-slate-500 text-left">
-              <th className="py-1">代號</th>
-              <th>漲跌</th>
-              <th title="RSI(14)：≥70 偏熱、≤30 偏冷">RSI</th>
-              <th title="現價相對 20 日均線的位置">距MA20</th>
-              <th title="今日成交量 ÷ 近 20 日均量（盤中偏低屬正常）">量比</th>
-              <th>趨勢</th>
+              <th className="py-1 font-medium text-left">
+                <button type="button" onClick={() => setSort(['symbol', -1])} title="回到我的順序" className="cursor-pointer hover:text-white">
+                  標的
+                </button>
+              </th>
+              {th('chg', '漲跌')}
+              {th('rsi', 'RSI', 'RSI(14)：≥70 偏熱、≤30 偏冷')}
+              {th('ma20', '距MA20', '現價相對 20 日均線的位置')}
+              {th('vol', '量比', '今日成交量 ÷ 近 20 日均量（盤中偏低屬正常）')}
+              <th className="font-medium text-right">趨勢</th>
             </tr>
           </thead>
           <tbody>
@@ -390,7 +421,7 @@ function OverviewPanel({ symbols, rows, quotes, selected, onSelect, loading }) {
                   baseCode(selected) === baseCode(s) ? 'bg-sky-500/10' : ''
                 }`}
               >
-                <td className="py-1.5 font-bold text-white">{baseCode(s)}</td>
+                <td className="py-1.5 font-bold text-white truncate max-w-[92px]" title={baseCode(s)}>{q?.name || baseCode(s)}</td>
                 <td className={colorOf(q?.change_pct)}>
                   {signed(q?.change_pct, 2, '%')}
                 </td>
@@ -408,7 +439,7 @@ function OverviewPanel({ symbols, rows, quotes, selected, onSelect, loading }) {
         </table>
       </div>
       <p className="text-[10px] text-slate-500 leading-snug">
-        技術指標來自日 K 還權資料（Yahoo），盤中會把即時價併入當天的 K 棒，每 5
+        自選股一張表：點欄位標題排序，點列切到該股。技術指標來自日 K 還權資料（Yahoo），盤中會把即時價併入當天的 K 棒，每 5
         分鐘更新；漲跌來自即時報價。趨勢：收盤＞MA20＞MA60 為多頭，反之為空頭。
       </p>
     </div>

@@ -60,6 +60,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/quotes": D.handle_quotes,
     "/api/symbol_search": D.handle_symbol_search,
     "/api/intraday": D.handle_intraday,
+    "/api/five_days": D.handle_five_days,
     "/api/overview": D.handle_overview,
     "/api/stockinfo": D.handle_stockinfo,
     "/api/fundamentals": lambda p: fundamentals.analyze(arg_ticker(p, "symbol")),
@@ -98,6 +99,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/ai/models": lambda p: D.handle_ai("models", p),
     "/api/ai/explain": lambda p: D.handle_ai("explain", p),
     "/api/ai/detect": lambda p: D.handle_ai("detect", p),
+    "/api/ai/context": lambda p: D.handle_ai_context(p),
     # 金鑰與資料額度（寫入 .env）
     "/api/env/save": lambda p: env_settings.save(p.get("values") or {}),
     "/api/env/test_finmind": lambda p: env_settings.test_finmind(p.get("token")),
@@ -146,7 +148,7 @@ def refresh_routes() -> None:
 
 # 伺服器端紀錄：輪詢型 API 只記錯誤，其他（分析、AI、風控…）成功也記，方便追蹤。
 # 背景工作的 start／poll 不記，工作結束時用原本的路徑記一筆（耗時＝實際計算時間）
-QUIET_PATHS = ("/api/quotes", "/api/symbol_search", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/overview", "/api/fx",
+QUIET_PATHS = ("/api/quotes", "/api/symbol_search", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/five_days", "/api/overview", "/api/fx",
                "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles", "/api/jobs/",
                "/api/chains/")
 

@@ -6,8 +6,8 @@ import { notifySaved } from '../sync_store';
 const { useState, useEffect } = React;
 
 const LS_UI = 'tw_us_ui_prefs_v1';
-type UiPrefs = { motion: 'auto' | 'reduce'; density: 'comfortable' | 'compact' };
-const DEFAULT_PREFS: UiPrefs = { motion: 'auto', density: 'comfortable' };
+type UiPrefs = { motion: 'auto' | 'reduce'; density: 'comfortable' | 'compact'; color: 'tw' | 'us' };
+const DEFAULT_PREFS: UiPrefs = { motion: 'auto', density: 'comfortable', color: 'tw' };
 
 function loadUiPrefs(): UiPrefs {
   try {
@@ -15,6 +15,7 @@ function loadUiPrefs(): UiPrefs {
     return {
       motion: v?.motion === 'reduce' ? 'reduce' : 'auto',
       density: v?.density === 'compact' ? 'compact' : 'comfortable',
+      color: v?.color === 'us' ? 'us' : 'tw',
     };
   } catch (_e) {
     return DEFAULT_PREFS;
@@ -25,6 +26,13 @@ function applyUiPrefs() {
   const p = loadUiPrefs();
   document.documentElement.dataset.motion = p.motion;
   document.documentElement.dataset.density = p.density;
+  document.documentElement.dataset.color = p.color;
+}
+
+// 頂欄的快速切換：和設定頁存同一份
+function setUiPref(patch: Partial<UiPrefs>) {
+  localStorage.setItem(LS_UI, JSON.stringify({ ...loadUiPrefs(), ...patch }));
+  window.dispatchEvent(new Event('ui-prefs-changed'));
 }
 
 // 開頁就套用；資料檔同步完成（userdata-status）後再套一次，因為偏好可能是從檔案讀回來的
@@ -35,6 +43,10 @@ window.addEventListener('ui-prefs-changed', applyUiPrefs);
 const MOTION_OPTS = [
   ['auto', '自動', '有動畫；作業系統設定「減少動態效果」時自動關閉'],
   ['reduce', '減少', '關閉換頁淡入、數字閃動、滑過浮起等所有動畫'],
+] as const;
+const COLOR_OPTS = [
+  ['tw', '紅漲綠跌', '台灣習慣：上漲紅色、下跌綠色'],
+  ['us', '綠漲紅跌', '歐美習慣：上漲綠色、下跌紅色'],
 ] as const;
 const DENSITY_OPTS = [
   ['comfortable', '舒適', '預設間距'],
@@ -92,15 +104,16 @@ function AppearanceSettings() {
       data-tour="settings-appearance"
       className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3"
     >
-      <h3 className="font-bold text-white">外觀：動態效果與資訊密度</h3>
+      <h3 className="font-bold text-white">外觀：動態效果、資訊密度與漲跌配色</h3>
       <p className="text-xs text-slate-400 leading-relaxed">
         動畫只用來說明變化（換頁、報價漲跌、AI
         分析進度），不影響任何數字與功能。覺得會分心或畫面太鬆時可以在這裡調整，馬上生效。
       </p>
       {group('動態效果', 'motion', MOTION_OPTS)}
       {group('資訊密度', 'density', DENSITY_OPTS)}
+      {group('漲跌配色', 'color', COLOR_OPTS)}
     </div>
   );
 }
 
-export { AppearanceSettings, applyUiPrefs };
+export { AppearanceSettings, applyUiPrefs, loadUiPrefs, setUiPref };

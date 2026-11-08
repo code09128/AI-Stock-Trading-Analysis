@@ -5,7 +5,7 @@ import { Sparkline } from '../live_widgets';
 const { useState, useEffect, useRef } = React;
 
 
-function Row({ sym, quote, active, onClick, action, rank, nameOverride, sub, spark, tag }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any }) {
+function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any }) {
   const chg = quote?.change;
   const prevPrice = useRef(quote?.price);
   const [flash, setFlash] = useState(null);
@@ -29,56 +29,57 @@ function Row({ sym, quote, active, onClick, action, rank, nameOverride, sub, spa
       aria-current={active ? 'true' : undefined}
       onClick={onClick}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
-      className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors duration-700 ${
+      className={`group rounded-xl border cursor-pointer transition-[transform,background-color,border-color] duration-200 hover:translate-x-[3px] px-2.5 py-2 ${
         active
-          ? 'bg-sky-500/15 border-sky-400'
-          : 'bg-slate-950/70 border-slate-800 hover:border-slate-600'
+          ? 'border-[#4f7cff] bg-gradient-to-r from-[#4f7cff]/20 to-[#4f7cff]/5'
+          : 'border-transparent bg-white/5 hover:bg-white/10'
       } ${flash === 'up' ? '!bg-rose-500/30' : flash === 'down' ? '!bg-emerald-500/30' : ''}`}
     >
-      {rank && <span className="text-[11px] text-slate-500 w-4">{rank}</span>}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="mono font-bold text-white text-sm">{sym}</span>
-          {tag && (
-            <span
-              className={`text-[9px] px-1 rounded border ${
-                tag.className ||
-                ({
-                  STOCK: 'text-sky-300 border-sky-500/40',
-                  ETF: 'text-amber-300 border-amber-500/40',
-                  BOND: 'text-emerald-300 border-emerald-500/40',
-                }[tag.category] || 'text-cyan-300 border-cyan-500/40')
-              }`}
-            >
-              {tag.label}
-            </span>
-          )}
-          <span className="text-xs text-slate-400 truncate">
-            {nameOverride || quote?.name || ''}
-          </span>
+      <div className="flex items-center gap-2">
+        {rank && <span className="text-[11px] text-slate-500 w-4 shrink-0">{rank}</span>}
+        <div className="min-w-0 flex-1">
+          <b className="block text-[13px] text-white truncate">{nameOverride || quote?.name || sym}</b>
+          <small className="flex items-center gap-1 text-[11.5px] text-slate-400 min-w-0">
+            <span className="mono shrink-0">{sym}</span>
+            {tag && (
+              <span
+                className={`text-[9px] px-1 rounded border shrink-0 ${
+                  tag.className ||
+                  ({
+                    STOCK: 'text-sky-300 border-sky-500/40',
+                    ETF: 'text-amber-300 border-amber-500/40',
+                    BOND: 'text-teal-300 border-teal-500/40',
+                  }[tag.category] || 'text-cyan-300 border-cyan-500/40')
+                }`}
+              >
+                {tag.label}
+              </span>
+            )}
+          </small>
+          {sub && <div className="text-[11px] text-slate-400 truncate">{sub}</div>}
         </div>
-        {sub && <div className="text-[11px] text-slate-500 truncate">{sub}</div>}
+        {quote?.error ? (
+          <span className="text-[11px] text-rose-400 shrink-0">抓取失敗</span>
+        ) : quote ? (
+          <div className={`text-right mono shrink-0 ${colorOf(chg)}`}>
+            <div className="text-[13px]">
+              {/* key 隨價格變動：重新掛載才會重播跳動動畫 */}
+              <span key={quote.price} className={flash ? `ta-tick-${flash}` : ''}>
+                {fmt(quote.price)}
+              </span>
+            </div>
+            <div className="text-[11.5px]">
+              {quote.change_pct > 0 ? '+' : ''}
+              {fmt(quote.change_pct)}%
+            </div>
+          </div>
+        ) : (
+          <span className="text-[11px] text-slate-500 shrink-0">載入中…</span>
+        )}
+        {spark && <span className="shrink-0"><Sparkline values={spark} w={56} /></span>}
+        {!actionBelow && action}
       </div>
-      {spark && <Sparkline values={spark} />}
-      {quote?.error ? (
-        <span className="text-[11px] text-rose-400">抓取失敗</span>
-      ) : quote ? (
-        <div className="text-right mono">
-          <div className={`text-sm font-bold ${colorOf(chg)}`}>
-            {/* key 隨價格變動：重新掛載才會重播跳動動畫 */}
-            <span key={quote.price} className={flash ? `ta-tick-${flash}` : ''}>
-              {fmt(quote.price)}
-            </span>
-          </div>
-          <div className={`text-[11px] ${colorOf(chg)}`}>
-            {quote.change_pct > 0 ? '+' : ''}
-            {fmt(quote.change_pct)}%
-          </div>
-        </div>
-      ) : (
-        <span className="text-[11px] text-slate-600">載入中…</span>
-      )}
-      {action}
+      {actionBelow && action && <div className="mt-1.5">{action}</div>}
     </div>
   );
 }

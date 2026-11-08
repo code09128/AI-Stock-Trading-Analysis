@@ -91,7 +91,7 @@ function Candles({ bars, from, to, overlays, trades, stopLine, w = 760, h = 300 
             y={pad.t}
             width={(Math.min(t.xi, to) - Math.max(t.ei, from) + 1) * cw}
             height={ph}
-            fill={t.net_pnl >= 0 ? '#ef4444' : '#10b981'}
+            fill={t.net_pnl >= 0 ? 'var(--up)' : 'var(--down)'}
             opacity="0.06"
           />
         ))}
@@ -103,7 +103,7 @@ function Candles({ bars, from, to, overlays, trades, stopLine, w = 760, h = 300 
       {view.map((b, k) => {
         const i = from + k;
         const up = b[4] >= b[1];
-        const col = up ? '#ef4444' : '#10b981';
+        const col = up ? 'var(--up)' : 'var(--down)';
         return (
           <g key={b[0]}>
             <line x1={x(i)} x2={x(i)} y1={y(b[2])} y2={y(b[3])} stroke={col} />

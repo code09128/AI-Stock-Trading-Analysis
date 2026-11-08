@@ -507,7 +507,7 @@ function CandlestickChart({
 
         {bars.map((b, idx) => {
           const cx = padLeft + idx * stepX + stepX / 2;
-          const color = b.close >= b.open ? '#ef4444' : '#10b981';
+          const color = b.close >= b.open ? 'var(--up)' : 'var(--down)';
           const topY = toY(Math.max(b.open, b.close));
           const bodyH = Math.max(toY(Math.min(b.open, b.close)) - topY, 1);
           const vY = toVolY(b.volume || 0);
@@ -559,7 +559,7 @@ function CandlestickChart({
                 const pts = buy
                   ? `${cx},${baseY - r} ${cx - r},${baseY + r * 0.8} ${cx + r},${baseY + r * 0.8}`
                   : `${cx},${baseY + r} ${cx - r},${baseY - r * 0.8} ${cx + r},${baseY - r * 0.8}`;
-                const col = buy ? '#ef4444' : '#10b981';
+                const col = buy ? 'var(--up)' : 'var(--down)';
                 return (
                   <polygon
                     points={pts}

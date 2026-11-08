@@ -11,15 +11,17 @@
   <script src="./vendor/tailwindcss-3.4.17.js"></script>
   <script>
     // 主題：中性深灰底、單一藍色強調色；漲跌維持台股紅漲綠跌（rose / emerald），amber 只用於警示
-    const ACCENT = { 50: '#e8f1fd', 100: '#cde2fb', 200: '#9ec5f4', 300: '#86b6ef', 400: '#5598e7', 500: '#3987e5',
-      600: '#2a78d6', 700: '#256abf', 800: '#1c5cab', 900: '#184f95', 950: '#0d366b' };
+    const ACCENT = { 50: '#eef2ff', 100: '#dfe6ff', 200: '#c8d4ff', 300: '#b8c8ff', 400: '#7d9dff', 500: '#4f7cff',
+      600: '#4f7cff', 700: '#3f63d6', 800: '#304ca8', 900: '#243a80', 950: '#16244f' };
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            slate: { 50: '#f5f7fa', 100: '#eef1f5', 200: '#dde2e9', 300: '#c3cad4', 400: '#9aa4b2', 500: '#6b7584',
-              600: '#4a5361', 700: '#2f3744', 800: '#222934', 900: '#161b22', 950: '#0d1117' },
+            slate: { 50: '#f5f7fb', 100: '#e8ebf4', 200: '#dde1ec', 300: '#c3c9d8', 400: '#8a93a8', 500: '#6a7388',
+              600: '#454d61', 700: '#2b3244', 800: '#1d2333', 900: '#111625', 950: '#0b0f1c' },
             sky: ACCENT, blue: ACCENT, indigo: ACCENT,
+            // 漲跌色走 CSS 變數，頂欄「紅漲綠跌」切換時整站一起換
+            rose: { 400: 'var(--up)' }, emerald: { 400: 'var(--down)' },
           },
           fontFamily: {
             sans: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
@@ -117,7 +119,8 @@
     /* 共用的進場動畫（新聞研究摘要等）：交錯淡入；使用者設定「減少動態效果」時全部停用 */
     @keyframes ta-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     @keyframes ta-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-    .ta-fade-up { animation: ta-fade-up .4s cubic-bezier(.2, .8, .2, 1) both; }
+    /* 用 backwards：動畫結束後不留獨立圖層，否則裡面的彈出視窗、全螢幕圖表會被困住、蓋不過頂欄 */
+    .ta-fade-up { animation: ta-fade-up .4s cubic-bezier(.2, .8, .2, 1) backwards; }
     .ta-grow-x { transform-origin: left center; animation: ta-grow-x .7s cubic-bezier(.2, .8, .2, 1) both; }
     .ta-tab-ind { transition: transform .28s cubic-bezier(.2, .8, .2, 1); }
     @media (prefers-reduced-motion: reduce) { .ta-fade-up, .ta-grow-x { animation: none; } .ta-tab-ind { transition: none; } }
@@ -184,7 +187,7 @@
       box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
     }
     /* 切換頁面時整個內容區淡入上浮（由主內容區的 key 觸發） */
-    .ta-page { animation: ta-fade-up .35s cubic-bezier(.2, .8, .2, 1) both; }
+    .ta-page { animation: ta-fade-up .35s cubic-bezier(.2, .8, .2, 1) backwards; }
     /* 報價跳動：數字短暫上浮／下沉並發光（紅漲綠跌，台股慣例） */
     @keyframes ta-tick-up { 0% { transform: translateY(4px); opacity: .55; text-shadow: 0 0 10px rgba(244, 63, 94, .9); } 100% { transform: none; opacity: 1; text-shadow: none; } }
     @keyframes ta-tick-down { 0% { transform: translateY(-4px); opacity: .55; text-shadow: 0 0 10px rgba(16, 185, 129, .9); } 100% { transform: none; opacity: 1; text-shadow: none; } }
@@ -241,6 +244,32 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #475569;
     }
+
+    /* ===== 個股工作區配色（與設計稿一致）：深藍黑底、藍紫漸層強調色 ===== */
+    :root { --up: #ff4d6d; --down: #22d3a0; }
+    html[data-color="us"] { --up: #22d3a0; --down: #ff4d6d; }
+    body {
+      background:
+        radial-gradient(900px 500px at 8% -10%, rgba(79, 124, 255, 0.16), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(139, 92, 246, 0.14), transparent 55%),
+        #070a13;
+      background-attachment: fixed;
+    }
+    #root aside, #root header.shrink-0 { background-color: rgba(7, 10, 19, 0.72); border-color: rgba(255, 255, 255, 0.08); }
+    /* 側欄項目：目前頁面用藍紫漸層底，取代原本的左側細線 */
+    .ta-nav { border: 0; background: transparent; }
+    .ta-nav-active { background: linear-gradient(135deg, rgba(79, 124, 255, 0.28), rgba(139, 92, 246, 0.2)) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+    button.bg-sky-600, button.bg-blue-600 { background-image: linear-gradient(135deg, #4f7cff, #8b5cf6); box-shadow: 0 6px 20px -8px rgba(79, 124, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+
+    /* 卡片格線（CardBox）裡再放一張舊式大卡（例如模擬下單面板）時，拿掉內層的框，避免卡片套卡片 */
+    .ta-cardbody .rounded-2xl[class*="bg-slate-900"],
+    .ta-cardbody .rounded-2xl[class*="bg-slate-900"]:hover { background: none; border: 0; box-shadow: none; padding: 0; }
+
+    /* 卡片裡的長網址、長代號要能換行，不要把卡片撐破 */
+    .ta-cardbody { min-width: 0; overflow-wrap: anywhere; }
+    /* 頂欄行情狀態的小綠點 */
+    @keyframes ta-live { 50% { opacity: .35; } }
+    .ta-live-dot { background: var(--down); box-shadow: 0 0 8px var(--down); animation: ta-live 1.8s infinite; }
 
     .glass-card {
       background: rgba(15, 23, 42, 0.85);

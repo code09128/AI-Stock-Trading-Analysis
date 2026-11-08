@@ -399,30 +399,41 @@ function AiSteps({ task, sent }) {
   );
 }
 
-function AiExplain({ module, data, title = 'AI 解讀', provenance = [] }) {
+// 任務的 key：同一頁、同一檔共用一個任務；抽屜另外記，兩邊的問題與答案不會互相蓋掉
+const explainKey = (module, data, drawer = false) => {
+  const code = module === 'stock' ? data?.code || data?.symbol || '' : '';
+  if (drawer) return `${module}:${pageSymbol(module, data) || code}:drawer`;
+  return code ? `${module}:${code}` : module;
+};
+const setExplainQuestion = (key, question) => setTask(key, { question });
+
+// drawer／aspects／skippedLabels 是側邊 AI 抽屜用的：只讓後端抓勾選的面向，並把沒勾的面向告訴 AI（它會寫「資料不足」而不是猜）；建議問題由抽屜自己畫
+function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer = false, aspects, skippedLabels }: { module: string; data: any; title?: string; provenance?: any[]; drawer?: boolean; aspects?: string[]; skippedLabels?: string[] }) {
   const cfg = useAISettings();
   const { holdings } = usePortfolio();
   const [pid, setPid] = useState('');
   const code = module === 'stock' ? data?.code || data?.symbol || '' : '';
-  const key = code ? `${module}:${code}` : module;
+  const key = explainKey(module, data, drawer);
   const task = useAiTask(key);
   const { busy, out, question } = task;
   const setQuestion = (q) => setTask(key, { question: q });
-  if (cfg.scope[module] === false) return null;
+  if (cfg.scope[module] === false)
+    return drawer ? <div className="text-xs text-amber-300">這項 AI 解讀已在「設定 → AI 作用範圍」關閉。</div> : null;
   const profile = cfg.profiles.find((p) => p.id === (pid || cfg.activeId)) || null;
   const label = `${MODULE_NAMES[module] || module}${code ? ` ${code}` : ''}`;
   const pos = myPosition(module, data, holdings);
-  const suggestions = suggestQuestions(module, data, pos);
+  const suggestions = drawer ? [] : suggestQuestions(module, data, pos);
   const run = () => {
     const payload = {
       ...data,
       ...(provenance.length ? { 資料來源說明: provenance.map((x) => x.text) } : {}),
       // 使用者在這檔的實際部位：讓建議針對「已持有」的情況（續抱／加減碼／停損），而不是泛泛而談
       ...(pos ? { 我的持股部位: pos } : {}),
+      ...(skippedLabels?.length ? { 使用者沒有勾選的面向: skippedLabels } : {}),
     };
     if (task.busy) return;
     setTask(key, { sent: { keys: Object.keys(payload).filter((k) => payload[k] != null) } });
-    startExplain(key, label, { module, data: payload, question, profile: cleanProfile(profile) });
+    startExplain(key, label, { module, data: payload, question, profile: cleanProfile(profile), ...(aspects ? { aspects } : {}) });
   };
   return (
     <div
@@ -582,4 +593,4 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [] }) {
   );
 }
 
-export { loadAI, saveAI, activeProfile, cleanProfile, useAISettings, callAI, useAIUsage, usageCost, loadPrices, savePrices, clearUsage, LS_USAGE, LS_PRICES, AiExplain, SCOPE_LABELS };
+export { loadAI, saveAI, activeProfile, cleanProfile, useAISettings, callAI, useAIUsage, usageCost, loadPrices, savePrices, clearUsage, LS_USAGE, LS_PRICES, AiExplain, SCOPE_LABELS, explainKey, setExplainQuestion };

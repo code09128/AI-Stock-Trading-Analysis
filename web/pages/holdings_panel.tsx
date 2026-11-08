@@ -5,6 +5,7 @@ import { notifySaved } from '../sync_store';
 import { Tip, baseCode, colorOf, currencyOf, fmt, marketOf, normSym, readLS, signed, writeLS } from '../ui';
 import { setHoldings as TA_setHoldings } from '../portfolio_store';
 import { Row } from './watch_parts';
+import { Donut, topSlices } from './mini_charts';
 
 const { useState, useEffect, useMemo } = React;
 
@@ -81,6 +82,16 @@ function HoldingsPanel({
       pct: c ? ((v - c) / c) * 100 : 0,
       missing: holdRows.length - ok.length,
     };
+  }, [holdRows]);
+  // 持股占比圓餅：同一檔（多券商）合併，只用已換算成台幣的市值；缺匯率的不畫，避免比例失真
+  const allocSlices = useMemo(() => {
+    const by = new Map();
+    for (const r of holdRows) {
+      if (r.valueTwd == null) continue;
+      const k = baseCode(r.symbol);
+      by.set(k, (by.get(k) || 0) + r.valueTwd);
+    }
+    return topSlices([...by].map(([label, value]) => ({ label, value })));
   }, [holdRows]);
   const addHolding = () => {
     const sym = normSym((holdForm.symbol || '').trim());
@@ -240,6 +251,15 @@ function HoldingsPanel({
 
   return (
     <div className="space-y-2">
+      {allocSlices.length > 0 && (
+        <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3" data-tour="hold-alloc">
+          <div className="text-[11px] text-slate-400 mb-2">
+            持股占比（依台幣市值）
+            <Tip text="每一檔的市值占總市值的比例；同一檔放在不同券商會合併。只算已取得報價與匯率的持股，前 6 檔各自一塊，其餘合併成「其他」。" />
+          </div>
+          <Donut items={allocSlices} center={`${allocSlices.filter((s) => s.label !== '其他').length}`} sub="檔" label="持股占比圓餅圖" />
+        </div>
+      )}
       {holdRows.length > 0 && (
         <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs mono space-y-0.5">
           <div className="flex justify-between">
@@ -392,6 +412,7 @@ function HoldingsPanel({
           spark={sparks[r.symbol]}
           active={baseCode(selected) === baseCode(r.symbol)}
           onClick={() => onSelect(r.symbol)}
+          actionBelow
           sub={`${r.broker ? `【${r.broker}】` : ''}${Number.isInteger(r.shares) ? fmt(r.shares, 0) : fmt(r.shares, 4)} 股・成本 ${fmt(r.cost)}・${
             signed(r.pnlPct, 2, '%')
           }`}

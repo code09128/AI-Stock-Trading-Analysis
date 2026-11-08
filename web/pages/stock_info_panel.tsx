@@ -3,6 +3,7 @@ import { Tip, baseCode, colorOf, fmt, signed } from '../ui';
 import { AiExplain } from '../ai_store';
 import { postJob } from '../desktop_bridge';
 import { ValuationCard } from './valuation_card';
+import { HBars, MiniBars } from './mini_charts';
 
 const { useState, useEffect } = React;
 
@@ -74,7 +75,7 @@ function Th({ children }) {
   return <th className="py-1 pr-2 font-normal">{children}</th>;
 }
 
-function FundamentalsCard({ symbol }) {
+function FundamentalsCard({ symbol, showEmpty = false }: { symbol: string; showEmpty?: boolean }) {
   const [f, setF] = useState(null);
   useEffect(() => {
     let stop = false;
@@ -93,7 +94,8 @@ function FundamentalsCard({ symbol }) {
   }, [symbol]);
   if (!f) return <div className="text-xs text-slate-500 px-1">正在整理財報與市場預期…</div>;
   if (f.error) return <div className="text-xs text-rose-300 px-1">⚠️ 財報資料取得失敗：{f.error}</div>;
-  if (!f.supported) return null;
+  if (!f.supported)
+    return showEmpty ? <div className="text-xs text-slate-400">這檔沒有財報資料（ETF、債券或來源不支援的標的）。</div> : null;
   const rv = f.revenue || {};
   const qs = f.quarterly?.quarters || [];
   return (
@@ -103,7 +105,7 @@ function FundamentalsCard({ symbol }) {
         <Tip text="看懂市場正在定價什麼：先看實際財報數字（營收、EPS、毛利率）與市場預估，再把它們和股價漲幅比較，分出「已反映在股價」與「還可能讓市場意外」的部分。" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <div className="grid [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))] gap-2">
         {Object.entries(f.expectation_gap).map(([k, list]: [string, any[]]) => (
           <div key={k} className={`rounded-xl border p-2.5 text-xs space-y-1 ${GAP_STYLE[k]}`}>
             <div className="font-bold">
@@ -130,7 +132,7 @@ function FundamentalsCard({ symbol }) {
       </div>
 
       {f.market === 'TW' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))] gap-3">
           <div className="text-xs">
             <div className="font-semibold text-slate-300 mb-1">
               月營收（億元）
@@ -212,7 +214,7 @@ function FundamentalsCard({ symbol }) {
       )}
 
       {f.market === 'US' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 text-xs">
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))] gap-3 text-xs">
           <div>
             <div className="font-semibold text-slate-300 mb-1">
               近 4 季 EPS：實際 vs 市場預估
@@ -296,7 +298,10 @@ function FundamentalsCard({ symbol }) {
   );
 }
 
-function StockInfoPanel({ symbol }) {
+// hideValuation：看盤頁已有獨立的「估值參考」卡時，這裡不再重複顯示
+// tab：放在卡片裡時分成 basic／fin／div 三類，內容都沿用下面這些區塊；沒給就全部顯示
+// onAskAi：放在卡片裡時 AI 解讀改由右側抽屜負責（同一份提示詞），這裡放按鈕過去
+function StockInfoPanel({ symbol, hideValuation = false, tab, onAskAi }: { symbol: string; hideValuation?: boolean; tab?: string; onAskAi?: () => void }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => {
@@ -334,9 +339,20 @@ function StockInfoPanel({ symbol }) {
   const profile = Object.entries(info.profile).filter(([k]) => !k.startsWith('_'));
   const nextMonth = next ? Number(next.ex_date.slice(5, 7)) : null;
   const today = new Date().toISOString().slice(0, 10);
+  const show = (t: string) => !tab || tab === t;
+  if (tab === 'fin') return <FundamentalsCard symbol={symbol} showEmpty />;
+  // 近 4 年每股現金股利（真實配息紀錄加總）
+  const divByYear: Record<string, number> = {};
+  for (const e of info.dividends.events) {
+    const y = String(e.ex_date).slice(0, 4);
+    divByYear[y] = (divByYear[y] || 0) + (Number(e.cash) || 0);
+  }
+  const divYears = Object.keys(divByYear).sort().slice(-4);
   return (
     <div className="space-y-4">
+      {show('div') && (
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+        {!tab && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xl font-bold text-white">{info.name}</span>
           <span className="mono text-sm text-slate-400">{info.symbol}</span>
@@ -347,8 +363,9 @@ function StockInfoPanel({ symbol }) {
             </span>
           )}
         </div>
+        )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))] gap-2">
           {[
             ['配息頻率', a.frequency],
             ['近 12 月現金股利', a.events_last12 ? `${fmt(a.ttm_cash, 3)} / 股` : '無'],
@@ -391,9 +408,17 @@ function StockInfoPanel({ symbol }) {
             {info.dividends.source || '無'}
           </div>
         </div>
+        {tab && divYears.length > 0 && (
+          <div>
+            <div className="text-xs text-slate-400">近 {divYears.length} 年每股現金股利</div>
+            <MiniBars items={divYears.map((y) => ({ label: y, value: divByYear[y] }))} format={(v) => fmt(v, 2)} />
+          </div>
+        )}
       </div>
+      )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-4">
+        {show('div') && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
           <div className="text-sm font-bold text-white mb-2">配息紀錄</div>
           {info.dividends.events.length === 0 ? (
@@ -431,6 +456,9 @@ function StockInfoPanel({ symbol }) {
           )}
         </div>
 
+        )}
+
+        {show('basic') && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
           <div className="text-sm font-bold text-white mb-2">ℹ️ 基本資料</div>
           {profile.length === 0 ? (
@@ -444,9 +472,10 @@ function StockInfoPanel({ symbol }) {
             <div className="text-[10px] text-slate-500 mt-2">來源：{info.profile._source}</div>
           )}
         </div>
+        )}
       </div>
 
-      {info.holdings?.holdings?.length > 0 && (
+      {show('basic') && info.holdings?.holdings?.length > 0 && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
           <div className="text-sm font-bold text-white mb-2">
             {info.holdings.partial !== false
@@ -454,7 +483,7 @@ function StockInfoPanel({ symbol }) {
               : `成分股（共 ${info.holdings.count ?? info.holdings.holdings.length} 檔，列出前 ${Math.min(20, info.holdings.holdings.length)} 檔）`}
             （{info.holdings.partial !== false ? '合計' : '全部合計'} {info.holdings.covered_pct}%）
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-6">
             {info.holdings.holdings.slice(0, 20).map((h) => (
               <div
                 key={h.symbol}
@@ -470,24 +499,35 @@ function StockInfoPanel({ symbol }) {
         </div>
       )}
 
-      <FundamentalsCard symbol={symbol} />
-      <ValuationCard symbol={symbol} />
+      {!tab && <FundamentalsCard symbol={symbol} />}
+      {!hideValuation && <ValuationCard symbol={symbol} />}
 
-      <AiExplain module="stock" data={info} title="AI 解讀這檔標的（含 3 利多／3 風險）" />
+      {!tab && <AiExplain module="stock" data={info} title="AI 解讀這檔標的（含 3 利多／3 風險）" />}
+      {tab === 'basic' && onAskAi && (
+        <button
+          type="button"
+          onClick={onAskAi}
+          className="w-full px-3 py-1.5 rounded-[10px] text-xs font-semibold text-white bg-gradient-to-br from-[#4f7cff] to-[#8b5cf6] cursor-pointer hover:brightness-110"
+        >
+          ✦ AI 解讀這檔標的（含 3 利多／3 風險）
+        </button>
+      )}
     </div>
   );
 }
 
 // ---------- 配息月曆（左側清單）----------
-function DividendCalendar({ symbols, quotes, categories, selected, onSelect }) {
+function DividendCalendar({ symbols, quotes, categories, selected, onSelect, holdings = [], fx = {} }: any) {
   const [rows, setRows] = useState({});
   const [loading, setLoading] = useState(false);
-  const key = symbols.join(',');
+  // 持股預估要算到不在目前清單裡的持股，所以連持股一起抓；月曆與清單仍只列 symbols
+  const fetchList = Array.from(new Set([...symbols, ...holdings.map((h) => h.symbol)]));
+  const key = fetchList.join(',');
   useEffect(() => {
-    if (!symbols.length) return undefined;
+    if (!fetchList.length) return undefined;
     let stop = false;
     setLoading(true);
-    postJob('/api/dividends', { symbols })
+    postJob('/api/dividends', { symbols: fetchList })
       .then((d) => {
         if (stop) return;
         const m = {};
@@ -505,8 +545,55 @@ function DividendCalendar({ symbols, quotes, categories, selected, onSelect }) {
     const nb = rows[baseCode(b)]?.upcoming?.[0]?.ex_date || '9999';
     return na.localeCompare(nb);
   });
+  // 12 個月格：近 12 個月實際除息過的月份（沒有就用歷史常見月）
+  const byMonth = Array.from({ length: 12 }, () => [] as string[]);
+  for (const s of symbols) {
+    const r = rows[baseCode(s)];
+    const ms = r?.months_last12?.length ? r.months_last12 : r?.typical_months || [];
+    for (const m of ms) if (m >= 1 && m <= 12) byMonth[m - 1].push(baseCode(s));
+  }
+  // 持股預估每月股利：近 12 個月每股現金 ÷ 配息月數 × 股數，外幣用即時匯率換台幣；這是用去年推估，不是公告值
+  const est = Array(12).fill(0);
+  for (const h of holdings) {
+    const r = rows[baseCode(h.symbol)];
+    const months = r?.months_last12 || [];
+    if (!r?.ttm_cash || !months.length) continue;
+    const cur = quotes[baseCode(h.symbol)]?.currency;
+    const mult = !cur || cur === 'TWD' ? 1 : fx?.[cur];
+    if (mult == null) continue;
+    for (const m of months) est[m - 1] += ((r.ttm_cash * h.shares) / months.length) * mult;
+  }
+  const estTotal = est.reduce((a, b) => a + b, 0);
   return (
     <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-1.5">
+        {byMonth.map((list, i) => (
+          <div key={`m${i + 1}`} className="bg-white/5 rounded-[10px] px-2 py-1.5 min-h-[62px] text-xs">
+            <b className="block text-slate-400 text-[11px] mb-0.5">{i + 1} 月</b>
+            {list.length ? (
+              list.map((c) => (
+                <span key={c} className="inline-block px-1.5 py-px m-px rounded-full text-[11px] bg-[#4f7cff]/20 text-[#b8c8ff]">
+                  {c}
+                </span>
+              ))
+            ) : (
+              <span className="text-slate-500">—</span>
+            )}
+          </div>
+        ))}
+      </div>
+      {estTotal > 0 && (
+        <div>
+          <div className="text-[11.5px] text-slate-400 mb-1">
+            持股預估每月股利（台幣，用近 12 個月配息推估）・全年約 <b className="mono text-slate-200">{fmt(estTotal, 0)}</b>
+          </div>
+          <HBars
+            items={est.map((v, i) => ({ label: `${i + 1} 月`, value: v, color: '#22d3a0' })).filter((x) => x.value > 0)}
+            format={(v) => fmt(v, 0)}
+            plain
+          />
+        </div>
+      )}
       <div className="text-[11px] text-slate-400">
         依「下一場已公告除息日」排序。紅＝近 12
         個月實際除息月，灰＝歷史常見月，橘框＝下一場。點任一檔看完整配息紀錄。

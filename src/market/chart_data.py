@@ -296,6 +296,28 @@ def overview(symbols: List[str]) -> List[Dict[str, Any]]:
 
 
 # ---------- 近 N 根日 K（說明頁的實例、大盤範例用）----------
+def five_days(symbol: str) -> Dict[str, Any]:
+    """近 5 個交易日走勢（15 分鐘線），給個股頁走勢卡的「5 日」用。第一點的價當比較基準。"""
+    key = f"five_days:{symbol}"
+    cached = _get(key, SPARK_TTL)
+    if cached:
+        return cached
+    last_err = None
+    for ysym in _yahoo_symbols(symbol):
+        try:
+            pts, _meta, _gmt = _extract_intraday_points(_chart(ysym, "15m", "5d"))
+        except Exception as e:
+            last_err = str(e)
+            continue
+        if len(pts) < 2:
+            continue
+        data = {"symbol": symbol, "points": pts, "days": sorted({p["date"] for p in pts}),
+                "source": "Yahoo Finance 15 分鐘線"}
+        _put(key, data)
+        return data
+    return {"symbol": symbol, "points": [], "days": [], "error": last_err or "查無資料"}
+
+
 def candles(symbol: str, n: int = 15) -> Dict[str, Any]:
     n = max(5, min(60, n))
     key = f"candles:{symbol}:{n}"

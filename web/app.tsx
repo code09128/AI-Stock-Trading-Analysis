@@ -14,8 +14,9 @@ import { activeProfile, cleanProfile, loadAI, useAISettings } from './ai_store';
 import { loadPortfolio, saveRules, setJournal } from './portfolio_store';
 import { IndexBar } from './live_widgets';
 import { AlertWatcher } from './pages/overview_alerts';
-import { WatchPage } from './pages/watch';
-import { STOCK_TAB_IDS, StockTabs } from './pages/stock_tabs';
+import { WatchPage, openInWatch } from './pages/watch';
+import { STOCK_TAB_IDS } from './pages/stock_tabs';
+import { loadUiPrefs, setUiPref } from './pages/settings_appearance';
 import { MarketBoardPage } from './pages/market_board';
 import { IndustryChainPage } from './pages/industry_chain';
 import { MultiChartPage } from './pages/multi_chart';
@@ -51,7 +52,13 @@ function App() {
   // 技術分析的買賣決策若交給 AI，就不自動每 5 秒刷新（否則會每 5 秒呼叫一次模型）
   const aiDecisionOn =
     aiCfg.scope.mod1 !== false && !!aiCfg.profiles.find((p) => p.id === aiCfg.activeId);
-  const [sidebarOpen, setSidebarOpen] = useState(() => readLS('tw_us_sidebar_v1', true));
+  const [sidebarOpen, setSidebarOpen] = useState(() => readLS('tw_us_sidebar_v1', false));
+  const [uiPrefs, setUiPrefs] = useState(loadUiPrefs);
+  useEffect(() => {
+    const on = () => setUiPrefs(loadUiPrefs());
+    window.addEventListener('ui-prefs-changed', on);
+    return () => window.removeEventListener('ui-prefs-changed', on);
+  }, []);
   const [tourOpen, setTourOpen] = useState(() => !tourAlreadyDone());
   const [tourStart, setTourStart] = useState(0);
   const [health, setHealth] = useState(null);
@@ -375,17 +382,18 @@ function App() {
   }, [showToast]);
 
   // 看盤頁 → 技術分析：帶入代號與當下盤況
-  const sendToMod1 = (quote) => {
+  // silent：在個股頁切分頁或換標的時自動帶過來，不跳通知，也不帶 AI（免費；要 AI 決策請按技術分析頁的按鈕）
+  const sendToMod1 = (quote, { silent = false } = {}) => {
     setM1Ticker(quote.symbol);
     setM1Context(quote);
     prevPriceRef.current = null;
     setActiveTab('mod1');
-    runMod1({ overrideTicker: quote.symbol, simulateTick: false });
-    showToast(`已將 ${quote.symbol} ${quote.name} 送入技術分析`);
+    runMod1({ overrideTicker: quote.symbol, simulateTick: false, useAI: !silent, quiet: silent });
+    if (!silent) showToast(`已將 ${quote.symbol} ${quote.name} 送入技術分析`);
   };
 
   // 看盤頁熱力圖 → 新聞判斷：換成這檔、清掉舊的標題與事件前漲跌，並自動抓最新新聞
-  const sendToMod2 = (symbol, name) => {
+  const sendToMod2 = (symbol, name, { silent = false } = {}) => {
     setM2Form({
       label: '',
       target: symbol,
@@ -396,9 +404,12 @@ function App() {
       invalidation_criteria: '',
     });
     setM2Data(null);
-    bus._autoNews = symbol;
+    // 自動分析會在有 AI 設定時呼叫 AI（會花錢）：切分頁、換標的這種自動帶入，有 AI 就不自動跑，等使用者按「分析新聞」
+    const aiCfg = loadAI();
+    const aiOn = aiCfg.scope.mod2 !== false && !!aiCfg.activeId;
+    bus._autoNews = silent && aiOn ? null : symbol;
     setActiveTab('mod2');
-    showToast(`已帶入 ${symbol} ${name || ''} 到新聞判斷，正在抓最新新聞`);
+    if (!silent) showToast(`已帶入 ${symbol} ${name || ''} 到新聞研究，正在抓最新新聞`);
   };
 
   // 合併同代號（例如不同券商持有同一檔），並確保目標權重總和 + 現金 = 100%
@@ -771,6 +782,16 @@ function App() {
   const groups: string[] = [...new Set<string>(navItems.map((i) => i.group))];
   // 行情／技術分析／新聞判斷合併成側欄的「個股」一項；內部頁面 id 不變
   const inStock = STOCK_TAB_IDS.includes(activeTab);
+  // 頂欄「✦ AI 分析」：個股頁開右側抽屜；其他頁捲到該頁的 AI 解讀區，沒有就照實說
+  const openAi = () => {
+    if (inStock && bus.openStockAi) {
+      bus.openStockAi();
+      return;
+    }
+    const el = document.querySelector('[data-tour^="ai-explain-"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    else showToast('ℹ️ 這一頁還沒有可以解讀的結果（AI 解讀在：個股、技術分析、新聞研究、策略回測、組合風控、交易檢討）');
+  };
   const current = NAV_ITEMS.find((i) => i.id === (inStock ? 'watch' : activeTab)) || NAV_ITEMS[0];
   const stockSub = inStock ? NAV_ITEMS.find((i) => i.id === activeTab) : undefined;
   const sampleBadge =
@@ -798,7 +819,7 @@ function App() {
         className={`flex flex-col bg-slate-900 border-r border-slate-800 transition-all duration-200 ${
           isMobile
             ? `fixed inset-y-0 left-0 z-50 w-64 shadow-2xl ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`
-            : `shrink-0 ${sidebarOpen ? 'w-56' : 'w-16'}`
+            : `shrink-0 ${sidebarOpen ? 'w-56' : 'w-[76px]'}`
         }`}
         aria-label="功能導覽"
         aria-hidden={isMobile && !menuOpen ? 'true' : undefined}
@@ -832,16 +853,15 @@ function App() {
                     title={`${item.title}：${item.subtitle}`}
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => goTab(item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition cursor-pointer border-l-2 ${
-                      isActive
-                        ? 'bg-sky-500/15 border-sky-400 text-white font-semibold'
-                        : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800/70'
-                    } ${expanded ? '' : 'justify-center px-0'}`}
+                    className={`ta-nav w-full flex rounded-xl transition cursor-pointer ${
+                      expanded ? 'items-center gap-3 px-3 py-2 text-sm' : 'flex-col items-center gap-0.5 px-1 py-2 text-[11px]'
+                    } ${isActive ? 'ta-nav-active text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                   >
                     <span className="shrink-0">
                       <NavIcon name={item.icon} />
                     </span>
-                    {expanded && <span className="truncate">{item.short}</span>}
+                    {/* 收合成圖示欄時，文字改放在圖示下方（短標籤），不再只剩圖示 */}
+                    <span className={expanded ? 'truncate' : 'leading-tight text-center'}>{item.short}</span>
                   </button>
                 );
               })}
@@ -877,8 +897,8 @@ function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* 頂部列：目前頁面 + 大盤指數 + 工具 */}
-        <header className="shrink-0 bg-slate-900/95 border-b border-slate-800 px-3 md:px-6 py-2 md:py-2.5">
-          <div className="flex items-center justify-between gap-2 md:gap-3">
+        <header className="shrink-0 relative z-30 bg-slate-900/95 border-b border-slate-800 px-3 md:px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 md:gap-2.5">
             <div className="flex items-center gap-2 md:gap-3 min-w-0">
               {isMobile && (
                 <button
@@ -901,12 +921,9 @@ function App() {
                   </svg>
                 </button>
               )}
-              <span className="text-sky-400 shrink-0">
-                <NavIcon name={current.icon} className="w-6 h-6" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="text-base font-bold text-white truncate">
-                  {isMobile ? current.short : current.title}
+              <div className="min-w-0" title={stockSub ? stockSub.subtitle : current.subtitle}>
+                <h1 className="m-0 text-base font-bold text-white truncate">
+                  {current.short}
                   {/* 範例資料標示：避免把內建範例的數字當成自己的持股或交易 */}
                   {sampleBadge && (
                     <span
@@ -917,18 +934,91 @@ function App() {
                     </span>
                   )}
                 </h1>
-                <p className="hidden md:block text-[11px] text-slate-500 truncate">
-                  {stockSub ? stockSub.subtitle : current.subtitle}
-                </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            {/* 全站搜尋：打字時篩選個股頁左邊清單；Enter 跳到該股（可打代號或台股名稱） */}
+            <form
+              className="order-3 lg:order-none w-full lg:w-auto lg:flex-[1_1_200px] lg:max-w-[320px]"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.currentTarget;
+                const v = String(new FormData(form).get('q') || '').trim();
+                if (!v) return;
+                let sym = v;
+                if (/[\u4e00-\u9fff]/.test(v)) {
+                  try {
+                    const r = await fetch('/api/symbol_search', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ query: v }),
+                    });
+                    const ms = (await r.json()).matches || [];
+                    const pick = ms.find((m) => m.exact) || ms[0];
+                    if (!pick) {
+                      showToast(`⚠️ 找不到「${v}」，請改輸入代號`);
+                      return;
+                    }
+                    sym = pick.symbol || pick.code || v;
+                  } catch (_e) {
+                    showToast('⚠️ 查詢名稱失敗，請改輸入代號');
+                    return;
+                  }
+                }
+                openInWatch(sym);
+                form.reset();
+                window.dispatchEvent(new CustomEvent('watch-query', { detail: '' }));
+              }}
+            >
+              <input
+                name="q"
+                type="search"
+                aria-label="搜尋股票"
+                placeholder="搜尋代號或名稱，Enter 跳到該股"
+                onChange={(e) => window.dispatchEvent(new CustomEvent('watch-query', { detail: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-[7px] text-sm text-white placeholder:text-slate-500 focus:outline-none"
+              />
+            </form>
+            {/* 個股頁把行情狀態放進這裡（見 WatchPage） */}
+            <div id="topbar-chip" className="order-4 lg:order-none w-full md:w-auto min-w-0 empty:hidden" />
+            <div className="flex-1 hidden lg:block" />
+            <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={openAi}
+                data-tour="ai-drawer-btn"
+                className="text-[12.5px] px-3 py-1.5 rounded-[10px] font-semibold text-white bg-gradient-to-br from-[#4f7cff] to-[#8b5cf6] hover:brightness-110 cursor-pointer"
+                style={{ boxShadow: '0 6px 20px rgba(79,124,255,.35)' }}
+              >
+                ✦ <span className="hidden sm:inline">AI 分析</span>
+                <span className="sm:hidden">AI</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={uiPrefs.color === 'us'}
+                onClick={() => setUiPref({ color: uiPrefs.color === 'us' ? 'tw' : 'us' })}
+                title="切換漲跌配色"
+                className="hidden sm:block text-[12.5px] px-3 py-1.5 rounded-[10px] border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 cursor-pointer"
+              >
+                {uiPrefs.color === 'us' ? '綠漲紅跌' : '紅漲綠跌'}
+              </button>
+              <button
+                type="button"
+                aria-pressed={uiPrefs.motion === 'reduce'}
+                onClick={() => setUiPref({ motion: uiPrefs.motion === 'reduce' ? 'auto' : 'reduce' })}
+                title="關閉換頁淡入、數字閃動、滑過浮起等動畫"
+                className={`hidden sm:block text-[12.5px] px-3 py-1.5 rounded-[10px] border cursor-pointer ${
+                  uiPrefs.motion === 'reduce' ? 'border-[#4f7cff] bg-[#4f7cff]/20 text-white' : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'
+                }`}
+              >
+                減少動態
+              </button>
+              <div id="topbar-layout" />
               <ZoomControl />
               <button
                 type="button"
                 onClick={() => setIsExportModalOpen(true)}
                 aria-label="匯出報告"
-                className="text-xs px-2.5 md:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer"
+                className="text-xs px-2.5 md:px-3 py-1.5 rounded-[10px] bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 transition cursor-pointer"
               >
                 <span className="hidden sm:inline"> 匯出報告</span>
               </button>
@@ -936,7 +1026,7 @@ function App() {
                 type="button"
                 onClick={() => setIsResetModalOpen(true)}
                 aria-label="重置"
-                className="text-xs px-2.5 md:px-3 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border border-rose-800/60 transition cursor-pointer"
+                className="text-xs px-2.5 md:px-3 py-1.5 rounded-[10px] bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border border-rose-800/60 transition cursor-pointer"
               >
                 ↺<span className="hidden sm:inline"> 重置</span>
               </button>
@@ -954,16 +1044,22 @@ function App() {
             key={inStock ? 'stock' : activeTab}
             className="ta-page space-y-4 md:space-y-6 max-w-[1600px] mx-auto"
           >
-            {inStock && <StockTabs active={activeTab} onGo={goTab} />}
-            {activeTab === 'watch' && (
-              <div key="watch" className="ta-fade-up">
-                <WatchPage
-                  onSendToMod1={sendToMod1}
-                  onSendToMod2={sendToMod2}
-                  onSendHoldings={sendHoldings}
-                  onShowTour={() => bus.startTour('watch')}
-                />
-              </div>
+            {/* 行情、技術分析、新聞研究共用同一個 WatchPage（左邊清單與報價卡一直在），分頁內容塞在右半邊 */}
+            {inStock && (
+              <WatchPage
+                active={activeTab}
+                goTab={goTab}
+                techPanel={<Mod1Panel ctx={ctx} />}
+                newsPanel={<Mod2Panel ctx={ctx} />}
+                m1Ticker={m1Ticker}
+                m1Data={m1Data}
+                m2Data={m2Data}
+                m2Target={m2Form.target}
+                onSendToMod1={sendToMod1}
+                onSendToMod2={sendToMod2}
+                onSendHoldings={sendHoldings}
+                onShowTour={() => bus.startTour('watch')}
+              />
             )}
             {activeTab === 'board' && <MarketBoardPage />}
             {activeTab === 'chains' && <IndustryChainPage />}
@@ -988,16 +1084,6 @@ function App() {
 
             {/* ================= TEST 12: 系統底層 12 項自檢中心 ================= */}
             {activeTab === 'settings' && <SettingsPage />}
-            {activeTab === 'mod1' && (
-              <div key="mod1" className="ta-fade-up">
-                <Mod1Panel ctx={ctx} />
-              </div>
-            )}
-            {activeTab === 'mod2' && (
-              <div key="mod2" className="ta-fade-up">
-                <Mod2Panel ctx={ctx} />
-              </div>
-            )}
             {activeTab === 'mod3' && <Mod3Panel ctx={ctx} />}
             {activeTab === 'mod4' && <Mod4Panel ctx={ctx} />}
             {activeTab === 'mod5' && <Mod5Panel ctx={ctx} />}

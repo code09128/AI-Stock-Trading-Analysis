@@ -1,15 +1,22 @@
 // 看盤頁：左側清單（自選股/ETF/持股）＋右側報價、分時圖、五檔、模擬下單
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { DEFAULT_WATCH, LS_CART, LS_WATCH, Stat, Tip, baseCode, colorOf, currencyOf, feeDiscount, fmt, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
+import { DEFAULT_WATCH, LS_CART, LS_WATCH, baseCode, colorOf, currencyOf, feeDiscount, fmt, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
-import { IntradayChart, RangeBar } from '../live_widgets';
 import { Row } from './watch_parts';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
 import { CatChip, DividendCalendar, StockInfoPanel } from './stock_info_panel';
 import { OrderPanel, orderLabel } from './order_panel';
 import { HoldingsPanel } from './holdings_panel';
 import { HeatmapPanel } from './heatmap';
+import { CardBox, CardGrid, LayoutMenu, useCardLayout } from './card_box';
+import type { CardDef } from './card_box';
+import { ValuationCard } from './valuation_card';
+import { AiDrawer } from './ai_drawer';
+import { StockTabs } from './stock_tabs';
+import { StockChart } from './stock_chart';
+import { DepthBody, HoldBody, NewsBody, StatsBody } from './quote_cards';
+import { HBars } from './mini_charts';
 import { openSavings } from './savings_plan';
 import { pollEvery } from '../desktop_bridge';
 
@@ -18,7 +25,24 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 
 // ---------- 看盤頁 ----------
-function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
+// 行情分頁的卡片（順序＝預設順序；span 是 12 欄格線裡佔幾欄）
+const CARD_DEFS: CardDef[] = [
+  { id: 'chart', title: '分時走勢', span: 8 },
+  { id: 'stats', title: '開高低量・區間', span: 4 },
+  { id: 'depth', title: '委買／委賣五檔', span: 4 },
+  { id: 'order', title: '模擬下單', span: 8 },
+  { id: 'news', title: '相關新聞', span: 8 },
+  { id: 'val', title: '估值參考', span: 8 },
+  { id: 'profile', title: '基本資料・配息', span: 4 },
+  { id: 'hold', title: '我的持股', span: 4 },
+];
+const PROFILE_TABS = [
+  ['basic', '基本資料'],
+  ['fin', '財報'],
+  ['div', '配息'],
+];
+
+function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1Data, m2Data, m2Target, onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }: any) {
   const [watch, setWatch] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH));
   const [listTab, setListTab] = useState('watch');
   const [holdPrefill, setHoldPrefill] = useState(null); // 「加入我的持股」要預填到持股面板表單的內容
@@ -39,9 +63,14 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
   const [cart, setCart] = useState(() => readLS(LS_CART, []));
   const [sparks, setSparks] = useState({});
   const [intraday, setIntraday] = useState(null);
-  // 走勢圖上的新聞點：預設關閉（打開才會去抓新聞，新聞要連 7 個來源，不要每換一檔就抓）
-  const [showNews, setShowNews] = useState(() => readLS('tw_us_chart_news_v1', false) === true);
-  const [chartNews, setChartNews] = useState<{ symbol: string; items: any[]; error: string; loading: boolean } | null>(null);
+  // 走勢圖上的新聞點：預設打開，可以關（打開後每換一檔會抓一次新聞，後端有 5 分鐘快取）
+  const [showNews, setShowNews] = useState(() => readLS('tw_us_chart_news_v2', true) !== false);
+  const [digest, setDigest] = useState<{ symbol: string; data: any; error: string; loading: boolean } | null>(null);
+  const [profileTab, setProfileTab] = useState('basic');
+  const [holdOnly, setHoldOnly] = useState(false);
+  const [listQuery, setListQuery] = useState('');
+  const [selOverview, setSelOverview] = useState<any>(null);
+  const [slots, setSlots] = useState<{ chip: Element | null; layout: Element | null }>({ chip: null, layout: null });
   const [sortKey, setSortKey] = useState('default');
   // 持股改用跨頁共用的資料（組合風控、交易檢討也讀同一份）
   const portfolio = usePortfolio();
@@ -86,12 +115,20 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
     INTL: watch.filter((x) => !isTW(x)).length,
   };
   const [rightTab, setRightTab] = useState('quote');
+  const cardCtl = useCardLayout(CARD_DEFS);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiTask, setAiTask] = useState('stock');
   // 接收導覽或其他頁面的指令：{ listTab, rightTab, select }
   useEffect(() => {
     const apply = (d) => {
       if (!d) return;
       if (d.listTab) setListTab(d.listTab);
-      if (d.rightTab) setRightTab(d.rightTab);
+      // 「基本資料與配息」已改成行情分頁裡的一張卡：舊的 rightTab:'info' 指令（導覽、舊連結）改成展開那張卡
+      if (d.rightTab === 'info') {
+        setRightTab('quote');
+        setProfileTab('div');
+        cardCtl.reveal('profile');
+      } else if (d.rightTab) setRightTab(d.rightTab);
       if (d.select) setSelected(d.select);
     };
     apply(bus._pendingWatch);
@@ -105,37 +142,85 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
   const { alerts, setAlerts, log: alertLog } = useAlerts(); // 檢查由 App 上的 AlertWatcher 負責
 
   useEffect(() => writeLS(LS_WATCH, watch), [watch]);
-  useEffect(() => writeLS('tw_us_chart_news_v1', showNews), [showNews]);
-  // 打開「新聞點」才抓；換標的重抓（後端有 5 分鐘快取）；過期的回應不要蓋掉新標的
+  useEffect(() => writeLS('tw_us_chart_news_v2', showNews), [showNews]);
+  // 技術分析、新聞研究分頁不需要這份（新聞研究有自己的按鈕）；AI 抽屜的事件任務會用到
+  const wantNews = aiOpen || (active === 'watch' && rightTab === 'quote' && (showNews || cardCtl.isOpen('news')));
+  // 新聞卡或走勢圖新聞點有打開才抓；連續切換標的時等 0.4 秒才抓；過期的回應不要蓋掉新標的。
+  // 這裡不帶 AI 設定：語氣用關鍵字規則，不會呼叫 AI、不產生費用
   useEffect(() => {
-    if (!showNews) {
-      setChartNews(null);
+    if (!wantNews) {
+      setDigest(null);
       return undefined;
     }
     let stop = false;
-    setChartNews({ symbol: selected, items: [], error: '', loading: true });
-    fetch('/api/news', {
+    setDigest({ symbol: selected, data: null, error: '', loading: true });
+    const timer = setTimeout(() => {
+      fetch('/api/news/digest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: selected }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (stop) return;
+          setDigest({ symbol: selected, data: d, error: d?.error ? String(d.error) : '', loading: false });
+        })
+        .catch((e) => !stop && setDigest({ symbol: selected, data: null, error: `新聞載入失敗：${e.message}`, loading: false }));
+    }, 400);
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [wantNews, selected]);
+  // 開高低量卡的「量比」：只抓目前這檔（後端快取 5 分鐘）
+  useEffect(() => {
+    let stop = false;
+    setSelOverview(null);
+    fetch('/api/overview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: selected }),
+      body: JSON.stringify({ symbols: [selected] }),
     })
       .then((r) => r.json())
-      .then((d) => {
-        if (stop) return;
-        const items = Array.isArray(d?.items) ? d.items : [];
-        const errs = Array.isArray(d?.errors) ? d.errors : [];
-        setChartNews({
-          symbol: selected,
-          items,
-          error: d?.error ? String(d.error) : !items.length && errs.length ? '新聞來源暫時抓不到' : '',
-          loading: false,
-        });
-      })
-      .catch((e) => !stop && setChartNews({ symbol: selected, items: [], error: `新聞載入失敗：${e.message}`, loading: false }));
+      .then((d) => !stop && setSelOverview(d.rows?.[0] || null))
+      .catch(() => {});
     return () => {
       stop = true;
     };
-  }, [showNews, selected]);
+  }, [selected]);
+  // 頂欄的插槽（行情狀態、版面設定）在 App 的頂部列；頂部搜尋欄打字時篩選左邊清單
+  useEffect(() => {
+    setSlots({ chip: document.getElementById('topbar-chip'), layout: document.getElementById('topbar-layout') });
+    const onQ = (e) => setListQuery(String(e.detail || ''));
+    window.addEventListener('watch-query', onQ);
+    return () => window.removeEventListener('watch-query', onQ);
+  }, []);
+  // 技術分析／新聞研究分頁和左邊清單看同一檔：
+  // 在分頁裡點左邊另一檔 → 分析那一檔（不帶 AI，免費）；從別處或輸入框分析了別檔 → 標頭跟著換
+  const same = (a, b) => baseCode(String(a || '')) === baseCode(String(b || ''));
+  const quoteOf = (s) => quotes[baseCode(s)] || { symbol: s, name: s };
+  useEffect(() => {
+    if (active === 'mod1' && !same(m1Ticker, selected)) onSendToMod1?.(quoteOf(selected), { silent: true });
+    if (active === 'mod2' && !same(m2Target, selected)) onSendToMod2?.(selected, quoteOf(selected).name, { silent: true });
+  }, [selected]); // eslint-disable-line
+  useEffect(() => {
+    if (active === 'mod1' && m1Ticker && !same(m1Ticker, selected)) setSelected(baseCode(m1Ticker));
+    if (active === 'mod2' && m2Target && !same(m2Target, selected)) setSelected(baseCode(m2Target));
+  }, [active]); // eslint-disable-line
+  const m1Sym = m1Data?.snapshot?.symbol;
+  useEffect(() => {
+    if (active === 'mod1' && m1Sym && !same(m1Sym, selected)) setSelected(baseCode(m1Sym));
+  }, [m1Sym]); // eslint-disable-line
+  // 頂欄「✦ AI 分析」：依目前分頁決定任務
+  useEffect(() => {
+    bus.openStockAi = (task) => {
+      setAiTask(task || (active === 'mod1' ? 'tech' : active === 'mod2' ? 'event' : 'stock'));
+      setAiOpen(true);
+    };
+    return () => {
+      bus.openStockAi = null;
+    };
+  }, [active]);
   useEffect(() => writeLS(LS_CART, cart), [cart]);
 
   useEffect(() => {
@@ -392,9 +477,14 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
     }[sortKey];
     const base = watch
       .filter(inMkt)
-      .filter((x) => catFilter === 'ALL' || categories[baseCode(x)]?.category === catFilter);
+      .filter((x) => catFilter === 'ALL' || categories[baseCode(x)]?.category === catFilter)
+      .filter((x) => !holdOnly || holdings.some((h) => baseCode(h.symbol) === baseCode(x)))
+      .filter((x) => {
+        const t = listQuery.trim().toLowerCase();
+        return !t || x.toLowerCase().includes(t) || String(val(x)?.name || '').toLowerCase().includes(t);
+      });
     return keyFn ? [...base].sort((a, b) => keyFn(b) - keyFn(a)) : base;
-  }, [watch, quotes, sortKey, catFilter, categories, mktFilter]); // eslint-disable-line
+  }, [watch, quotes, sortKey, catFilter, categories, mktFilter, holdOnly, holdings, listQuery]); // eslint-disable-line
 
   const q = quotes[baseCode(selected)];
   const tw = isTW(selected);
@@ -485,7 +575,7 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
         e.preventDefault();
         setListTab('watch');
         setTimeout(() => searchRef.current?.focus(), 0);
-      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      } else if (active === 'watch' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
         const list =
           listTab === 'hold'
             ? holdings.map((h) => h.symbol)
@@ -508,7 +598,7 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [listTab, holdings, watchRows, etfRows, selected]);
+  }, [active, listTab, holdings, watchRows, etfRows, selected]);
 
   const etfMetric = (r) => {
     if (etfSort === 'hot') return `成交 ${fmt(r.turnover / 1e8, 1)} 億`;
@@ -661,50 +751,192 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
     return true;
   };
 
-  const bestAsk = q?.asks?.[0];
-  const bestBid = q?.bids?.[0];
-  const ratio = q?.bid_ask_ratio;
+
+  // 行情分頁的卡片：外框是 CardBox，模擬下單、估值、基本資料沿用原本的元件與資料
+  const newsData = digest?.data;
+  const chartNews = newsData ? [...(newsData.items || []), ...(newsData.others || [])] : undefined;
+  const goOrder = (side) => {
+    setRightTab('quote');
+    goTab?.('watch');
+    setOrder((o) => ({ ...o, side }));
+    cardCtl.reveal('order');
+    setTimeout(() => document.querySelector('[data-card="order"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+  };
+  const openAi = (task) => {
+    setAiTask(task);
+    setAiOpen(true);
+  };
+  const onStockTab = (id) => {
+    if (id === 'heatmap' || id === 'watch') {
+      setRightTab(id === 'heatmap' ? 'heatmap' : 'quote');
+      goTab?.('watch');
+    } else if (id === 'mod1') {
+      if (same(m1Ticker, selected) && m1Data) goTab?.('mod1');
+      else onSendToMod1?.(quoteOf(selected), { silent: true });
+    } else if (same(m2Target, selected)) goTab?.('mod2');
+    else onSendToMod2?.(selected, quoteOf(selected).name, { silent: true });
+  };
+  const inWatch = watch.some((x) => baseCode(x) === baseCode(selected));
+  const toggleWatch = () => {
+    if (inWatch) {
+      setWatch(watch.filter((x) => baseCode(x) !== baseCode(selected)));
+      notifySaved(`已把 ${baseCode(selected)} 移出自選股`);
+    } else {
+      setWatch([...watch, baseCode(selected)]);
+      notifySaved(`已把 ${baseCode(selected)} 加入自選股`);
+    }
+  };
+  const myHoldN = holdings.filter((h) => baseCode(h.symbol) === baseCode(selected)).reduce((a, h) => a + h.shares, 0);
+  const renderCard = (id) => {
+    if (!q) return null;
+    switch (id) {
+      case 'chart':
+        return (
+          <CardBox key={id} id={id} title="分時走勢" sub={`${fmt(q.price)}  ${q.change_pct > 0 ? '+' : ''}${fmt(q.change_pct)}%`} ctl={cardCtl}>
+            <StockChart
+              symbol={selected}
+              quoteTime={q?.quote_time}
+              intraday={intraday}
+              tz={tzOf(selected)}
+              news={chartNews}
+              showNews={showNews}
+              setShowNews={setShowNews}
+              newsLoading={digest?.loading}
+              newsError={digest?.error}
+            />
+          </CardBox>
+        );
+      case 'stats':
+        return (
+          <CardBox key={id} id={id} title="開高低量・區間" sub={selOverview?.volume_ratio == null ? undefined : `量比 ${fmt(selOverview.volume_ratio, 2)}x`} ctl={cardCtl}>
+            <StatsBody q={q} tw={tw} etf={etfFlag} intraday={intraday} volRatio={selOverview?.volume_ratio} />
+          </CardBox>
+        );
+      case 'depth':
+        return (
+          <CardBox key={id} id={id} title="委買／委賣五檔" sub={tw ? '委買／委賣' : `${marketName(selected)}無五檔`} ctl={cardCtl}>
+            <DepthBody q={q} tw={tw} />
+          </CardBox>
+        );
+      case 'order':
+        return (
+          <CardBox key={id} id={id} title="模擬下單" sub={`${order.side === 'BUY' ? '買進' : '賣出'}・暫存匣 ${cart.length}`} ctl={cardCtl}>
+            <OrderPanel
+              ctx={{
+                addToCart,
+                fillCartItem,
+                amount,
+                cart,
+                fee,
+                order,
+                orderIssues,
+                q,
+                setCart,
+                setOrder,
+                tax,
+                tradeRules,
+                tw,
+                priceNum,
+                priceLocked,
+                etfFlag,
+                afterRound,
+                feeDisc,
+              }}
+            />
+          </CardBox>
+        );
+      case 'news':
+        return (
+          <CardBox key={id} id={id} title="相關新聞" sub={newsData?.items ? `${newsData.items.length + (newsData.others?.length || 0)} 則` : undefined} ctl={cardCtl}>
+            <NewsBody
+              digest={newsData}
+              loading={!!digest?.loading}
+              error={digest?.error || ''}
+              onAskAi={() => openAi('event')}
+              onDeep={() => onStockTab('mod2')}
+            />
+          </CardBox>
+        );
+      case 'val':
+        return <ValuationCard key={id} symbol={selected} ctl={cardCtl} />;
+      case 'profile':
+        return (
+          <CardBox key={id} id={id} title="基本資料・配息" ctl={cardCtl}>
+            <div className="flex gap-1" role="tablist" aria-label="基本資料分類">
+              {PROFILE_TABS.map(([k, label]) => (
+                <button
+                  type="button"
+                  role="tab"
+                  key={k}
+                  aria-selected={profileTab === k}
+                  onClick={() => setProfileTab(k)}
+                  className={`flex-1 rounded-lg px-1 py-[5px] text-xs cursor-pointer ${profileTab === k ? 'bg-[#4f7cff]/25 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div data-tour="stock-info" className="max-h-[440px] overflow-y-auto pr-1">
+              <StockInfoPanel symbol={selected} hideValuation tab={profileTab} onAskAi={() => openAi('stock')} />
+            </div>
+          </CardBox>
+        );
+      case 'hold':
+        return (
+          <CardBox key={id} id={id} title="我的持股" sub={myHoldN ? `${fmt(myHoldN, Number.isInteger(myHoldN) ? 0 : 4)} 股` : '未持有'} ctl={cardCtl}>
+            <HoldBody
+              holdings={holdings}
+              quotes={quotes}
+              fx={fx}
+              selected={selected}
+              price={q.price}
+              onPick={setSelected}
+              onSell={() => goOrder('SELL')}
+            />
+          </CardBox>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="space-y-4" data-tour="watch-root">
-      {/* 頂部說明列 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3">
-        <div>
-          <h2 className="text-base font-semibold text-white">即時行情</h2>
-          <p className="text-xs text-slate-400">
-            選一檔股票 → 看行情 →
-            送去技術分析。左邊挑標的，右邊看報價與模擬下單。紅色代表上漲、綠色代表下跌（台灣習慣）。
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="mono text-slate-400">更新 {updatedAt}</span>
-          <button
-            type="button"
-            onClick={() => setPolling(!polling)}
-            className={`px-3 py-1.5 rounded-lg border cursor-pointer ${
-              polling
-                ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-                : 'bg-slate-950 border-slate-700 text-slate-400'
-            }`}
-          >
-            {polling ? '每 5 秒自動更新' : '已暫停'}
-          </button>
-          <button
-            type="button"
-            onClick={loadQuotes}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 cursor-pointer"
-          >
-            ↻ 立即更新
-          </button>
-          <button
-            type="button"
-            onClick={onShowTour}
-            className="px-3 py-1.5 rounded-lg bg-sky-600/20 border border-sky-500/50 text-sky-200 hover:bg-sky-600/30 cursor-pointer"
-          >
-            新手導覽
-          </button>
-        </div>
-      </div>
+      {/* 行情狀態、自動更新、立即更新、新手導覽、版面設定都放到頂欄（App 的頂部列留了插槽） */}
+      {slots.chip &&
+        ReactDOM.createPortal(
+          <div className="flex flex-wrap items-center gap-1.5 text-xs" title="選一檔股票 → 看行情 → 送去技術分析。左邊挑標的，右邊看報價與模擬下單。紅色代表上漲、綠色代表下跌（台灣習慣，可用右邊按鈕切換）。">
+            <button
+              type="button"
+              onClick={() => setPolling(!polling)}
+              aria-pressed={polling}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <span
+                aria-hidden="true"
+                className={`w-[7px] h-[7px] rounded-full ${polling ? 'ta-live-dot' : 'bg-slate-500'}`}
+              />
+              {polling ? '即時行情・每 5 秒自動更新' : '已暫停自動更新'}
+              <span className="mono">{updatedAt}</span>
+            </button>
+            <button
+              type="button"
+              onClick={loadQuotes}
+              className="px-2.5 py-1 rounded-[10px] border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 cursor-pointer"
+            >
+              ↻ 立即更新
+            </button>
+            <button
+              type="button"
+              onClick={onShowTour}
+              className="px-2.5 py-1 rounded-[10px] border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 cursor-pointer"
+            >
+              新手導覽
+            </button>
+          </div>,
+          slots.chip,
+        )}
+      {slots.layout && ReactDOM.createPortal(<LayoutMenu ctl={cardCtl} />, slots.layout)}
 
       {netError && (
         <div className="rounded-xl border border-rose-700 bg-rose-950/60 text-rose-200 text-sm px-4 py-3">
@@ -712,13 +944,13 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] gap-4 items-start">
         {/* ===== 左：清單 ===== */}
         <aside
-          className="xl:col-span-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 space-y-3"
+          className="ta-card xl:sticky xl:top-0 xl:max-h-[calc(100vh-130px)] flex flex-col bg-slate-900/90 border border-slate-800 rounded-2xl p-3 gap-2.5"
           data-tour="watch-list"
         >
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-1 shrink-0" role="tablist" aria-label="左側清單">
             {[
               ['watch', '自選股'],
               ['etf', 'ETF 精選'],
@@ -730,20 +962,23 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
               <button
                 type="button"
                 key={id}
+                role="tab"
+                aria-selected={listTab === id}
                 onClick={() => setListTab(id)}
-                className={`py-2 rounded-lg text-sm font-semibold border cursor-pointer ${
+                className={`py-1.5 px-0.5 rounded-[9px] text-xs border cursor-pointer transition-colors ${
                   listTab === id
-                    ? 'bg-sky-500/20 border-sky-400 text-white'
-                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white'
+                    : 'bg-transparent border-white/10 text-slate-400 hover:text-slate-200'
                 }`}
               >
                 {label}
+                {id === 'alerts' && alerts.some((a) => !a.active) && <span className="text-amber-300"> •</span>}
               </button>
             ))}
           </div>
 
           {listTab === 'watch' && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 shrink-0 order-2">
               <input
                 ref={searchRef}
                 value={input}
@@ -751,12 +986,12 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                 onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
                 placeholder="輸入代號或台股名稱（按 / 快速聚焦）如 2330、台積電、AAPL"
                 aria-label="新增自選股代號或台股名稱"
-                className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white mono focus:outline-none focus:border-sky-400"
+                className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-[9px] px-2.5 py-1.5 text-xs text-white focus:outline-none"
               />
               <button
                 type="button"
                 onClick={addSymbol}
-                className="px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold cursor-pointer"
+                className="px-3 rounded-[10px] border border-white/10 bg-white/5 text-xs text-slate-100 hover:bg-white/10 cursor-pointer"
               >
                 ＋ 新增
               </button>
@@ -764,58 +999,44 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
           )}
 
           {(listTab === 'watch' || listTab === 'div' || listTab === 'overview') && (
-            <div
-              data-tour="watch-filters"
-              className="grid grid-cols-3 gap-1 rounded-lg bg-slate-950 p-1 border border-slate-800"
-            >
+            <div data-tour="watch-filters" className="flex flex-wrap items-center gap-1.5 shrink-0 order-1">
               {[
-                ['ALL', '全部'],
-                ['TW', '台股'],
-                ['INTL', '美股／海外'],
-              ].map(([k, label]) => (
+                ['ALL', '全部', mktFilter, setMktFilter, mktCounts],
+                ['TW', '台股', mktFilter, setMktFilter, mktCounts],
+                ['INTL', '美股／海外', mktFilter, setMktFilter, mktCounts],
+                ['STOCK', '股票', catFilter, (v) => setCatFilter(catFilter === v ? 'ALL' : v), catCounts],
+                ['ETF', 'ETF', catFilter, (v) => setCatFilter(catFilter === v ? 'ALL' : v), catCounts],
+                ['BOND', '債券', catFilter, (v) => setCatFilter(catFilter === v ? 'ALL' : v), catCounts],
+              ].map(([k, label, cur, set, counts]: any) => (
                 <button
                   type="button"
                   key={k}
-                  onClick={() => setMktFilter(k)}
-                  aria-pressed={mktFilter === k}
-                  className={`py-1.5 rounded-md text-xs font-semibold cursor-pointer ${
-                    mktFilter === k
-                      ? 'bg-sky-600 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
+                  aria-pressed={cur === k}
+                  onClick={() => set(k)}
+                  className={`px-2.5 py-[3px] rounded-full text-xs border cursor-pointer ${
+                    cur === k ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white' : 'border-white/10 text-slate-400 hover:text-white'
                   }`}
                 >
-                  {label} <span className="mono text-[10px] opacity-70">{mktCounts[k]}</span>
+                  {label} <span className="mono text-[10px] opacity-70">{counts[k]}</span>
                 </button>
               ))}
-            </div>
-          )}
-
-          {(listTab === 'watch' || listTab === 'div' || listTab === 'overview') && (
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                ['ALL', '全部'],
-                ['STOCK', '股票'],
-                ['ETF', 'ETF'],
-                ['BOND', '債券'],
-              ].map(([k, label]) => (
+              {listTab === 'watch' && (
                 <button
                   type="button"
-                  key={k}
-                  onClick={() => setCatFilter(k)}
-                  className={`px-2.5 py-1 rounded-full text-xs border cursor-pointer ${
-                    catFilter === k
-                      ? 'bg-sky-500/20 border-sky-400 text-white'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                  aria-pressed={holdOnly}
+                  onClick={() => setHoldOnly(!holdOnly)}
+                  className={`px-2.5 py-[3px] rounded-full text-xs border cursor-pointer ${
+                    holdOnly ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white' : 'border-white/10 text-slate-400 hover:text-white'
                   }`}
                 >
-                  {label} <span className="mono text-[10px] opacity-70">{catCounts[k]}</span>
+                  持有
                 </button>
-              ))}
+              )}
             </div>
           )}
 
           {listTab === 'watch' && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <div className="flex items-center gap-2 text-[11px] text-slate-400 shrink-0 order-3">
               排序
               <select
                 value={sortKey}
@@ -828,13 +1049,13 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                 <option value="chgAsc">跌幅大→小</option>
                 <option value="turn">成交金額</option>
               </select>
-              <span className="ml-auto text-slate-600">↑↓ 切換標的</span>
+              <span className="ml-auto text-slate-500">↑↓ 切換標的</span>
             </div>
           )}
 
           {listTab === 'etf' && (
-            <div className="space-y-1.5">
-              <div className="grid grid-cols-4 gap-1">
+            <div className="space-y-1.5 shrink-0 order-1">
+              <div className="grid grid-cols-4 gap-0.5 rounded-[10px] border border-white/10 bg-white/5 p-0.5">
                 {[
                   ['hot', '今日熱門'],
                   ['aum', '資產規模'],
@@ -844,11 +1065,10 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                   <button
                     type="button"
                     key={id}
+                    aria-pressed={etfSort === id}
                     onClick={() => setEtfSort(id)}
-                    className={`py-1.5 rounded-md text-xs border cursor-pointer ${
-                      etfSort === id
-                        ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    className={`py-1 rounded-lg text-xs cursor-pointer ${
+                      etfSort === id ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     {label}
@@ -867,7 +1087,21 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
             </div>
           )}
 
-          <div ref={listRef} className="max-h-[560px] overflow-y-auto space-y-1.5 pr-1">
+          <div ref={listRef} className="flex-1 min-h-[120px] overflow-y-auto space-y-1.5 pr-1 order-4">
+            {listTab === 'etf' && etfRows.some((r) => r.yield_pct != null) && (
+              <div className="pb-1">
+                <div className="text-[11.5px] text-slate-400 mb-1">殖利率比較（前 8 檔）</div>
+                <HBars
+                  items={etfRows
+                    .filter((r) => r.yield_pct != null)
+                    .slice(0, 8)
+                    .map((r) => ({ label: r.name || r.symbol, value: r.yield_pct, id: r.symbol, color: '#8b5cf6' }))}
+                  format={(v) => `${fmt(v)}%`}
+                  onPick={setSelected}
+                  plain
+                />
+              </div>
+            )}
             {listTab === 'watch' &&
               watchRows.map((s) => (
                 <Row
@@ -939,9 +1173,14 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                 quotes={quotes}
                 categories={categories}
                 selected={selected}
+                holdings={holdings}
+                fx={fx}
                 onSelect={(x) => {
                   setSelected(x);
-                  setRightTab('info');
+                  setRightTab('quote');
+                  setProfileTab('div');
+                  cardCtl.reveal('profile');
+                  goTab?.('watch');
                 }}
               />
             )}
@@ -971,6 +1210,9 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                   const round = t && lots > 0;
                   setSelected(r.symbol);
                   setRightTab('quote');
+                  goTab?.('watch');
+                  cardCtl.reveal('order');
+                  setTimeout(() => document.querySelector('[data-card="order"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
                   setOrder((o) => ({
                     ...o,
                     side: 'SELL',
@@ -1010,52 +1252,100 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
                 setWatch(DEFAULT_WATCH);
                 notifySaved('自選股已還原為預設 8 檔');
               }}
-              className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer"
+              className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer shrink-0 order-5 text-left"
             >
-              ↺ 還原預設 8 檔
+              共 {watch.length} 檔・↺ 還原預設 8 檔
             </button>
           )}
         </aside>
 
-        {/* ===== 右：報價 + 下單 ===== */}
-        <section className="xl:col-span-8 space-y-4">
-          <div
-            className="flex gap-1.5"
-            role="tablist"
-            aria-label="標的檢視"
-            data-tour="watch-subtabs"
-          >
-            {[
-              ['quote', '行情與下單'],
-              ['info', '基本資料與配息'],
-              ['heatmap', '股市熱力圖'],
-            ].map(([k, label]) => (
+        {/* ===== 右：報價卡（內含分頁）＋ 內容 ===== */}
+        <section className="min-w-0 space-y-3.5">
+          <div className="ta-card bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3.5" data-tour="watch-quote">
+            {q ? (
+              // 股價固定在右上角、左邊文字單行：換標的時（來源說明長短不同）數字位置不會跳
+              <div className="flex items-start justify-between gap-3 min-h-[76px]">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[22px] font-extrabold text-white truncate">
+                    {q.name}
+                    <small className="ml-1.5 text-[13px] font-medium text-slate-400 mono">{q.symbol}</small>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1 min-w-0">
+                    <span className="shrink-0 inline-block px-2 py-0.5 rounded-full text-[11px] bg-[#4f7cff]/20 text-[#b8c8ff]">{marketName(selected)}</span>
+                    {categories[baseCode(selected)] && <CatChip cls={categories[baseCode(selected)]} />}
+                    {q.error ? (
+                      <span className="text-xs text-rose-300 truncate" title={`抓取失敗：${q.error}（為避免誤導，不顯示任何替代數字）`}>
+                        抓取失敗：{q.error}（為避免誤導，不顯示任何替代數字）
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 truncate" title={`真實資料・${q.source}・最後成交 ${q.quote_time || '--'}`}>
+                        真實資料・{String(q.source || '').split('（')[0]}・最後成交 {q.quote_time || '--'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className={`mono text-[28px] sm:text-[38px] leading-tight font-extrabold ${colorOf(q.change)}`}>{fmt(q.price)}</div>
+                  <span
+                    className={`mono inline-block mt-1 px-2.5 py-0.5 rounded-full text-[13px] font-semibold whitespace-nowrap ${colorOf(q.change)}`}
+                    style={{
+                      background: `color-mix(in srgb,${q.change > 0 ? 'var(--up)' : q.change < 0 ? 'var(--down)' : '#8a93a8'} 16%,transparent)`,
+                      boxShadow: q.change ? `0 0 18px color-mix(in srgb,${q.change > 0 ? 'var(--up)' : 'var(--down)'} 30%,transparent)` : undefined,
+                    }}
+                  >
+                    {q.change > 0 ? '▲' : q.change < 0 ? '▼' : ''} {fmt(Math.abs(q.change))}（{q.change_pct > 0 ? '+' : ''}
+                    {fmt(q.change_pct)}%）
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-[76px] py-3 text-sm text-slate-400">正在抓取 {selected} 的報價…</div>
+            )}
+            <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
               <button
                 type="button"
-                role="tab"
-                aria-selected={rightTab === k}
-                key={k}
-                onClick={() => setRightTab(k)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer ${
-                  rightTab === k
-                    ? 'bg-sky-500/20 border-sky-400 text-white'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => goOrder('BUY')}
+                className="px-3 py-1.5 rounded-[10px] text-[12.5px] font-bold text-white cursor-pointer hover:brightness-110"
+                style={{ background: 'linear-gradient(135deg,var(--up),color-mix(in srgb,var(--up) 60%,#000))' }}
               >
-                {label}
+                買進
               </button>
-            ))}
-            <span className="ml-2 self-center text-xs text-slate-500">
-              目前：<span className="mono text-slate-300">{baseCode(selected)}</span>
-              {categories[baseCode(selected)] && (
-                <span className="ml-1">
-                  <CatChip cls={categories[baseCode(selected)]} />
-                </span>
-              )}
-            </span>
+              <button
+                type="button"
+                onClick={() => goOrder('SELL')}
+                className="px-3 py-1.5 rounded-[10px] text-[12.5px] font-bold text-[#04130d] cursor-pointer hover:brightness-110"
+                style={{ background: 'linear-gradient(135deg,var(--down),color-mix(in srgb,var(--down) 60%,#000))' }}
+              >
+                賣出
+              </button>
+              {[
+                ['加入我的持股', () => {
+                  setHoldPrefill({ symbol: baseCode(selected), shares: '', cost: String(q?.price ?? '') });
+                  setListTab('hold');
+                }, undefined],
+                ['設提醒', () => setListTab('alerts'), undefined],
+                ['存股試算', () => openSavings?.(baseCode(selected)), '到存股計畫，用這檔的長期報酬率試算定期定額'],
+                [inWatch ? '移出自選' : '加入自選', toggleWatch, undefined],
+              ].map(([label, fn, hint]: any) => (
+                <button
+                  type="button"
+                  key={label}
+                  onClick={fn}
+                  title={hint}
+                  className="px-3 py-1.5 rounded-[10px] border border-white/10 bg-white/5 text-[12.5px] text-slate-100 hover:bg-white/10 cursor-pointer"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3">
+              <StockTabs active={active === 'watch' ? (rightTab === 'heatmap' ? 'heatmap' : 'watch') : active} onGo={onStockTab} />
+            </div>
           </div>
 
-          {rightTab === 'heatmap' && (
+          {active === 'mod1' && techPanel}
+          {active === 'mod2' && newsPanel}
+          {active === 'watch' && rightTab === 'heatmap' && (
             <HeatmapPanel
               watch={watch}
               holdings={holdings}
@@ -1069,280 +1359,21 @@ function WatchPage({ onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }) {
               onSendMod2={(it) => onSendToMod2(it.symbol, it.name)}
             />
           )}
-
-          {rightTab === 'info' && (
-            <div data-tour="stock-info">
-              <StockInfoPanel symbol={selected} />
-            </div>
-          )}
-
-          {rightTab === 'quote' && !q && (
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-8 text-center text-slate-400">
-              正在抓取 {selected} 的報價…
-            </div>
-          )}
-
-          {rightTab === 'quote' && q && (
-            <>
-              <div
-                className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-4"
-                data-tour="watch-quote"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-bold text-white">{q.name}</span>
-                      <span className="mono text-sm text-slate-400">{q.symbol}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-sky-300">
-                        {marketName(selected)}
-                      </span>
-                    </div>
-                    {q.error ? (
-                      <div className="mt-1 text-xs text-rose-300">
-                        抓取失敗：{q.error}（為避免誤導，不顯示任何替代數字）
-                      </div>
-                    ) : (
-                      <div className="mt-1 text-xs text-emerald-300">
-                        真實資料・{q.source}・最後成交 {q.quote_time || '--'}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <div className={`mono text-4xl font-bold ${colorOf(q.change)}`}>
-                      {fmt(q.price)}
-                    </div>
-                    <div className={`mono text-sm ${colorOf(q.change)}`}>
-                      {q.change > 0 ? '▲' : q.change < 0 ? '▼' : ''} {fmt(Math.abs(q.change))} (
-                      {q.change_pct > 0 ? '+' : ''}
-                      {fmt(q.change_pct)}%)
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs" data-tour="watch-news-dots">
-                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showNews}
-                      onChange={(e) => setShowNews(e.target.checked)}
-                      aria-label="在走勢圖上標出新聞發布時間"
-                    />
-                    在走勢圖上標出新聞發布時間
-                    <Tip text="打開後會抓這檔的新聞（要連多個新聞來源，約數秒），把發布時間落在這段走勢內的新聞用青色圓點標在走勢線上，方便對照「消息出來時股價怎麼動」。點圓點可另開分頁看原文。預設關閉。" />
-                  </label>
-                  {showNews && chartNews?.loading && <span className="text-slate-500">新聞載入中…</span>}
-                  {showNews && chartNews?.error && <span className="text-amber-300">⚠️ {chartNews.error}</span>}
-                </div>
-                <IntradayChart
-                  data={intraday}
-                  lastTrade={q?.quote_time}
-                  tz={tzOf(selected)}
-                  news={showNews && chartNews && !chartNews.loading && !chartNews.error ? chartNews.items : undefined}
-                />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <RangeBar label="今日區間（低—高）" low={q.low} high={q.high} value={q.price} />
-                  <RangeBar
-                    label="52 週區間（低—高）"
-                    low={intraday?.week52_low}
-                    high={intraday?.week52_high}
-                    value={q.price}
-                  />
-                </div>
-
-                {/* 六宮格 */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <Stat
-                    label="開盤"
-                    value={fmt(q.open)}
-                    cls={colorOf((q.open || 0) - (q.prev_close || 0))}
-                  />
-                  <Stat label="最高" value={fmt(q.high)} cls="text-rose-400" />
-                  <Stat label="最低" value={fmt(q.low)} cls="text-emerald-400" />
-                  <Stat
-                    label="昨收"
-                    value={fmt(q.prev_close)}
-                    tip="前一個交易日的收盤價，漲跌幅以它為基準"
-                  />
-                  <Stat
-                    label={`成交量（${q.volume_unit || ''}）`}
-                    value={fmt(q.volume, 0)}
-                    tip={
-                      tw
-                        ? '台股 1 張 = 1000 股'
-                        : `${marketName(selected)}以股為單位（實際交易所可能有每手最少股數）`
-                    }
-                  />
-                  {tw ? (
-                    <Stat
-                      label="漲停 / 跌停"
-                      value={`${fmt(q.limit_up)} / ${fmt(q.limit_down)}`}
-                      tip="台股單日漲跌幅限制 ±10%，委託價不能超出此範圍"
-                    />
-                  ) : (
-                    <Stat
-                      label="日內振幅"
-                      value={`${q.high && q.low && q.prev_close ? fmt(((q.high - q.low) / q.prev_close) * 100) : '--'}%`}
-                      tip="(最高 - 最低) ÷ 昨收"
-                    />
-                  )}
-                </div>
-
-                {/* 委買/委賣力道 + 五檔 */}
-                {tw && q.bids?.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs text-slate-400 mb-1">
-                        委買 / 委賣掛單量比例
-                        <Tip text="把五檔的委買總量與委賣總量相比。注意：這不是『內外盤』（成交方向統計），官方公開資料沒有提供內外盤，所以這裡誠實標示為掛單量比例。" />
-                      </div>
-                      <div className="flex h-6 rounded-lg overflow-hidden border border-slate-700 text-[11px] mono font-bold">
-                        <div
-                          style={{ width: `${ratio}%` }}
-                          className="bg-rose-500/80 text-white flex items-center justify-center"
-                        >
-                          {fmt(ratio, 0)}%
-                        </div>
-                        <div
-                          style={{ width: `${100 - ratio}%` }}
-                          className="bg-emerald-500/80 text-white flex items-center justify-center"
-                        >
-                          {fmt(100 - ratio, 0)}%
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
-                        <span>委買（想買的）</span>
-                        <span>委賣（想賣的）</span>
-                      </div>
-                      {bestBid && bestAsk && (
-                        <div className="text-[11px] text-slate-400 mt-2">
-                          買賣價差 {fmt(bestAsk.price - bestBid.price)}（約{' '}
-                          {fmt(((bestAsk.price - bestBid.price) / bestAsk.price) * 100, 2)}%）
-                          ，價差越小越容易成交
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-400 mb-1">
-                        最佳五檔
-                        <Tip text="市場上最接近成交價的 5 個買價與 5 個賣價，以及各價位掛單張數" />
-                      </div>
-                      <table className="w-full text-xs mono">
-                        <thead>
-                          <tr className="text-slate-500">
-                            <th className="text-left font-normal">委買量</th>
-                            <th>價格</th>
-                            <th className="text-right font-normal">委賣量</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => {
-                            const a = q.asks[4 - i];
-                            return (
-                              <tr key={`a${i}`}>
-                                <td />
-                                <td className="text-center text-emerald-300">
-                                  {a ? fmt(a.price) : ''}
-                                </td>
-                                <td className="text-right text-slate-300">
-                                  {a ? fmt(a.vol, 0) : ''}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          <tr>
-                            <td colSpan={3} className="border-t border-slate-700" />
-                          </tr>
-                          {[...Array(5)].map((_, i) => {
-                            const b = q.bids[i];
-                            return (
-                              <tr key={`b${i}`}>
-                                <td className="text-slate-300">{b ? fmt(b.vol, 0) : ''}</td>
-                                <td className="text-center text-rose-300">
-                                  {b ? fmt(b.price) : ''}
-                                </td>
-                                <td />
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-slate-500 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2">
-                    {tw
-                      ? '此時段沒有五檔資料（可能尚未開盤或無掛單）。'
-                      : `ℹ️ ${marketName(selected)}的公開免費資料源不提供五檔與內外盤，這裡不顯示（不會用假資料補上）。`}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    data-tour="send-mod1"
-                    onClick={() => onSendToMod1(q)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-sm hover:brightness-110 cursor-pointer"
-                  >
-                    將目前選中標的送入技術分析沙盒
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHoldPrefill({
-                        symbol: baseCode(selected),
-                        shares: '',
-                        cost: String(q.price ?? ''),
-                      });
-                      setListTab('hold');
-                    }}
-                    className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
-                  >
-                    加入我的持股
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setListTab('alerts')}
-                    className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
-                  >
-                    設提醒
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openSavings?.(baseCode(selected))}
-                    title="到存股計畫，用這檔的長期報酬率試算定期定額"
-                    className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:bg-slate-700 cursor-pointer"
-                  >
-                    存股試算
-                  </button>
-                </div>
-              </div>
-
-              <OrderPanel
-                ctx={{
-                  addToCart,
-                  fillCartItem,
-                  amount,
-                  cart,
-                  fee,
-                  order,
-                  orderIssues,
-                  q,
-                  setCart,
-                  setOrder,
-                  tax,
-                  tradeRules,
-                  tw,
-                  priceNum,
-                  priceLocked,
-                  etfFlag,
-                  afterRound,
-                  feeDisc,
-                }}
-              />
-            </>
-          )}
+          {active === 'watch' && rightTab === 'quote' && q && <CardGrid ctl={cardCtl} render={renderCard} />}
         </section>
       </div>
+
+      <AiDrawer
+        q={q}
+        open={aiOpen}
+        task={aiTask}
+        setTask={setAiTask}
+        onClose={() => setAiOpen(false)}
+        m1Data={m1Data}
+        m2Data={m2Data}
+        digest={newsData}
+        onRunTech={() => onSendToMod1?.(quoteOf(selected), { silent: true })}
+      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 border border-slate-600 text-white text-sm px-4 py-2 rounded-xl shadow-lg">

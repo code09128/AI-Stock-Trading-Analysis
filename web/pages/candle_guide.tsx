@@ -4,8 +4,8 @@ import { colorOf, fmt } from '../ui';
 const { useState, useEffect } = React;
 
 
-const UP = '#fb7185'; // 台灣習慣：紅＝上漲
-const DOWN = '#34d399'; // 綠＝下跌
+const UP = 'var(--up)'; // 預設台灣習慣：紅＝上漲（可在頂欄切換）
+const DOWN = 'var(--down)'; // 綠＝下跌
 
 // 單根蠟燭（示意圖用，座標以 0~100 的價格尺度）
 const Candle = ({ x, o, h, l, c, w = 14 }) => {

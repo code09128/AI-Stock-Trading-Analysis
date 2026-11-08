@@ -64,7 +64,7 @@ function MiniIntraday({ data, tz }) {
   const y = (v) => ((top - v) / (top - bot)) * H;
   const line = pts.map((p) => `${x(p.ts).toFixed(1)},${y(p.close).toFixed(1)}`).join(' ');
   const last = closes[closes.length - 1];
-  const color = last > prev ? '#f43f5e' : last < prev ? '#10b981' : '#94a3b8';
+  const color = last > prev ? 'var(--up)' : last < prev ? 'var(--down)' : '#94a3b8';
   const pct = (v) => `${v > prev ? '+' : ''}${(((v - prev) / prev) * 100).toFixed(2)}%`;
   const hm = (ts) => {
     try {

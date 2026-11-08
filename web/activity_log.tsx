@@ -14,6 +14,7 @@ const QUIET = [
   '/api/board/',
   '/api/sparks',
   '/api/intraday',
+  '/api/five_days',
   '/api/overview',
   '/api/fx',
   '/api/health',

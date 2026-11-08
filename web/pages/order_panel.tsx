@@ -251,7 +251,7 @@ function OrderPanel({ ctx }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+      <div className="grid [grid-template-columns:repeat(auto-fit,minmax(130px,1fr))] gap-2 text-sm">
         <Field label="買賣">
           <Seg
             value={order.side}
@@ -400,7 +400,7 @@ function OrderPanel({ ctx }) {
       )}
 
       {!tw && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))] gap-2 text-sm">
           {order.usKind === 'STOP' && (
             <Field
               label={`觸發價（${q.currency}）`}

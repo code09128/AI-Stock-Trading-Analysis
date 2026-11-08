@@ -50,7 +50,8 @@ const DATA_KEYS = [
   // 這兩個不是 tw_us_ 開頭，不會自動存進資料檔，只有靠備份檔才帶得走
   ['ta_show_signals_v1', '介面偏好：技術分析圖顯示買賣訊號', null],
   ['ta_show_bollinger_v1', '介面偏好：技術分析圖顯示布林通道', null],
-  ['tw_us_chart_news_v1', '介面偏好：分時走勢圖標出新聞發布時間', null],
+  ['tw_us_chart_news_v2', '介面偏好：分時走勢圖標出新聞發布時間', null],
+  ['tw_us_watch_cards_v2', '介面偏好：行情卡片的收合與隱藏', null],
 ];
 const describe = (k) => {
   try {

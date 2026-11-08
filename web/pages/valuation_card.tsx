@@ -1,5 +1,6 @@
 // 估值參考卡：近四季 EPS × 同產業本益比，直接標示「便宜／偏便宜／合理／偏貴／貴」（後端 src/company/valuation.py）
 import { Tip } from '../ui';
+import { CardBox } from './card_box';
 
 const { useState, useEffect } = React;
 
@@ -15,7 +16,8 @@ const BAR_STYLE = ['bg-emerald-500/70', 'bg-emerald-500/40', 'bg-sky-500/40', 'b
 const money = (v: number | null | undefined) =>
   v == null ? '—' : v.toLocaleString('zh-TW', { maximumFractionDigits: 2 });
 
-export function ValuationCard({ symbol }: { symbol: string }) {
+// ctl 有值＝放進看盤頁的卡片格線（可拖曳、收合、隱藏）；沒有＝維持原本獨立的一張卡（基本資料頁）
+export function ValuationCard({ symbol, ctl }: { symbol: string; ctl?: any }) {
   const [v, setV] = useState<any>(null);
   useEffect(() => {
     let stop = false;
@@ -37,7 +39,7 @@ export function ValuationCard({ symbol }: { symbol: string }) {
     };
   }, [symbol]);
 
-  if (!v) return <div className="text-xs text-slate-500 px-1">正在計算估值參考…</div>;
+  if (!v) return ctl ? null : <div className="text-xs text-slate-500 px-1">正在計算估值參考…</div>;
   if (v.hidden || (!v.supported && /ETF|債券/.test(v.reason || ''))) return null;
   const body = !v.supported ? (
     <div className="text-xs text-slate-400">{v.reason}</div>
@@ -79,7 +81,7 @@ export function ValuationCard({ symbol }: { symbol: string }) {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+      <div className="grid [grid-template-columns:repeat(auto-fit,minmax(130px,1fr))] gap-2 text-xs">
         <div className="rounded-lg bg-slate-800/60 p-2">
           <div className="text-slate-500">現價（{v.price_date}）</div>
           <div className="mono text-white font-bold">{money(v.price)}</div>
@@ -121,12 +123,9 @@ export function ValuationCard({ symbol }: { symbol: string }) {
       </div>
     </>
   );
-  return (
-    <div data-tour="valuation" className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
-      <div className="text-sm font-bold text-white">
-        估值參考
-        <Tip text={v.method || '用近四季 EPS 和同產業本益比，判斷現在的價格相對同業是貴還是便宜。'} />
-      </div>
+  const tip = <Tip text={v.method || '用近四季 EPS 和同產業本益比，判斷現在的價格相對同業是貴還是便宜。'} />;
+  const rest = (
+    <>
       {body}
       {(v.notes || []).map((n: string) => (
         <div key={n} className="text-[11px] text-amber-200/80 leading-relaxed">
@@ -136,6 +135,24 @@ export function ValuationCard({ symbol }: { symbol: string }) {
       <div className="text-[10px] text-slate-500">
         依固定規則計算的相對比較，不是預測，也不是買賣建議。來源：{(v.sources || []).join('、') || '—'}
       </div>
+    </>
+  );
+  if (ctl)
+    return (
+      <CardBox id="val" title="估值參考" sub={v.verdict || undefined} ctl={ctl}>
+        <div data-tour="valuation" className="space-y-3">
+          <div className="text-xs text-slate-400">估值方法說明 {tip}</div>
+          {rest}
+        </div>
+      </CardBox>
+    );
+  return (
+    <div data-tour="valuation" className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+      <div className="text-sm font-bold text-white">
+        估值參考
+        {tip}
+      </div>
+      {rest}
     </div>
   );
 }

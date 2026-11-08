@@ -18,9 +18,32 @@ const Sparkline = ({ values, w = 64, h = 22 }) => {
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="近一個月走勢">
       <title>近一個月收盤走勢</title>
-      <polyline fill="none" stroke={up ? '#fb7185' : '#34d399'} strokeWidth="1.5" points={pts} />
+      <polyline fill="none" stroke={up ? 'var(--up)' : 'var(--down)'} strokeWidth="1.5" points={pts} />
     </svg>
   );
+};
+
+// 量容器的實際寬度：圖表用它當座標寬度重畫，字與高度固定，不會隨卡片加寬而等比放大（量不到時用 fallback）
+const useChartWidth = (fallback = 720) => {
+  const [w, setW] = React.useState(fallback);
+  const ro = React.useRef<ResizeObserver | null>(null);
+  const ref = React.useCallback((el: Element | null) => {
+    ro.current?.disconnect();
+    ro.current = null;
+    if (!el) return;
+    // 量外層容器：SVG 自己的大小會受 viewBox 影響，縮回時不一定觸發
+    const box = el.parentElement || el;
+    const apply = () => {
+      const cw = Math.round(box.clientWidth);
+      if (cw > 0) setW(cw);
+    };
+    apply();
+    if (typeof ResizeObserver !== 'undefined') {
+      ro.current = new ResizeObserver(apply);
+      ro.current.observe(box);
+    }
+  }, []);
+  return [ref, w] as const;
 };
 
 // ---------- 區間條：日內 / 52 週高低位置 (Yahoo 風格) ----------
@@ -69,6 +92,7 @@ const safeHttp = (u) => (/^https?:\/\//i.test(String(u || '')) ? u : '');
 // news：選填，新聞清單（/api/news 的 items）。有給才會在走勢圖上標出「發布時間落在這段走勢內」的新聞點；沒給就跟以前完全一樣
 const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: any; tz?: any; news?: any[] }) => {
   const [hover, setHover] = useState(null);
+  const [chartRef, chartW] = useChartWidth();
   const pts = data?.points || [];
 
   // lastTrade 例如 "20261022 13:30:00"：最後成交不是今天＝今天沒有交易（假日、颱風停市），而不是「尚未開盤」
@@ -125,13 +149,13 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
       </div>
     );
   }
-  const W = 720;
+  const W = chartW;
   const H = 230;
   const padL = 8;
   const padR = 56;
   const padT = 10;
   const volH = 34;
-  const priceH = H - padT - volH - 22;
+  const priceH = H - padT - volH - 26; // 底部留 16px 給時間標籤，不要壓到量柱
   const plotW = W - padL - padR;
   const prev = data.prev_close;
   const closes = pts.map((p) => p.close);
@@ -147,7 +171,7 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
   const maxVol = Math.max(...pts.map((p) => p.volume), 1);
   const last = pts[pts.length - 1];
   const up = prev == null ? true : last.close >= prev;
-  const col = up ? '#fb7185' : '#34d399';
+  const col = up ? 'var(--up)' : 'var(--down)';
   const line = pts.map((p) => `${x(p.ts)},${y(p.close)}`).join(' ');
   const area = `${x(pts[0].ts)},${padT + priceH} ${line} ${x(last.ts)},${padT + priceH}`;
   const act = hover != null ? pts[hover] : last;
@@ -205,8 +229,11 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
         <span>量 {fmt(act.volume, 0)}</span>
       </div>
       <svg
+        ref={chartRef}
+        width="100%"
+        height={H}
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto"
+        className="block w-full"
         role="img"
         aria-label={isClosedOrNoTrade ? '最後成交日分時走勢圖' : '當日分時走勢圖'}
         onMouseMove={onMove}
@@ -242,7 +269,7 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
           <rect
             key={p.ts}
             x={x(p.ts) - 1.5}
-            y={padT + priceH + 22 + volH - (p.volume / maxVol) * volH}
+            y={padT + priceH + 10 + volH - (p.volume / maxVol) * volH}
             width="3"
             height={(p.volume / maxVol) * volH}
             fill="#475569"
@@ -255,8 +282,8 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
               cx={d.cx}
               cy={d.cy}
               r="5"
-              fill="#22d3ee"
-              stroke="#0f172a"
+              fill={d.n.sentiment === 'POSITIVE' ? 'var(--up)' : d.n.sentiment === 'NEGATIVE' ? 'var(--down)' : '#8a93a8'}
+              stroke="#070a13"
               strokeWidth="2"
               className={href ? 'cursor-pointer' : ''}
             >
@@ -307,8 +334,7 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
       </svg>
       {news && (
         <div className="mt-1 text-[11px] text-slate-400" aria-live="polite">
-          <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 mr-1 align-middle" />
-          青色圓點＝新聞發布時間（滑鼠停在點上看標題，點一下另開分頁看原文）。
+          彩色圓點＝新聞發布時間（紅利多、綠利空、灰中性，關鍵字規則粗估；滑鼠停在點上看標題，點一下另開分頁看原文）。
           {newsDots.length
             ? `這段走勢內有 ${newsDots.length} 則`
             : '這段走勢內沒有新聞'}
@@ -370,4 +396,4 @@ const IndexBar = () => {
   );
 };
 
-export { Sparkline, RangeBar, IntradayChart, IndexBar };
+export { Sparkline, RangeBar, IntradayChart, IndexBar, useChartWidth };
