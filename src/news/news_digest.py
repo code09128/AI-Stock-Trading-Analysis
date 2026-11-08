@@ -293,8 +293,13 @@ def build(news: Dict[str, Any], bars: List[Bar], market: str, atr: Optional[floa
             "公司在法說會或財測中對下一季的展望是否改變",
             "股價收盤是否跌破或站上關鍵價位（請對照技術分析頁的三情境）",
         ]
+    # 沒進前 MAX_ITEMS 則整理的其他新聞：只給標題、時間、出處與連結，讓使用者在同一處瀏覽完整清單（不做 AI 整理與價格反應）
+    picked_ids = {id(it) for it in picked}
+    others = [{k: it.get(k, "") for k in ("title", "source", "link", "kind", "local_iso")}
+              for it in raw if id(it) not in picked_ids]
     return {
         "symbol": symbol, "name": name, "mode": mode, "ai_error": ai_err,
+        "others": others,
         "atr_pct": atr_pct, "items": items, "reaction_changers": changers,
         "unverified_numbers": unverified,
         "summary": summarize(items, news.get("errors", []), mode if mode == "RULES" else "AI"),

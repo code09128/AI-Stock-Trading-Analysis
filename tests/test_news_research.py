@@ -143,6 +143,18 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(d["summary"]["tone"], "偏多")
         self.assertIn("未使用 AI", " ".join(d["summary"]["gaps"]))
 
+    def test_others_lists_unsummarized_news_with_links(self):
+        # 超過整理上限的新聞要列在 others（只有標題、出處、連結），讓使用者能在同一處看到完整清單並點開原文
+        bars = [Bar(f"2026-10-{d:02d}", 100, 101, 99, 100, 1000) for d in range(1, 29)]
+        raw = [{"title": f"台積電新聞 {i}", "source": "S", "link": f"https://x/{i}", "kind": "新聞",
+                "local_iso": "2026-10-20T09:00", "detail": ""} for i in range(nd.MAX_ITEMS + 3)]
+        with patch.object(nd.ai_client, "is_enabled", return_value=False):
+            d = nd.build({"items": raw, "sources": ["S"], "errors": []}, bars, "TW", 2.0, None, "2330.TW", "台積電")
+        self.assertEqual(len(d["items"]), nd.MAX_ITEMS)
+        self.assertEqual(len(d["others"]), 3)
+        self.assertTrue(all(o["link"].startswith("https://x/") for o in d["others"]))
+        self.assertEqual({o["title"] for o in d["others"]} & {i["title"] for i in d["items"]}, set())
+
     def _build_with_ai(self, ai_by_no):
         bars = [Bar(f"2026-10-{d:02d}", 100, 101, 99, 100 + d % 3, 1000) for d in range(1, 29)]
         news = {"items": [

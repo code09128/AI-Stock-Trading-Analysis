@@ -50,7 +50,10 @@ const SENT = {
   NEUTRAL: { label: '中性', cls: 'text-slate-400' },
 };
 
-const fmtTime = (iso) => String(iso || '').replace('T', ' ').slice(0, 16);
+const fmtTime = (iso) =>
+  String(iso || '')
+    .replace('T', ' ')
+    .slice(0, 16);
 // 新聞連結來自外部來源，只開 http／https，避免 javascript: 之類的網址
 const safeUrl = (u) => (/^https?:\/\//i.test(String(u || '')) ? u : '');
 // AI 判斷的新聞類型：事後回顧的漲跌不當新催化劑；即時市場事件是市場反應不是基本面
@@ -64,8 +67,7 @@ function Gauge({ label, value, limit, delay, sentiment }) {
   const ok = Number.isFinite(v);
   const ratio = ok ? Math.min(Math.abs(v) / limit, 1) : 0;
   const big = ok && Math.abs(v) >= limit;
-  const over =
-    big && ((sentiment === 'POSITIVE' && v > 0) || (sentiment === 'NEGATIVE' && v < 0));
+  const over = big && ((sentiment === 'POSITIVE' && v > 0) || (sentiment === 'NEGATIVE' && v < 0));
   const opposite =
     big && ((sentiment === 'POSITIVE' && v < 0) || (sentiment === 'NEGATIVE' && v > 0));
   return (
@@ -87,6 +89,68 @@ function Gauge({ label, value, limit, delay, sentiment }) {
           className={`h-2 rounded-full ta-grow-x ${over ? 'bg-amber-400' : 'bg-sky-500'}`}
           style={{ width: `${ratio * 100}%`, animationDelay: `${delay}ms` }}
         />
+      </div>
+    </div>
+  );
+}
+
+// 新聞類型小標籤：官方公告琥珀色、分析專欄灰紫、一般新聞藍
+function KindTag({ kind }) {
+  const cls = OFFICIAL.includes(kind)
+    ? 'bg-amber-500/15 text-amber-300'
+    : kind === '分析專欄'
+      ? 'bg-slate-700/60 text-slate-300'
+      : 'bg-slate-800 text-sky-300';
+  return <span className={`mr-1 text-[10px] px-1 rounded ${cls}`}>{kind}</span>;
+}
+
+// 逐則整理：發生什麼事、為何關注、影響期間、財務指標、隱含假設、發布後實際股價反應
+function ItemDetail({ it, atrPct }) {
+  const ai = it.ai || {};
+  const r = it.reaction || {};
+  const none = <span className="text-slate-500">需要 AI 才能整理</span>;
+  return (
+    <div className="border-t border-slate-800 px-3 py-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5 text-slate-300">
+      {it.detail && (
+        <div className="md:col-span-2 text-[11px] text-slate-400 line-clamp-3">{it.detail}</div>
+      )}
+      <div>
+        <span className="text-slate-500">發生什麼事：</span>
+        {ai.what || none}
+      </div>
+      <div>
+        <span className="text-slate-500">為何要關注：</span>
+        {ai.why || none}
+      </div>
+      <div>
+        <span className="text-slate-500">影響期間：</span>
+        {ai.horizon || it.horizon || <span className="text-slate-500">無法判斷</span>}
+      </div>
+      <div>
+        <span className="text-slate-500">可能影響的財務指標：</span>
+        {(ai.metrics?.length ? ai.metrics : it.metrics || []).join('、') || (
+          <span className="text-slate-500">無法判斷</span>
+        )}
+      </div>
+      <div className="md:col-span-2">
+        <span className="text-slate-500">市場隱含的假設：</span>
+        {ai.assumptions || none}
+      </div>
+      <div className="md:col-span-2 font-mono">
+        <span className="text-slate-500 font-sans">實際股價反應：</span>
+        {r.pending || r.pct == null ? (
+          <span className="text-slate-500 font-sans">{r.note || '無資料'}</span>
+        ) : (
+          <>
+            <span className={r.pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{sign(r.pct)}</span>
+            <span className="text-slate-500">
+              {' '}
+              （{r.from} 收盤 → {r.to} 收盤
+              {atrPct ? `，約 ${(Math.abs(r.pct) / atrPct).toFixed(1)} 個 ATR` : ''}）
+            </span>
+            {r.note && <span className="text-amber-300 font-sans ml-1">{r.note}</span>}
+          </>
+        )}
       </div>
     </div>
   );
@@ -120,6 +184,8 @@ function SentimentBar({ counts }) {
 }
 
 function ResearchSummary({ d, m2Data, onPick }) {
+  const [open, setOpen] = useState({});
+  const [kind, setKind] = useState('全部');
   const s = d?.summary;
   if (!s) return null;
   const tone = TONES[s.tone] || TONES.中性;
@@ -203,22 +269,42 @@ function ResearchSummary({ d, m2Data, onPick }) {
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 ta-fade-up" style={{ animationDelay: '80ms' }}>
+        <div
+          className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 ta-fade-up"
+          style={{ animationDelay: '80ms' }}
+        >
           <div className="text-[11px] text-slate-400">新聞語氣分布</div>
           <SentimentBar counts={s.counts} />
           {s.counts.column > 0 && (
-            <div className="text-[11px] text-slate-500">另有 {s.counts.column} 篇分析專欄（觀點，不計入語氣）</div>
+            <div className="text-[11px] text-slate-500">
+              另有 {s.counts.column} 篇分析專欄（觀點，不計入語氣）
+            </div>
           )}
         </div>
-        <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 ta-fade-up" style={{ animationDelay: '160ms' }}>
+        <div
+          className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 ta-fade-up"
+          style={{ animationDelay: '160ms' }}
+        >
           <div className="text-[11px] text-slate-400">
             已反映程度（重點新聞發布前的漲幅）
             <Tip text="Priced-in＝消息已提前反映在股價。利多新聞若事件前 20 日已漲 ≥10% 或 5 日已漲 ≥6%，容易利多出盡；利空前已跌同樣幅度則可能利空出盡。數字用真實日 K 計算。" />
           </div>
           {pi ? (
             <>
-              <Gauge label="事件前 20 日" value={pi.ret_20d_pct} limit={10} delay={200} sentiment={m2Data?.sentiment} />
-              <Gauge label="事件前 5 日" value={pi.ret_5d_pct} limit={6} delay={300} sentiment={m2Data?.sentiment} />
+              <Gauge
+                label="事件前 20 日"
+                value={pi.ret_20d_pct}
+                limit={10}
+                delay={200}
+                sentiment={m2Data?.sentiment}
+              />
+              <Gauge
+                label="事件前 5 日"
+                value={pi.ret_5d_pct}
+                limit={6}
+                delay={300}
+                sentiment={m2Data?.sentiment}
+              />
             </>
           ) : (
             <div className="text-[11px] text-slate-500">評估中，或還沒有可評估的重點新聞</div>
@@ -227,7 +313,10 @@ function ResearchSummary({ d, m2Data, onPick }) {
       </div>
 
       {s.gaps.length > 0 && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 ta-fade-up" style={{ animationDelay: '240ms' }}>
+        <div
+          className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 ta-fade-up"
+          style={{ animationDelay: '240ms' }}
+        >
           <div className="text-xs font-semibold text-amber-200">資料缺口與限制</div>
           <ul className="mt-1 space-y-0.5 text-[11px] text-amber-100/90 list-disc pl-4">
             {s.gaps.map((g) => (
@@ -265,7 +354,9 @@ function ResearchSummary({ d, m2Data, onPick }) {
                   <div className="mt-0.5 flex items-start gap-1.5 text-xs text-slate-200">
                     <span
                       className={`mt-px shrink-0 text-[10px] px-1 rounded ${
-                        OFFICIAL.includes(t.kind) ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-800 text-sky-300'
+                        OFFICIAL.includes(t.kind)
+                          ? 'bg-amber-500/15 text-amber-300'
+                          : 'bg-slate-800 text-sky-300'
                       }`}
                     >
                       {t.kind}
@@ -300,73 +391,185 @@ function ResearchSummary({ d, m2Data, onPick }) {
       {d.items?.length > 0 && (
         <div className="space-y-1">
           <div className="text-xs font-semibold text-slate-300">
-            我讀了這些（{d.items.length} 則，已去除轉載；點一則改用它來評估）
+            我讀了這些（{d.items.length}{' '}
+            則，已去除轉載，依重要性排序；點標題改用它來評估，「原文↗」開啟連結，「細節」看逐則整理）
+          </div>
+          <div className="text-[11px] text-slate-500">
+            整理方式：{d.mode === 'RULES' ? '關鍵字規則（未使用 AI）' : d.mode}・
+            {d.sources?.join('・')}
+            {(d.errors || []).map((e) => (
+              <span key={e} className="ml-2 text-rose-300">
+                ⚠️ {e}
+              </span>
+            ))}
+            {d.ai_error && <span className="block text-amber-300">⚠️ {d.ai_error}</span>}
+            {d.unverified_numbers?.length > 0 && (
+              <span className="block text-amber-300">
+                ⚠️ AI 提到這些標題裡沒有的數字，可能是自己編的，請勿採信：
+                {d.unverified_numbers.join('、')}
+              </span>
+            )}
           </div>
           <div className="space-y-1">
-            {d.items.map((it) => {
+            {d.items.map((it, idx) => {
               const st = SENT[it.sentiment] || SENT.NEUTRAL;
+              const key = `${it.local_iso}-${it.title}`;
               const isLead = lead && it.title === lead.title && it.local_iso === lead.local_iso;
+              const isOpen = !!open[key];
               return (
                 <div
-                  key={`${it.local_iso}-${it.title}`}
-                  className={`flex items-stretch gap-1 rounded-lg border text-xs transition ${
-                    isLead ? 'border-sky-400 bg-sky-500/10' : 'border-slate-800 bg-slate-950/60 hover:border-slate-600'
+                  key={key}
+                  className={`rounded-lg border text-xs transition ${
+                    isLead
+                      ? 'border-sky-400 bg-sky-500/10'
+                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-600'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onPick?.(it)}
-                    aria-pressed={isLead}
-                    title="改用這則新聞來評估"
-                    className="min-w-0 flex-1 text-left px-3 py-1.5 cursor-pointer"
-                  >
-                    <span className="text-slate-500 font-mono mr-2">{fmtTime(it.local_iso)}</span>
-                    <span
-                      className={`mr-1 text-[10px] px-1 rounded ${
-                        OFFICIAL.includes(it.kind)
-                          ? 'bg-amber-500/15 text-amber-300'
-                          : it.kind === '分析專欄'
-                            ? 'bg-slate-700/60 text-slate-300'
-                            : 'bg-slate-800 text-sky-300'
-                      }`}
+                  <div className="flex items-stretch gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onPick?.(it)}
+                      aria-pressed={isLead}
+                      title="改用這則新聞來評估"
+                      className="min-w-0 flex-1 text-left px-3 py-1.5 cursor-pointer"
                     >
-                      {it.kind}
-                    </span>
-                    <span className="text-slate-200 break-words">{it.title}</span>
-                    <span className="text-slate-500 ml-2">— {it.source}</span>
-                    <span className={`ml-2 ${st.cls}`}>{st.label}</span>
-                    {TIMING_LABEL[it.timing] && (
-                      <span className="ml-1 text-[10px] px-1 rounded bg-slate-800 text-slate-300">{TIMING_LABEL[it.timing]}</span>
-                    )}
-                    {it.sentiment_conflict && (
-                      <span className="ml-1 text-[10px] text-rose-300" title={`AI 判斷${st.label}，但關鍵字規則判斷相反；兩者至少一個錯，請點原文確認`}>
-                        AI 與規則相反
-                      </span>
-                    )}
-                    {it.check_fulltext && (
-                      <span className="ml-1 text-[10px] text-amber-300" title="標題含大跌、跌破、避險等字眼，標題常低估內文的嚴重程度；我們只讀標題與摘要，建議點「原文」確認">
-                        建議讀原文
-                      </span>
-                    )}
-                    {isLead && <span className="ml-2 text-sky-300">已選為重點</span>}
-                  </button>
-                  {safeUrl(it.link) && (
-                    <a
-                      href={safeUrl(it.link)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 self-center px-2 py-1 text-[11px] text-sky-300 hover:text-white"
-                      title="開啟原文（新分頁）"
-                      aria-label={`開啟原文：${it.title}`}
+                      <span className="text-slate-500 font-mono mr-1">#{idx + 1}</span>
+                      {it.ai?.importance && (
+                        <span className="mr-1 text-amber-300" title="AI 判斷的重要性（5 最重要）">
+                          {'★'.repeat(it.ai.importance)}
+                          {'☆'.repeat(5 - it.ai.importance)}
+                        </span>
+                      )}
+                      <span className="text-slate-500 font-mono mr-2">{fmtTime(it.local_iso)}</span>
+                      <KindTag kind={it.kind} />
+                      <span className="text-slate-200 break-words">{it.title}</span>
+                      <span className="text-slate-500 ml-2">— {it.source}</span>
+                      <span className={`ml-2 ${st.cls}`}>{st.label}</span>
+                      {TIMING_LABEL[it.timing] && (
+                        <span className="ml-1 text-[10px] px-1 rounded bg-slate-800 text-slate-300">
+                          {TIMING_LABEL[it.timing]}
+                        </span>
+                      )}
+                      {it.sentiment_conflict && (
+                        <span
+                          className="ml-1 text-[10px] text-rose-300"
+                          title={`AI 判斷${st.label}，但關鍵字規則判斷相反；兩者至少一個錯，請點原文確認`}
+                        >
+                          AI 與規則相反
+                        </span>
+                      )}
+                      {it.check_fulltext && (
+                        <span
+                          className="ml-1 text-[10px] text-amber-300"
+                          title="標題含大跌、跌破、避險等字眼，標題常低估內文的嚴重程度；我們只讀標題與摘要，建議點「原文」確認"
+                        >
+                          建議讀原文
+                        </span>
+                      )}
+                      {!it.mentions && (
+                        <span className="ml-1 text-[10px] text-slate-500">
+                          （標題沒提到這檔，可能只是相關報導）
+                        </span>
+                      )}
+                      {isLead && <span className="ml-2 text-sky-300">已選為重點</span>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpen({ ...open, [key]: !isOpen })}
+                      aria-expanded={isOpen}
+                      className="shrink-0 self-center px-2 py-1 text-[11px] text-slate-300 hover:text-white cursor-pointer"
                     >
-                      原文↗
-                    </a>
-                  )}
+                      細節 {isOpen ? '▴' : '▾'}
+                    </button>
+                    {safeUrl(it.link) && (
+                      <a
+                        href={safeUrl(it.link)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 self-center px-2 py-1 text-[11px] text-sky-300 hover:text-white"
+                        title="開啟原文（新分頁）"
+                        aria-label={`開啟原文：${it.title}`}
+                      >
+                        原文↗
+                      </a>
+                    )}
+                  </div>
+                  {isOpen && <ItemDetail it={it} atrPct={d.atr_pct} />}
                 </div>
               );
             })}
           </div>
+          {d.reaction_changers?.length > 0 && (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5 text-xs">
+              <div className="text-slate-300 font-semibold mb-1">
+                哪些因素可能改變目前的市場反應
+              </div>
+              {d.reaction_changers.map((x) => (
+                <div key={x} className="text-slate-300">
+                  • {x}
+                </div>
+              ))}
+            </div>
+          )}
+          {d.method && <div className="text-[11px] text-slate-500">{d.method}</div>}
         </div>
+      )}
+
+      {d.others?.length > 0 && (
+        <details className="rounded-xl border border-slate-800 bg-slate-950/40">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white">
+            其他抓到但沒整理的新聞（{d.others.length} 則，只列標題與連結，沒有 AI 整理與股價反應）
+          </summary>
+          <div className="px-3 pb-3 space-y-1">
+            <div className="flex gap-1 text-[11px]">
+              {['全部', '新聞', '公告', '分析專欄'].map((k) => (
+                <button
+                  type="button"
+                  key={k}
+                  onClick={() => setKind(k)}
+                  aria-pressed={kind === k}
+                  className={`px-2 py-0.5 rounded cursor-pointer ${kind === k ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-72 overflow-y-auto space-y-1">
+              {d.others
+                .filter((it) =>
+                  kind === '全部'
+                    ? true
+                    : kind === '公告'
+                      ? OFFICIAL.includes(it.kind)
+                      : it.kind === kind,
+                )
+                .map((it) => (
+                  <div
+                    key={`${it.local_iso}-${it.title}`}
+                    className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="text-slate-500 font-mono mr-2">{fmtTime(it.local_iso)}</span>
+                      <KindTag kind={it.kind} />
+                      <span className="text-slate-200 break-words">{it.title}</span>
+                      <span className="text-slate-500 ml-2">— {it.source}</span>
+                    </span>
+                    {safeUrl(it.link) && (
+                      <a
+                        href={safeUrl(it.link)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 px-2 text-[11px] text-sky-300 hover:text-white"
+                        aria-label={`開啟原文：${it.title}`}
+                      >
+                        原文↗
+                      </a>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        </details>
       )}
     </section>
   );
