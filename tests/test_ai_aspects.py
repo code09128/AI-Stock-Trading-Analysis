@@ -83,6 +83,16 @@ class QuestionPromptTests(unittest.TestCase):
                 report = ai_client._build_explain_prompt(self.profile, module, {"symbol": "2330"}, "")[0]
                 self.assertIn("骨架", report)
 
+    def test_every_ai_answer_asks_for_1000_to_1500_chars(self):
+        for module in ai_client.MODULE_TASKS:
+            with self.subTest(module=module), patch.object(ai_client, "is_enabled", return_value=True):
+                for q in ("", "估值貴不貴？"):
+                    user = ai_client._build_explain_prompt(self.profile, module, {"symbol": "2330"}, q)[0]
+                    self.assertIn("1000～1500 字", user)
+
+    def test_claude_output_limit_fits_1500_chinese_chars(self):
+        self.assertGreaterEqual(ai_client.MAX_OUTPUT_TOKENS, 3000)
+
     def test_different_questions_produce_different_prompts(self):
         self.assertNotEqual(self.build("估值貴不貴？"), self.build("法人最近在買還是賣？"))
 

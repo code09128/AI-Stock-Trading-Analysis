@@ -231,6 +231,9 @@ def _ollama_chat(profile: Dict[str, Any], model: str, base: str, system: str, us
         raise AIError(f"Ollama 回應格式異常：{str(r)[:200]}") from None
 
 
+MAX_OUTPUT_TOKENS = 4096  # 中文 1500 字約 3000 token，要留足夠空間才不會把回答切斷
+
+
 def complete(profile: Dict[str, Any], system: str, user: str, json_mode: bool = False,
              timeout: int = 90) -> str:
     t = profile.get("type")
@@ -258,7 +261,7 @@ def complete(profile: Dict[str, Any], system: str, user: str, json_mode: bool = 
             raise AIError(f"Gemini 回應格式異常：{str(r)[:200]}") from None
     if t == "anthropic":
         r = _request(f"{base}/v1/messages", {"x-api-key": key, "anthropic-version": "2023-06-01"},
-                     {"model": model, "max_tokens": 2048, "system": system,
+                     {"model": model, "max_tokens": MAX_OUTPUT_TOKENS, "system": system,
                       "messages": [{"role": "user", "content": user}]}, timeout, key)
         record_usage(t, model, profile.get("name", ""), r, started)
         try:
@@ -375,7 +378,7 @@ def complete_stream(profile: Dict[str, Any], system: str, user: str, timeout: in
     if t == "anthropic":
         usage: Dict[str, Any] = {}
         with _open_stream(f"{base}/v1/messages", {"x-api-key": key, "anthropic-version": "2023-06-01"},
-                          {"model": model, "max_tokens": 2048, "stream": True, "system": system,
+                          {"model": model, "max_tokens": MAX_OUTPUT_TOKENS, "stream": True, "system": system,
                            "messages": [{"role": "user", "content": user}]}, timeout, key) as resp:
             for obj in _iter_sse_json(resp):
                 ut = obj.get("type")
@@ -554,8 +557,8 @@ def _build_explain_prompt(profile: Dict[str, Any], module: str, data: Any, quest
         user = (f"{data_text}\n\n====\n{facts_block}"
                 f"【使用者想問】{question}\n"
                 "【回答方式】這次是問答，不是寫報告：第一句就正面回答這個問題（有立場，例如適合／不適合、偏貴／合理）。"
-                "接著只列跟這個問題有關的 2～4 個依據，每個都引用資料裡的數字；跟問題無關的面向不要提。"
-                "問題簡單就寫短，需要分析的可以寫長，總長約 150～600 字，不要用報告的段落標題，也不要寫開場白。"
+                "接著展開跟這個問題有關的依據、不同情境與具體做法，每個依據都引用資料裡的數字；跟問題無關的面向不要提，也不要重複灌水。"
+                "總長約 1000～1500 字（資料不足時照實寫短，不要為了湊字數編內容），不要用報告的段落標題，也不要寫開場白。"
                 "回答這個問題需要的資料如果沒有，直接寫「資料不足：缺 XXX」，並說明現有資料能回答到哪裡。\n")
     else:
         user = (f"{data_text}\n\n====\n{facts_block}"
@@ -596,9 +599,9 @@ def explain(profile: Dict[str, Any], module: str, data: Any, question: str = "",
     user, data_text, facts, truncated = _build_explain_prompt(profile, module, data, question, context)
     started = time.time()
     begin_count = len(getattr(_TLS, "items", None) or [])
-    answer = complete(profile, SYSTEM_GUARD, user)
+    answer = complete(profile, SYSTEM_GUARD, user, timeout=180)
     if not answer.strip():  # 思考型或免費模型偶爾把額度用在思考、正文空白：重試一次
-        answer = complete(profile, SYSTEM_GUARD, user)
+        answer = complete(profile, SYSTEM_GUARD, user, timeout=180)
     return _finalize_explain(profile, answer, user, data_text, facts, context, truncated, started, begin_count)
 
 
