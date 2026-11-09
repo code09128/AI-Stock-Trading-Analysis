@@ -1,4 +1,5 @@
 // 設定頁：版本與線上更新、金鑰與資料額度（寫進程式資料夾的 .env，使用者不必自己建立或搬檔案）
+import { cachedJson } from '../fetch_cache';
 import { bus } from '../bus';
 import { Tip } from '../ui';
 
@@ -13,12 +14,7 @@ function UpdatePanel() {
     setBusy('check');
     setMsg(null);
     try {
-      const r = await fetch('/api/update/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const d = await r.json();
+      const d = await cachedJson('/api/update/check', {}, silent ? 600000 : 0);
       if (!d.ok || d.error) throw new Error(d.error || '檢查更新失敗');
       setChk(d);
       if (!silent) setMsg({
@@ -69,7 +65,7 @@ function UpdatePanel() {
   };
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+    <div className="ta-card rounded-2xl p-5 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="font-bold text-white">
@@ -304,7 +300,7 @@ function KeysPanel() {
 
   return (
     <div
-      className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3"
+      className="ta-card rounded-2xl p-5 space-y-3"
       data-tour="settings-keys"
     >
       <div>

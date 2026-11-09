@@ -136,7 +136,7 @@ function UsagePanel({ cfg }) {
   };
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+    <div className="ta-card rounded-2xl p-5 space-y-4">
       <div>
         <h3 className="font-bold text-white">AI 用量與費用（估算）</h3>
         <p className="text-xs text-slate-400 mt-1">
@@ -302,7 +302,7 @@ function ActivityPanel() {
   };
   return (
     <div
-      className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3"
+      className="ta-card rounded-2xl p-5 space-y-3"
       data-no-log
     >
       <div>

@@ -252,7 +252,7 @@ INST_KEYS = [("自營商(自行買賣)", "dealer"), ("自營商(避險)", "deale
              ("外資及陸資(不含外資自營商)", "foreign"), ("外資自營商", "foreign"), ("合計", "total")]
 
 
-def fund_flow(days: int = 5) -> Dict[str, Any]:
+def fund_flow(days: int = 10) -> Dict[str, Any]:
     """三大法人（外資、投信、自營商）買賣超金額，最近 days 個交易日，單位：億元。"""
     def load():
         rows = []
@@ -291,8 +291,10 @@ def top_market_cap(n: int = 50) -> Dict[str, Any]:
             close, shares = _num(r.get("ClosingPrice")), _num((info or {}).get("已發行普通股數或TDR原股發行股數"))
             if not info or not close or not shares:
                 continue
-            out.append({"code": code, "name": str(r.get("Name", "")).strip(), "close": close,
-                        "change": _num(r.get("Change")), "volume": (_num(r.get("TradeVolume")) or 0) / 1000,
+            ind_code = str(info.get("產業別", "")).strip()
+            industry = stock_info.INDUSTRY.get(ind_code.zfill(2), ind_code) if ind_code else "其他"
+            out.append({"code": code, "name": str(r.get("Name", "")).strip(), "industry": industry or "其他",
+                        "close": close, "change": _num(r.get("Change")), "volume": (_num(r.get("TradeVolume")) or 0) / 1000,
                         "shares": shares, "date": _roc_date(r.get("Date"))})
         out.sort(key=lambda x: x["close"] * x["shares"], reverse=True)
         return {"rows": out[:n], "date": out[0]["date"] if out else None}
@@ -340,9 +342,13 @@ def tw50() -> Dict[str, Any]:
                 prev_close = r["close"] - r["change"] if r["change"] is not None else None
                 row = {"price": r["close"], "change": r["change"], "change_pct": _pct(r["change"], prev_close),
                        "volume": r["volume"], "volume_ratio": None, "quote_time": f"{r['date']} 收盤", "is_live": False}
-            row.update(code=r["code"], name=r["name"],
+            row.update(code=r["code"], name=r["name"], industry=r.get("industry") or "其他",
                        market_cap=round(row["price"] * r["shares"] / 1e8) if row["price"] else None)
             rows.append(row)
+        raw_caps = [(row["price"] or 0) * r["shares"] for row, r in zip(rows, base)]
+        total_cap = sum(raw_caps)
+        for row, cap in zip(rows, raw_caps):
+            row["weight_pct"] = round(cap / total_cap * 100, 2) if total_cap > 0 and cap else None
         return {"rows": rows, "rank_date": rank["date"], "live_count": sum(1 for r in rows if r["is_live"]),
                 "note": "依最近收盤日的市值排出上市前 50 大（不含 ETF），接近台灣 50 指數成分股；正式成分股另有流通量等篩選，可能差幾檔。",
                 "source": "證交所 STOCK_DAY_ALL × 上市公司已發行股數（排名）、TWSE MIS（盤中價格）"}

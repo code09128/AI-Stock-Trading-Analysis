@@ -1,7 +1,7 @@
 // 看盤頁左側的「技術總覽」表格與「提醒」面板，以及全站共用的提醒判斷引擎 AlertWatcher（掛在 App 上）
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { baseCode, colorOf, fmt, normSym, readLS, signed, writeLS } from '../ui';
+import { baseCode, colorOf, fmt, normSym, readLS, signed, writeLS, marketSessionOpen } from '../ui';
 import { Donut, Scatter } from './mini_charts';
 
 const { useState, useEffect, useRef } = React;
@@ -126,8 +126,20 @@ function AlertWatcher({ say }) {
       const syms = [...new Set(list.map((a) => a.symbol))];
       const quotes = {};
       try {
-        for (const q of (await post('/api/quotes', syms)).quotes || []) {
-          if (q) quotes[baseCode(q.symbol)] = q;
+        // 看盤頁每 5 秒已在抓同樣的代號：夠新就直接用；休市時價格不會變，1 分鐘問一次就好
+        bus.quoteMemo = bus.quoteMemo || {};
+        const need = syms.filter((s) => {
+          const m = bus.quoteMemo[baseCode(s)];
+          if (!m || Date.now() - m.at >= (marketSessionOpen(s) ? 8000 : 55000)) return true;
+          quotes[baseCode(s)] = m.q;
+          return false;
+        });
+        if (need.length) {
+          for (const q of (await post('/api/quotes', need)).quotes || []) {
+            if (!q) continue;
+            quotes[baseCode(q.symbol)] = q;
+            bus.quoteMemo[baseCode(q.symbol)] = { q, at: Date.now() };
+          }
         }
         const rsiSyms = [
           ...new Set(list.filter((a) => a.type.startsWith('rsi')).map((a) => a.symbol)),

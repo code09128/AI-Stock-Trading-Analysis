@@ -10,6 +10,7 @@ import { AI_TYPES as TYPES, LocalDetect, ProfileEditor, newAIProfile as newProfi
 import { BackgroundServicePanel } from './settings_background';
 import { ZoomSettings } from '../desktop_bridge';
 import { AppearanceSettings } from './settings_appearance';
+import { PageHead } from './card_box';
 
 const { useState, useEffect } = React;
 
@@ -120,191 +121,220 @@ function SettingsPage() {
     setEditing(null);
   };
   return (
-    <div className="space-y-5 max-w-4xl">
-      <UpdatePanel />
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-        <div>
-          <h2 className="text-lg font-bold text-white">AI 連線</h2>
-          <p className="text-xs text-slate-400 leading-relaxed mt-1">
-            這裡的設定<b className="text-white">全系統共用</b>
-            ：技術分析的買賣決策、各分頁底部的「AI 解讀」都會用同一組連線，
-            也可以在每一頁臨時改用別組。<b className="text-white">不設定也完全能用</b>
-            ，系統會使用內建規則引擎。 你可以綁定雲端
-            AI（Gemini、OpenAI、Claude），或接到自己電腦上的本地模型（Ollama、LM Studio 等）。
-          </p>
+    <div className="space-y-3.5">
+      <PageHead
+        title="系統設定"
+        sub="外觀主題、AI 連線與金鑰、自動監控、資料備份與系統診斷。"
+      />
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+        <div className="md:col-span-6 space-y-3.5">
+          <AppearanceSettings />
+          <ZoomSettings />
         </div>
+        <div className="md:col-span-6 space-y-3.5">
+          <UpdatePanel />
+          <BackgroundServicePanel />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+        <div className="md:col-span-8 ta-card rounded-2xl p-5 space-y-4">
+          <div>
+            <h2 className="text-lg font-bold text-white">AI 連線</h2>
+            <p className="text-xs text-slate-400 leading-relaxed mt-1">
+              這裡的設定<b className="text-white">全系統共用</b>
+              ：技術分析的買賣決策、各分頁與右側抽屜的「AI 解讀」都會用同一組連線，
+              也可以在每一頁臨時改用別組。<b className="text-white">不設定也完全能用</b>
+              ，系統會使用內建規則引擎。 你可以綁定雲端
+              AI（Gemini、OpenAI、Claude），或接到自己電腦上的本地模型（Ollama、LM Studio 等）。
+            </p>
+          </div>
 
-        <LocalDetect cfg={cfg} save={save} />
+          <LocalDetect cfg={cfg} save={save} />
 
-        <div className="space-y-2">
-          <label className="flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-800 bg-slate-950/60 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="ai-active"
-              checked={!cfg.activeId}
-              onChange={() => save({ ...cfg, activeId: null }, '已改用內建規則引擎（不使用 AI）')}
-            />
-            <span className="text-white font-semibold">內建規則引擎（不使用 AI）</span>
-            <span className="text-[11px] text-slate-500">
-              價位與決策完全由程式規則產生，AI 解讀按鈕會提示先設定連線
-            </span>
-          </label>
-          {cfg.profiles.map((p) => (
-            <div
-              key={p.id}
-              className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-xl border border-slate-800 bg-slate-950/60 text-sm"
-            >
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-800 bg-slate-950/60 text-sm cursor-pointer">
               <input
                 type="radio"
                 name="ai-active"
-                checked={cfg.activeId === p.id}
-                onChange={() => save({ ...cfg, activeId: p.id }, `已改用 AI 連線「${p.name}」`)}
-                aria-label={`預設使用 ${p.name}`}
+                checked={!cfg.activeId}
+                onChange={() => save({ ...cfg, activeId: null }, '已改用內建規則引擎（不使用 AI）')}
               />
-              <span className="text-white font-semibold">{p.name}</span>
-              <span className="text-[11px] text-slate-400">
-                {TYPES[p.type]?.label.split('（')[0]}
+              <span className="text-white font-semibold">內建規則引擎（不使用 AI）</span>
+              <span className="text-[11px] text-slate-500">
+                價位與決策完全由程式規則產生，AI 解讀按鈕會提示先設定連線
               </span>
-              <span className="mono text-[11px] text-sky-300">{p.model || '未選模型'}</span>
-              {p.base_url && (
-                <span className="mono text-[11px] text-slate-500">{p.base_url}</span>
-              )}
-              <span className="ml-auto flex gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setEditing({ ...p })}
-                  className="text-sky-300 hover:text-white cursor-pointer"
-                >
-                  編輯
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      !window.confirm(`確定刪除 AI 連線「${p.name}」？（含這組連線裡的金鑰）`)
-                    ) {
-                      bus.toast?.('ℹ️ 已取消，AI 連線沒有變動');
-                      return;
-                    }
-                    save(
-                      {
-                        ...cfg,
-                        profiles: cfg.profiles.filter((x) => x.id !== p.id),
-                        activeId: cfg.activeId === p.id ? null : cfg.activeId,
-                      },
-                      `已刪除 AI 連線「${p.name}」`,
-                    );
-                  }}
-                  className="text-slate-500 hover:text-rose-400 cursor-pointer"
-                >
-                  刪除
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {editing ? (
-          <ProfileEditor
-            p={editing}
-            onChange={setEditing}
-            onSave={saveProfile}
-            onCancel={() => setEditing(null)}
-          />
-        ) : (
-          <div className="flex flex-wrap gap-2 text-xs">
-            {[
-              ['gemini', '＋ Gemini'],
-              ['openai', '＋ OpenAI'],
-              ['anthropic', '＋ Claude'],
-              ['openrouter', '＋ OpenRouter'],
-              ['openai_compatible', '＋ 本地／自架模型'],
-            ].map(([t, label]) => (
-              <button
-                type="button"
-                key={t}
-                onClick={() => setEditing(newProfile(t))}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sky-300 hover:bg-slate-700 cursor-pointer"
+            </label>
+            {cfg.profiles.map((p) => (
+              <div
+                key={p.id}
+                className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-xl border border-slate-800 bg-slate-950/60 text-sm"
               >
-                {label}
-              </button>
+                <input
+                  type="radio"
+                  name="ai-active"
+                  checked={cfg.activeId === p.id}
+                  onChange={() => save({ ...cfg, activeId: p.id }, `已改用 AI 連線「${p.name}」`)}
+                  aria-label={`預設使用 ${p.name}`}
+                />
+                <span className="text-white font-semibold">{p.name}</span>
+                <span className="text-[11px] text-slate-400">
+                  {TYPES[p.type]?.label.split('（')[0]}
+                </span>
+                <span className="mono text-[11px] text-sky-300">{p.model || '未選模型'}</span>
+                {p.base_url && (
+                  <span className="mono text-[11px] text-slate-500">{p.base_url}</span>
+                )}
+                <span className="ml-auto flex gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setEditing({ ...p })}
+                    className="text-sky-300 hover:text-white cursor-pointer"
+                  >
+                    編輯
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        !window.confirm(`確定刪除 AI 連線「${p.name}」？（含這組連線裡的金鑰）`)
+                      ) {
+                        bus.toast?.('ℹ️ 已取消，AI 連線沒有變動');
+                        return;
+                      }
+                      save(
+                        {
+                          ...cfg,
+                          profiles: cfg.profiles.filter((x) => x.id !== p.id),
+                          activeId: cfg.activeId === p.id ? null : cfg.activeId,
+                        },
+                        `已刪除 AI 連線「${p.name}」`,
+                      );
+                    }}
+                    className="text-slate-500 hover:text-rose-400 cursor-pointer"
+                  >
+                    刪除
+                  </button>
+                </span>
+              </div>
             ))}
           </div>
-        )}
 
-        <details className="rounded-xl border border-slate-800 p-3 text-xs text-slate-300 leading-relaxed">
-          <summary className="cursor-pointer text-slate-200">
-            怎麼建立本地模型（以 Ollama 為例）
-          </summary>
-          <ol className="list-decimal pl-5 mt-2 space-y-1">
-            <li>
-              到 ollama.com 安裝 Ollama，開啟後它會在{' '}
-              <span className="mono">http://127.0.0.1:11434</span> 提供服務。
-            </li>
-            <li>
-              在終端機下載一個模型，例如 <span className="mono">ollama pull qwen2.5:7b</span>
-              （大小與記憶體需求依模型而定， 7B 約需 8GB 以上記憶體）。
-            </li>
-            <li>
-              回到這裡按「＋
-              本地／自架模型」，點「Ollama」帶入網址，再按「取得模型清單」選擇剛下載的模型，最後「測試連線」。
-            </li>
-            <li>
-              LM Studio、llama.cpp server、vLLM 等只要提供 OpenAI 相容的 /v1
-              介面也能用，填對應網址即可。
-            </li>
-          </ol>
-          <p className="mt-2 text-slate-500">
-            本地模型的中文與數字能力通常弱於大型雲端模型，所以系統會檢查 AI
-            回答裡的數字是否來自系統資料，並標出找不到的數字。
-            資料不會離開你的電腦（除非你選雲端服務）。
-          </p>
-        </details>
-        <p className="text-[11px] text-slate-500 leading-relaxed">
-          API Key 只存在這個瀏覽器的 localStorage（未加密，請勿在共用電腦使用），只在你按 AI
-          功能時經本機伺服器轉送給你選的服務，伺服器不會保存。
-          不想存在瀏覽器的話，可以把金鑰填在下方「金鑰與資料額度」， 這裡的 Key 欄位留空即可。
-        </p>
-      </div>
-
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
-        <h3 className="font-bold text-white">AI 作用範圍</h3>
-        <p className="text-xs text-slate-400">
-          取消勾選的功能不會顯示 AI 區塊（或不使用 AI 決策），改回純規則引擎／純數字。
-        </p>
-        {Object.entries(SCOPE_LABELS).map(([k, label]) => (
-          <label
-            key={k}
-            className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              checked={cfg.scope[k] !== false}
-              onChange={(e) =>
-                save(
-                  { ...cfg, scope: { ...cfg.scope, [k]: e.target.checked } },
-                  `「${label}」已${e.target.checked ? '開啟' : '關閉'} AI`,
-                )
-              }
+          {editing ? (
+            <ProfileEditor
+              p={editing}
+              onChange={setEditing}
+              onSave={saveProfile}
+              onCancel={() => setEditing(null)}
             />
-            {String(label)}
-          </label>
-        ))}
+          ) : (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {[
+                ['gemini', '＋ Gemini'],
+                ['openai', '＋ OpenAI'],
+                ['anthropic', '＋ Claude'],
+                ['openrouter', '＋ OpenRouter'],
+                ['openai_compatible', '＋ 本地／自架模型'],
+              ].map(([t, label]) => (
+                <button
+                  type="button"
+                  key={t}
+                  onClick={() => setEditing(newProfile(t))}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sky-300 hover:bg-slate-700 cursor-pointer"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <details className="rounded-xl border border-slate-800 p-3 text-xs text-slate-300 leading-relaxed">
+            <summary className="cursor-pointer text-slate-200">
+              怎麼建立本地模型（以 Ollama 為例）
+            </summary>
+            <ol className="list-decimal pl-5 mt-2 space-y-1">
+              <li>
+                到 ollama.com 安裝 Ollama，開啟後它會在{' '}
+                <span className="mono">http://127.0.0.1:11434</span> 提供服務。
+              </li>
+              <li>
+                在終端機下載一個模型，例如 <span className="mono">ollama pull qwen2.5:7b</span>
+                （大小與記憶體需求依模型而定， 7B 約需 8GB 以上記憶體）。
+              </li>
+              <li>
+                回到這裡按「＋
+                本地／自架模型」，點「Ollama」帶入網址，再按「取得模型清單」選擇剛下載的模型，最後「測試連線」。
+              </li>
+              <li>
+                LM Studio、llama.cpp server、vLLM 等只要提供 OpenAI 相容的 /v1
+                介面也能用，填對應網址即可。
+              </li>
+            </ol>
+            <p className="mt-2 text-slate-500">
+              本地模型的中文與數字能力通常弱於大型雲端模型，所以系統會檢查 AI
+              回答裡的數字是否來自系統資料，並標出找不到的數字。
+              資料不會離開你的電腦（除非你選雲端服務）。
+            </p>
+          </details>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            API Key 只存在這個瀏覽器的 localStorage（未加密，請勿在共用電腦使用），只在你按 AI
+            功能時經本機伺服器轉送給你選的服務，伺服器不會保存。
+            不想存在瀏覽器的話，可以把金鑰填在下方「金鑰與資料額度」， 這裡的 Key 欄位留空即可。
+          </p>
+        </div>
+
+        <div className="md:col-span-4 space-y-3.5">
+          <div className="ta-card rounded-2xl p-5 space-y-2">
+            <h3 className="font-bold text-white">AI 作用範圍</h3>
+            <p className="text-xs text-slate-400">
+              取消勾選的功能不會顯示 AI 區塊（或不使用 AI 決策），改回純規則引擎／純數字。
+            </p>
+            {Object.entries(SCOPE_LABELS).map(([k, label]) => (
+              <label
+                key={k}
+                className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={cfg.scope[k] !== false}
+                  onChange={(e) =>
+                    save(
+                      { ...cfg, scope: { ...cfg.scope, [k]: e.target.checked } },
+                      `「${label}」已${e.target.checked ? '開啟' : '關閉'} AI`,
+                    )
+                  }
+                />
+                {String(label)}
+              </label>
+            ))}
+          </div>
+          <div className="ta-card rounded-2xl p-5 space-y-2">
+            <h2 className="text-sm font-bold text-white">系統自檢</h2>
+            <p className="text-xs text-slate-400">
+              用固定的測試資料檢查核心計算規則（回測、風控、評分等）是否正常，給排查問題時使用，一般看盤不需要。
+            </p>
+            <button
+              type="button"
+              onClick={() => bus.goTab?.('visual_tests')}
+              className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-sky-300 hover:text-white text-xs cursor-pointer"
+            >
+              開啟系統自檢
+            </button>
+          </div>
+        </div>
       </div>
 
-      <KeysPanel />
-
-      <UsagePanel cfg={cfg} />
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+        <div className="md:col-span-6">
+          <KeysPanel />
+        </div>
+        <div className="md:col-span-6">
+          <UsagePanel cfg={cfg} />
+        </div>
+      </div>
 
       <ActivityPanel />
 
-      <ZoomSettings />
-
-      <AppearanceSettings />
-
-      <BackgroundServicePanel />
-
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
+      <div className="ta-card rounded-2xl p-5 space-y-2">
         <h3 className="font-bold text-white">資料管理</h3>
         <p className="text-xs text-slate-400">
           持股、交易紀錄、交易規則、自選股、提醒、AI 設定都自動存成程式資料夾裡的檔案，
@@ -418,20 +448,6 @@ function SettingsPage() {
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-2">
-        <h2 className="text-sm font-bold text-white">系統自檢</h2>
-        <p className="text-xs text-slate-400">
-          用固定的測試資料檢查核心計算規則（回測、風控、評分等）是否正常，給排查問題時使用，一般看盤不需要。
-        </p>
-        <button
-          type="button"
-          onClick={() => bus.goTab?.('visual_tests')}
-          className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-sky-300 hover:text-white text-xs cursor-pointer"
-        >
-          開啟系統自檢
-        </button>
       </div>
     </div>
   );

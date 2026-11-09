@@ -408,7 +408,7 @@ const explainKey = (module, data, drawer = false) => {
 const setExplainQuestion = (key, question) => setTask(key, { question });
 
 // drawer／aspects／skippedLabels 是側邊 AI 抽屜用的：只讓後端抓勾選的面向，並把沒勾的面向告訴 AI（它會寫「資料不足」而不是猜）；建議問題由抽屜自己畫
-function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer = false, aspects, skippedLabels }: { module: string; data: any; title?: string; provenance?: any[]; drawer?: boolean; aspects?: string[]; skippedLabels?: string[] }) {
+function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer = false, aspects, skippedLabels, includeHoldings = true }: { module: string; data: any; title?: string; provenance?: any[]; drawer?: boolean; aspects?: string[]; skippedLabels?: string[]; includeHoldings?: boolean }) {
   const cfg = useAISettings();
   const { holdings } = usePortfolio();
   const [pid, setPid] = useState('');
@@ -419,9 +419,37 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer 
   const setQuestion = (q) => setTask(key, { question: q });
   if (cfg.scope[module] === false)
     return drawer ? <div className="text-xs text-amber-300">這項 AI 解讀已在「設定 → AI 作用範圍」關閉。</div> : null;
+  if (!drawer && (module === 'mod3' || module === 'mod4' || module === 'mod5')) {
+    return (
+      <div
+        className="ta-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3"
+        data-tour={`ai-explain-${module}`}
+      >
+        <div>
+          <div className="text-sm font-bold text-white flex items-center gap-1.5">
+            <span>✦ {title}</span>
+            <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">
+              右側抽屜
+            </span>
+          </div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            可勾選要傳給 AI 的資料面向、預覽實際數值、點選建議問題並核對回答中的數字。
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => bus.openAiDrawer?.(module)}
+          className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] hover:opacity-90 cursor-pointer shadow-lg shadow-indigo-500/20"
+        >
+          ✦ 開啟 AI 分析抽屜
+        </button>
+      </div>
+    );
+  }
   const profile = cfg.profiles.find((p) => p.id === (pid || cfg.activeId)) || null;
   const label = `${MODULE_NAMES[module] || module}${code ? ` ${code}` : ''}`;
-  const pos = myPosition(module, data, holdings);
+  const rawPos = myPosition(module, data, holdings);
+  const pos = includeHoldings ? rawPos : null;
   const suggestions = drawer ? [] : suggestQuestions(module, data, pos);
   const run = () => {
     const payload = {
@@ -437,18 +465,19 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer 
   };
   return (
     <div
-      className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3"
+      className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3 min-w-0"
       data-tour={`ai-explain-${module}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-bold text-violet-200">{title}</div>
-        <div className="flex items-center gap-2 text-xs">
+        {/* 連線名稱可能很長：選單要能縮，不能把窄的抽屜撐出橫向捲軸 */}
+        <div className="flex items-center gap-2 text-xs min-w-0 max-w-full">
           {cfg.profiles.length > 0 && (
             <select
               value={pid || cfg.activeId || ''}
               onChange={(e) => setPid(e.target.value)}
               aria-label="選擇 AI 連線"
-              className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200"
+              className="min-w-0 flex-1 truncate bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200"
             >
               {cfg.profiles.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -460,7 +489,7 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer 
           <button
             type="button"
             onClick={() => bus.goTab?.('settings')}
-            className="text-slate-400 hover:text-white cursor-pointer"
+            className="shrink-0 text-slate-400 hover:text-white cursor-pointer"
           >
             設定
           </button>
@@ -480,22 +509,22 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer 
         </div>
       ) : (
         <>
-          <div className="flex gap-2">
+          <div className={drawer ? 'grid gap-2' : 'flex flex-wrap gap-2'}>
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !busy && run()}
               placeholder={`（選填）想問 AI 的問題，例如：${suggestions[0] || '現在適合分批買進嗎？'}`}
               aria-label="給 AI 的問題"
-              className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+              className={`${drawer ? 'w-full' : 'flex-[1_1_240px]'} min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white`}
             />
             <button
               type="button"
               onClick={run}
               disabled={busy}
-              className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+              className={`${drawer ? 'w-full' : 'shrink-0'} px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold whitespace-nowrap cursor-pointer disabled:opacity-50`}
             >
-              {busy ? '思考中…' : 'AI 解讀目前結果'}
+              {busy ? '思考中…' : question.trim() ? '問 AI 這個問題' : 'AI 解讀目前結果（完整報告）'}
             </button>
           </div>
           {suggestions.length > 0 && (
@@ -593,4 +622,4 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer 
   );
 }
 
-export { loadAI, saveAI, activeProfile, cleanProfile, useAISettings, callAI, useAIUsage, usageCost, loadPrices, savePrices, clearUsage, LS_USAGE, LS_PRICES, AiExplain, SCOPE_LABELS, explainKey, setExplainQuestion };
+export { loadAI, saveAI, activeProfile, cleanProfile, useAISettings, callAI, useAIUsage, usageCost, loadPrices, savePrices, clearUsage, LS_USAGE, LS_PRICES, AiExplain, SCOPE_LABELS, explainKey, setExplainQuestion, myPosition, suggestQuestions };

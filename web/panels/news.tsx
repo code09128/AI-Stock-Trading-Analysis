@@ -77,14 +77,26 @@ function Mod2Panel({ ctx }) {
     <div className="space-y-5">
       <div
         data-tour="mod2-news"
-        className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 space-y-3"
+        className="ta-card rounded-2xl p-5 space-y-3"
       >
-        <div>
-          <h2 className="text-base font-semibold text-white">新聞研究</h2>
-          <p className="mt-1 text-xs text-slate-400">
-            輸入代號按「分析新聞」：自動抓近期真實新聞與公告 → 整理並挑出最重要的一則 →
-            用它發布當下已知的價格，判斷消息是否已反映在股價。結論都附出處，沒有資料會明講缺口。
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold text-white">新聞研究</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              輸入代號按「分析新聞」：自動抓近期真實新聞與公告 → 整理並挑出最重要的一則 →
+              用它發布當下已知的價格，判斷消息是否已反映在股價。結論都附出處，沒有資料會明講缺口。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              bus.openStockAi ? bus.openStockAi('event') : bus.openAiDrawer?.('mod2')
+            }
+            className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold text-white cursor-pointer"
+            style={{ background: 'linear-gradient(135deg,#4f7cff,#8b5cf6)' }}
+          >
+            ✦ AI 事件快評
+          </button>
         </div>
         {heldSymbols.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -237,7 +249,7 @@ function Mod2Panel({ ctx }) {
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+          <div className="ta-card rounded-2xl p-5 space-y-3">
             <div className="text-xs font-mono uppercase text-slate-400">
               ATR 預期波動區間
               <Tip text="ATR(14)＝近 14 天平均每天的真實波動。預期區間＝現價 ± ATR×1.5，是消息後一天常見的上下範圍，只是統計範圍、不代表方向；台股另受 ±10% 漲跌停限制。" />
@@ -324,7 +336,7 @@ function Mod2Panel({ ctx }) {
 
       <details
         data-tour="mod2-advanced"
-        className="rounded-2xl border border-slate-800 bg-slate-900/60"
+        className="ta-card rounded-2xl"
       >
         <summary className="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-slate-200 hover:text-white">
           手動輸入：自己填新聞標題、情緒與事件前漲幅，測試「假設這則消息」（新聞清單與逐則細節在上面的新聞研究）

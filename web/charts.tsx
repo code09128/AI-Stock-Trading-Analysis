@@ -351,8 +351,8 @@ function CandlestickChart({
           </span>
           {showSignals && (
             <>
-              <span className="text-rose-400">▲買</span>
-              <span className="text-emerald-400">▼賣</span>
+              <span style={{ color: 'var(--up)' }}>▲買</span>
+              <span style={{ color: 'var(--down)' }}>▼賣</span>
             </>
           )}
         </div>
@@ -368,15 +368,18 @@ function CandlestickChart({
           ['收', activeBar.close],
         ].map(([k, v]) => (
           <span key={k}>
-            {k}: <strong className={isActiveUp ? 'text-rose-400' : 'text-emerald-400'}>{v}</strong>
+            {k}:{' '}
+            <strong style={{ color: isActiveUp ? 'var(--up)' : 'var(--down)' }}>
+              {v}
+            </strong>
           </span>
         ))}
         <span
-          className={`px-1.5 py-0.5 rounded font-bold ${
-            (activeBar.change_pct || 0) >= 0
-              ? 'bg-rose-500/20 text-rose-300'
-              : 'bg-emerald-500/20 text-emerald-300'
-          }`}
+          className="px-1.5 py-0.5 rounded font-bold"
+          style={{
+            color: (activeBar.change_pct || 0) >= 0 ? 'var(--up)' : 'var(--down)',
+            background: (activeBar.change_pct || 0) >= 0 ? 'var(--up-bg)' : 'var(--down-bg)',
+          }}
         >
           {(activeBar.change_pct || 0) >= 0
             ? `▲ +${activeBar.change_pct || 0}%`
@@ -395,7 +398,8 @@ function CandlestickChart({
         )}
         {activeSignal && (
           <span
-            className={`w-full font-sans ${activeSignal.type === 'buy' ? 'text-rose-300' : 'text-emerald-300'}`}
+            className="w-full font-sans"
+            style={{ color: activeSignal.type === 'buy' ? 'var(--up)' : 'var(--down)' }}
           >
             {activeSignal.type === 'buy' ? '▲ 買進訊號' : '▼ 賣出訊號'}
             {activeSignal.confirmed ? '' : '（盤中，尚未確認）'}：{activeSignal.reason}（僅供參考）

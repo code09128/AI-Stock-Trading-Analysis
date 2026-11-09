@@ -94,6 +94,20 @@ const signed = (v, d = 2, unit = '') => {
 const colorOf = (chg) =>
   chg > 0 ? 'text-rose-400' : chg < 0 ? 'text-emerald-400' : 'text-slate-300';
 
+// 這個市場現在是不是交易時段（當地時間；台股含盤後零股，美股只算正式盤，因為報價取 regularMarketPrice，盤前盤後不會變）。
+// 只用來決定自動更新的頻率：
+// 限制：沒有排除國定假日，假日當成開盤，結果只是照原本的頻率更新，不會少抓資料。
+const SESSION_MIN: Record<string, [number, number]> = { TW: [8 * 60 + 30, 14 * 60 + 35], US: [9 * 60 + 25, 16 * 60 + 5] };
+const marketSessionOpen = (sym: string, now: Date = new Date()) => {
+  const m = marketOf(sym);
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: tzOf(sym), weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(now);
+  const get = (type: string) => p.find((x) => x.type === type)?.value || '';
+  if (get('weekday') === 'Sat' || get('weekday') === 'Sun') return false;
+  const mins = Number(get('hour')) * 60 + Number(get('minute'));
+  const [open, close] = SESSION_MIN[m] || [8 * 60, 17 * 60 + 30];
+  return mins >= open && mins <= close;
+};
+
 // 台股跳動檔位（ETF 與股票不同）
 const twTick = (price, etf) => {
   if (etf) return price < 50 ? 0.01 : 0.05;
@@ -239,4 +253,4 @@ const SOURCE_LABELS = {
 };
 const sourceLabel = (code) => SOURCE_LABELS[code] || code || '--';
 
-export { sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, localDate, Tip, Stat };
+export { marketSessionOpen, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, localDate, Tip, Stat };

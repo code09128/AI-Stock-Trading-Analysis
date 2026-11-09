@@ -90,10 +90,27 @@ const TZ_LABEL = {
 const safeHttp = (u) => (/^https?:\/\//i.test(String(u || '')) ? u : '');
 
 // news：選填，新聞清單（/api/news 的 items）。有給才會在走勢圖上標出「發布時間落在這段走勢內」的新聞點；沒給就跟以前完全一樣
-const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: any; tz?: any; news?: any[] }) => {
+const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; lastTrade?: any; tz?: any; news?: any[]; livePrice?: number }) => {
   const [hover, setHover] = useState(null);
   const [chartRef, chartW] = useChartWidth();
-  const pts = data?.points || [];
+  const basePts = data?.points || [];
+  // 分時資料是 5 分鐘線：交易時段內把每 5 秒的最新成交價接在線尾，走勢才會即時動（真實報價，不是推算）
+  const nowSec = Date.now() / 1000;
+  const lastBase = basePts[basePts.length - 1];
+  const inSession = !data?.is_fallback && data?.session_start && data?.session_end && nowSec >= data.session_start && nowSec <= data.session_end;
+  const isLive = Boolean(inSession && livePrice > 0 && lastBase && nowSec > lastBase.ts);
+  const pts = isLive
+    ? [
+        ...basePts,
+        {
+          t: new Date(nowSec * 1000).toLocaleTimeString('en-GB', { timeZone: tz || 'Asia/Taipei', hour: '2-digit', minute: '2-digit' }),
+          ts: nowSec,
+          close: livePrice,
+          volume: 0,
+          live: true,
+        },
+      ]
+    : basePts;
 
   // lastTrade 例如 "20261022 13:30:00"：最後成交不是今天＝今天沒有交易（假日、颱風停市），而不是「尚未開盤」
   const d = String(lastTrade || '').match(/^(\d{4})-?(\d{2})-?(\d{2})\s*(\d{2}:\d{2})?/);
@@ -226,7 +243,14 @@ const IntradayChart = ({ data, lastTrade, tz, news }: { data: any; lastTrade?: a
             {fmt(((act.close - prev) / prev) * 100)}% vs 昨收
           </span>
         )}
-        <span>量 {fmt(act.volume, 0)}</span>
+        {act.live ? (
+          <span className="inline-flex items-center gap-1 text-slate-300">
+            <i className="ta-live-dot inline-block w-[7px] h-[7px] rounded-full" />
+            即時成交價・每 5 秒更新
+          </span>
+        ) : (
+          <span>量 {fmt(act.volume, 0)}</span>
+        )}
       </div>
       <svg
         ref={chartRef}

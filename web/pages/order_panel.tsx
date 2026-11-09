@@ -215,7 +215,7 @@ function OrderPanel({ ctx }) {
 
   return (
     <div
-      className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3"
+      className="ta-card rounded-2xl p-4 space-y-3"
       data-tour="watch-order"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -260,8 +260,8 @@ function OrderPanel({ ctx }) {
               set({ side: v, ...(v === 'BUY' && order.usType === 'MARKET' ? { usType: 'LIMIT' } : {}) })
             }
             options={[
-              ['BUY', '買進', 'bg-rose-600'],
-              ['SELL', '賣出', 'bg-emerald-600'],
+              ['BUY', '買進', 'up'],
+              ['SELL', '賣出', 'down'],
             ]}
           />
         </Field>
@@ -614,7 +614,7 @@ function OrderPanel({ ctx }) {
               key={c.id}
               className="flex items-center justify-between gap-2 text-xs bg-slate-950/70 border border-slate-800 rounded-lg px-3 py-1.5 mono"
             >
-              <span className={c.side === 'BUY' ? 'text-rose-400' : 'text-emerald-400'}>
+              <span style={{ color: c.side === 'BUY' ? 'var(--up)' : 'var(--down)' }}>
                 {c.side === 'BUY' ? '買' : '賣'}
               </span>
               <span className="text-white">

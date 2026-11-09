@@ -1,6 +1,6 @@
 // 新聞研究摘要：把「近期新聞彙整」的 summary 與 Priced-in 結果整理成結論、已反映程度、資料缺口、時間軸與引用清單
 // 結論句與語氣都是規則算出來的（不是 AI 編的）；每個結論都附出處，沒有資料就明講缺口。
-import { Tip } from '../ui';
+import { Tip, colorOf } from '../ui';
 import { activeProfile, cleanProfile, loadAI } from '../ai_store';
 
 const { useState } = React;
@@ -36,17 +36,23 @@ function useDigest(symbol, aiOn) {
   return { d, loading, run };
 }
 
-// 台股紅漲綠跌：偏多用紅、偏空用綠；分歧琥珀；中性灰
+// 台股紅漲綠跌（可隨配色對調）：偏多用 --up、偏空用 --down；分歧琥珀；中性灰
 const TONES = {
-  偏多: { cls: 'bg-rose-500/15 border-rose-500/50 text-rose-200', icon: '▲' },
-  偏空: { cls: 'bg-emerald-500/15 border-emerald-500/50 text-emerald-200', icon: '▼' },
+  偏多: {
+    cls: 'border-[var(--up)] text-[var(--up)] bg-[var(--up-bg)]',
+    icon: '▲',
+  },
+  偏空: {
+    cls: 'border-[var(--down)] text-[var(--down)] bg-[var(--down-bg)]',
+    icon: '▼',
+  },
   分歧: { cls: 'bg-amber-500/15 border-amber-500/50 text-amber-200', icon: '◆' },
   中性: { cls: 'bg-slate-700/40 border-slate-600 text-slate-200', icon: '●' },
   資料不足: { cls: 'bg-slate-800/60 border-slate-700 text-slate-400', icon: '○' },
 };
 const SENT = {
-  POSITIVE: { label: '利多', cls: 'text-rose-300' },
-  NEGATIVE: { label: '利空', cls: 'text-emerald-300' },
+  POSITIVE: { label: '利多', cls: 'text-[var(--up)]' },
+  NEGATIVE: { label: '利空', cls: 'text-[var(--down)]' },
   NEUTRAL: { label: '中性', cls: 'text-slate-400' },
 };
 
@@ -142,7 +148,7 @@ function ItemDetail({ it, atrPct }) {
           <span className="text-slate-500 font-sans">{r.note || '無資料'}</span>
         ) : (
           <>
-            <span className={r.pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{sign(r.pct)}</span>
+            <span className={colorOf(r.pct)}>{sign(r.pct)}</span>
             <span className="text-slate-500">
               {' '}
               （{r.from} 收盤 → {r.to} 收盤
@@ -159,25 +165,25 @@ function ItemDetail({ it, atrPct }) {
 function SentimentBar({ counts }) {
   const total = counts.positive + counts.negative + counts.neutral;
   if (!total) return <div className="text-[11px] text-slate-500">沒有可統計的新聞</div>;
-  const seg = (n, cls) =>
+  const seg = (n, bg) =>
     n > 0 ? (
       <div
-        className={`h-2 ta-grow-x ${cls}`}
-        style={{ width: `${(n / total) * 100}%` }}
+        className="h-2 ta-grow-x"
+        style={{ width: `${(n / total) * 100}%`, background: bg }}
         title={`${n} 則`}
       />
     ) : null;
   return (
     <div className="space-y-1">
       <div className="flex h-2 rounded-full overflow-hidden bg-slate-800">
-        {seg(counts.positive, 'bg-rose-500')}
-        {seg(counts.neutral, 'bg-slate-500')}
-        {seg(counts.negative, 'bg-emerald-500')}
+        {seg(counts.positive, 'var(--up)')}
+        {seg(counts.neutral, '#64748b')}
+        {seg(counts.negative, 'var(--down)')}
       </div>
       <div className="flex gap-3 text-[11px] text-slate-400">
-        <span className="text-rose-300">利多 {counts.positive}</span>
+        <span style={{ color: 'var(--up)' }}>利多 {counts.positive}</span>
         <span>中性 {counts.neutral}</span>
-        <span className="text-emerald-300">利空 {counts.negative}</span>
+        <span style={{ color: 'var(--down)' }}>利空 {counts.negative}</span>
       </div>
     </div>
   );
@@ -204,7 +210,7 @@ function ResearchSummary({ d, m2Data, onPick }) {
   return (
     <section
       data-tour="mod2-research"
-      className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 space-y-4 ta-fade-up"
+      className="ta-card rounded-2xl p-5 space-y-4 ta-fade-up"
       aria-label="新聞研究摘要"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -339,13 +345,15 @@ function ResearchSummary({ d, m2Data, onPick }) {
                   style={{ animationDelay: `${300 + i * 60}ms` }}
                 >
                   <span
-                    className={`absolute -left-[22px] top-1.5 h-2.5 w-2.5 rounded-full border border-slate-900 ${
-                      t.sentiment === 'POSITIVE'
-                        ? 'bg-rose-500'
-                        : t.sentiment === 'NEGATIVE'
-                          ? 'bg-emerald-500'
-                          : 'bg-slate-500'
-                    }`}
+                    className="absolute -left-[22px] top-1.5 h-2.5 w-2.5 rounded-full border border-slate-900"
+                    style={{
+                      background:
+                        t.sentiment === 'POSITIVE'
+                          ? 'var(--up)'
+                          : t.sentiment === 'NEGATIVE'
+                            ? 'var(--down)'
+                            : '#64748b',
+                    }}
                     aria-hidden="true"
                   />
                   <div className="text-[11px] text-slate-500 font-mono">

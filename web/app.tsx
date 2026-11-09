@@ -8,13 +8,14 @@ import { Mod3Panel } from './panels/backtest';
 import { Mod4Panel } from './panels/portfolio';
 import { Mod5Panel } from './panels/journal';
 import { SelfTestPanel } from './panels/selftest';
-import { feeDiscount, marketOf, readLS, writeLS } from './ui';
+import { feeDiscount, marketOf, readLS, writeLS, marketSessionOpen } from './ui';
 import { logEvent } from './activity_log';
 import { activeProfile, cleanProfile, loadAI, useAISettings } from './ai_store';
 import { loadPortfolio, saveRules, setJournal } from './portfolio_store';
 import { IndexBar } from './live_widgets';
 import { AlertWatcher } from './pages/overview_alerts';
 import { WatchPage, openInWatch } from './pages/watch';
+import { ModAiDrawer } from './pages/ai_drawer';
 import { STOCK_TAB_IDS } from './pages/stock_tabs';
 import { loadUiPrefs, setUiPref } from './pages/settings_appearance';
 import { MarketBoardPage } from './pages/market_board';
@@ -67,6 +68,7 @@ function App() {
   // Backdrop Modals (保留原有 ID 與 Backdrop 點擊關閉行為)
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [modAiOpen, setModAiOpen] = useState<'mod3' | 'mod4' | 'mod5' | null>(null);
 
   // 技術分析 狀態與動態看盤控制
   const [m1Ticker, setM1Ticker] = useState('2330');
@@ -235,14 +237,14 @@ function App() {
         if (prev <= 1) {
           // 上一次還沒回來、或頁面不在前景就跳過這一輪
           if (!m1Busy.current && !pageAway?.()) runMod1({ simulateTick: false, quiet: true });
-          return 5;
+          return marketSessionOpen(m1Ticker) ? 5 : 30; // 休市時價格不會變，放慢更新
         }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isLivePolling, activeTab, runMod1, aiDecisionOn]);
+  }, [isLivePolling, activeTab, runMod1, aiDecisionOn, m1Ticker]);
 
   const runMod2 = useCallback(
     async (presetOverride?: any) => {
@@ -782,16 +784,20 @@ function App() {
   const groups: string[] = [...new Set<string>(navItems.map((i) => i.group))];
   // 行情／技術分析／新聞判斷合併成側欄的「個股」一項；內部頁面 id 不變
   const inStock = STOCK_TAB_IDS.includes(activeTab);
-  // 頂欄「✦ AI 分析」：個股頁開右側抽屜；其他頁捲到該頁的 AI 解讀區，沒有就照實說
-  const openAi = () => {
+  // 頂欄與各頁「✦ AI 分析」：個股頁、策略回測、組合風控、交易檢討皆開啟右側 AI 抽屜
+  bus.openAiDrawer = (mod?: string) => {
+    const target = mod || activeTab;
     if (inStock && bus.openStockAi) {
-      bus.openStockAi();
+      bus.openStockAi(mod === 'mod1' ? 'tech' : mod === 'mod2' ? 'event' : undefined);
       return;
     }
-    const el = document.querySelector('[data-tour^="ai-explain-"]');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    else showToast('ℹ️ 這一頁還沒有可以解讀的結果（AI 解讀在：個股、技術分析、新聞研究、策略回測、組合風控、交易檢討）');
+    if (target === 'mod3' || target === 'mod4' || target === 'mod5') {
+      setModAiOpen(target);
+      return;
+    }
+    showToast('ℹ️ 這一頁沒有 AI 解讀（AI 分析支援：個股、技術分析、新聞研究、策略回測、組合風控、交易檢討）');
   };
+  const openAi = () => bus.openAiDrawer?.();
   const current = NAV_ITEMS.find((i) => i.id === (inStock ? 'watch' : activeTab)) || NAV_ITEMS[0];
   const stockSub = inStock ? NAV_ITEMS.find((i) => i.id === activeTab) : undefined;
   const sampleBadge =
@@ -1091,6 +1097,16 @@ function App() {
           </main>
         </div>
       </div>
+
+      <ModAiDrawer
+        mod={modAiOpen}
+        onClose={() => setModAiOpen(null)}
+        m3Data={m3Data}
+        m4Data={m4Data}
+        m5Data={m5Data}
+        m4Holdings={m4Holdings}
+        m5Source={m5Source}
+      />
 
       {/* Reset Modal (保留 #resetModal 與 Backdrop 點擊行為) */}
       <GuideTour

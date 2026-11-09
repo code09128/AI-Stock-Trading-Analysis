@@ -547,12 +547,21 @@ def _build_explain_prompt(profile: Dict[str, Any], module: str, data: Any, quest
     heads = re.findall(r"【([^】]+)】", task)
     skeleton = "\n".join(f"【{h}】" for h in heads)
     facts = key_facts(module, data)
-    user = (f"{data_text}\n\n====\n"
-            + (f"【關鍵數字（價位只能用這裡和上面資料裡的，不要自己推估價位）】\n{facts}\n\n" if facts else "")
-            + f"【任務】{task}\n"
-            + (f"【使用者想問】{question}\n請在對應段落直接回答這個問題。\n" if question else "")
-            + (f"\n請直接從下面的骨架開始寫（第一行就是【{heads[0]}】），每個段落都要有內容，不要寫開場白：\n{skeleton}"
-               if heads else ""))
+    facts_block = f"【關鍵數字（價位只能用這裡和上面資料裡的，不要自己推估價位）】\n{facts}\n\n" if facts else ""
+    question = (question or "").strip()
+    if question:
+        # 使用者問了具體問題：只回答問題，不寫固定報告。否則每個問題都會得到同一份報告
+        user = (f"{data_text}\n\n====\n{facts_block}"
+                f"【使用者想問】{question}\n"
+                "【回答方式】這次是問答，不是寫報告：第一句就正面回答這個問題（有立場，例如適合／不適合、偏貴／合理）。"
+                "接著只列跟這個問題有關的 2～4 個依據，每個都引用資料裡的數字；跟問題無關的面向不要提。"
+                "問題簡單就寫短，需要分析的可以寫長，總長約 150～600 字，不要用報告的段落標題，也不要寫開場白。"
+                "回答這個問題需要的資料如果沒有，直接寫「資料不足：缺 XXX」，並說明現有資料能回答到哪裡。\n")
+    else:
+        user = (f"{data_text}\n\n====\n{facts_block}"
+                + f"【任務】{task}\n"
+                + (f"\n請直接從下面的骨架開始寫（第一行就是【{heads[0]}】），每個段落都要有內容，不要寫開場白：\n{skeleton}"
+                   if heads else ""))
     return user, data_text, facts, truncated
 
 

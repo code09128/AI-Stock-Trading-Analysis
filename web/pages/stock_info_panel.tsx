@@ -1,4 +1,5 @@
 // 看盤頁：個股／ETF 基本資料與配息（右側分頁）＋ 配息月曆（左側分頁）
+import { cachedJson } from '../fetch_cache';
 import { Tip, baseCode, colorOf, fmt, signed } from '../ui';
 import { AiExplain } from '../ai_store';
 import { postJob } from '../desktop_bridge';
@@ -80,12 +81,7 @@ function FundamentalsCard({ symbol, showEmpty = false }: { symbol: string; showE
   useEffect(() => {
     let stop = false;
     setF(null);
-    fetch('/api/fundamentals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/fundamentals', { symbol }, 600000)
       .then((d) => !stop && setF(d))
       .catch((e) => !stop && setF({ error: e.message }));
     return () => {
@@ -308,12 +304,7 @@ function StockInfoPanel({ symbol, hideValuation = false, tab, onAskAi }: { symbo
     let stop = false;
     setInfo(null);
     setErr(null);
-    fetch('/api/stockinfo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/stockinfo', { symbol }, 600000)
       .then((d) => !stop && (d.error ? setErr(d.error) : setInfo(d)))
       .catch((e) => !stop && setErr(e.message));
     return () => {

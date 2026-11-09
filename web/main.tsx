@@ -54,6 +54,7 @@ import './pages/tour';
 import './pages/guide';
 import './boot_loader';
 import './desktop_bridge';
+import './fetch_cache';
 import './export_report';
 import './app';
 

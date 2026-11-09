@@ -1,6 +1,7 @@
 // 走勢卡：分時／5 日／日 K 三種模式。分時沿用原本的 IntradayChart（真實資料、休市提示、時區處理）；
 // 5 日與日 K 只在切過去時才抓，舊版後端（線上更新只更新畫面）沒有 5 日路由時顯示原因，不用假資料補。
 import { IntradayChart, useChartWidth } from '../live_widgets';
+import { cachedJson } from '../fetch_cache';
 import { Tip, fmt } from '../ui';
 
 const { useState, useEffect } = React;
@@ -22,12 +23,7 @@ const useSeries = (url: string, symbol: string, on: boolean, n?: number) => {
     if (!on) return undefined;
     let stop = false;
     setS(null);
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(n ? { symbol, n } : { symbol }),
-    })
-      .then((r) => (r.status === 404 ? { error: '這個版本的後端還不支援（要重新安裝新版才有）' } : r.json()))
+    cachedJson(url, n ? { symbol, n } : { symbol }, 60000)
       .then((d) => !stop && setS(d))
       .catch((e) => !stop && setS({ error: e.message }));
     return () => {
@@ -192,7 +188,7 @@ function DailyK({ data }: { data: any }) {
   );
 }
 
-function StockChart({ symbol, quoteTime, intraday, tz, news, showNews, setShowNews, newsLoading, newsError }: { symbol: string; quoteTime: any; intraday: any; tz: any; news: any[] | undefined; showNews: boolean; setShowNews: (v: boolean) => void; newsLoading?: boolean; newsError?: string }) {
+function StockChart({ symbol, quoteTime, livePrice, intraday, tz, news, showNews, setShowNews, newsLoading, newsError }: { symbol: string; quoteTime: any; livePrice?: number; intraday: any; tz: any; news: any[] | undefined; showNews: boolean; setShowNews: (v: boolean) => void; newsLoading?: boolean; newsError?: string }) {
   const [mode, setMode] = useState('intra');
   const d5 = useSeries('/api/five_days', symbol, mode === 'd5');
   const k = useSeries('/api/candles', symbol, mode === 'k', 60);
@@ -226,7 +222,7 @@ function StockChart({ symbol, quoteTime, intraday, tz, news, showNews, setShowNe
       </div>
       {mode === 'intra' && (
         <div className="mt-2">
-          <IntradayChart data={intraday} lastTrade={quoteTime} tz={tz} news={showNews ? news : undefined} />
+          <IntradayChart data={intraday} lastTrade={quoteTime} livePrice={livePrice} tz={tz} news={showNews ? news : undefined} />
         </div>
       )}
       {mode === 'd5' && <FiveDay data={d5} />}

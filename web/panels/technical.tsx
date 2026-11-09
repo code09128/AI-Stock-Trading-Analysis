@@ -2,7 +2,7 @@
 import { bus } from '../bus';
 import { CandlestickChart } from '../charts';
 import { ChipPanel, MyPositionCard } from './technical_parts';
-import { Tip, marketName, sourceLabel } from '../ui';
+import { Tip, colorOf, marketName, marketSessionOpen, sourceLabel } from '../ui';
 import { AiExplain } from '../ai_store';
 import { RulesReminder } from '../portfolio_store';
 
@@ -35,12 +35,12 @@ function TrendScoreCard({ score }) {
   if (!score) return null;
   const d = score.details || {};
   const tone = ['STRONG_BUY', 'BUY'].includes(score.signal)
-    ? 'text-emerald-400'
+    ? colorOf(1)
     : ['STRONG_SELL', 'SELL'].includes(score.signal)
-      ? 'text-rose-400'
+      ? colorOf(-1)
       : 'text-amber-300';
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+    <div className="ta-card rounded-2xl p-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[11px] text-slate-400">
           趨勢評分
@@ -147,7 +147,7 @@ function ScenarioPanel({ data }) {
   return (
     <div
       data-tour="mod1-scenarios"
-      className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3"
+      className="ta-card rounded-2xl p-4 space-y-3"
     >
       <div className="text-xs font-semibold text-slate-300">
         多頭／中性／空頭三情境（日線＋週線＋成交量）
@@ -311,7 +311,7 @@ function Mod1Panel({ ctx }) {
         </div>
       )}
       {/* 控制面板與即時跳動開關 */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
+      <div className="ta-card rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
             <h2 className="text-base font-semibold text-white">查詢標的</h2>
@@ -322,6 +322,16 @@ function Mod1Panel({ ctx }) {
 
           {/* 盤中動態自動刷新控制列 */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                bus.openStockAi ? bus.openStockAi('tech') : bus.openAiDrawer?.('mod1')
+              }
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white cursor-pointer"
+              style={{ background: 'linear-gradient(135deg,#4f7cff,#8b5cf6)' }}
+            >
+              ✦ AI 技術面快評
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -342,7 +352,7 @@ function Mod1Panel({ ctx }) {
               {aiDecisionOn
                 ? 'AI 決策模式：不自動刷新（按查詢才會呼叫 AI）'
                 : isLivePolling
-                  ? `每 5 秒更新真實報價 (${countdownSec}s)`
+                  ? `每 ${marketSessionOpen(m1Ticker) ? 5 : 30} 秒更新真實報價 (${countdownSec}s)`
                   : '已暫停自動刷新'}
             </button>
 
@@ -416,7 +426,7 @@ function Mod1Panel({ ctx }) {
         <div className="space-y-4">
           {/* 頂部核心指標列 (含價格跳動紅綠閃爍動畫) */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+            <div className="ta-card rounded-xl p-3.5">
               <div className="text-[11px] text-slate-400">標的與市場</div>
               <div className="text-base font-bold font-mono text-white mt-1">
                 {m1Data.snapshot.symbol}
@@ -426,13 +436,14 @@ function Mod1Panel({ ctx }) {
               </div>
             </div>
             <div
-              className={`rounded-xl p-3.5 border transition-all duration-300 ${
+              className="ta-card rounded-xl p-3.5 transition-all duration-300"
+              style={
                 priceFlash === 'UP'
-                  ? 'bg-rose-950/60 border-rose-500 ring-2 ring-rose-500/40'
+                  ? { background: 'var(--up-bg)', borderColor: 'var(--up)' }
                   : priceFlash === 'DOWN'
-                    ? 'bg-emerald-950/60 border-emerald-500 ring-2 ring-emerald-500/40'
-                    : 'bg-slate-900 border-slate-800'
-              }`}
+                    ? { background: 'var(--down-bg)', borderColor: 'var(--down)' }
+                    : undefined
+              }
             >
               <div className="flex items-center justify-between text-[11px] text-slate-400">
                 <span>最新成交價</span>
@@ -440,14 +451,22 @@ function Mod1Panel({ ctx }) {
               </div>
               <div className="text-xl font-bold font-mono text-amber-300 mt-1 flex items-center gap-1">
                 <span>{m1Data.snapshot.latest_close}</span>
-                {priceFlash === 'UP' && <span className="text-xs text-rose-400">▲</span>}
-                {priceFlash === 'DOWN' && <span className="text-xs text-emerald-400">▼</span>}
+                {priceFlash === 'UP' && (
+                  <span className="text-xs" style={{ color: 'var(--up)' }}>
+                    ▲
+                  </span>
+                )}
+                {priceFlash === 'DOWN' && (
+                  <span className="text-xs" style={{ color: 'var(--down)' }}>
+                    ▼
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-slate-400 font-mono">
                 5日漲跌: {m1Data.snapshot.ret_5d_pct}%
               </div>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+            <div className="ta-card rounded-xl p-3.5">
               <div className="text-[11px] text-slate-400">
                 {m1Data.llm_result?.execution_mode?.startsWith('LIVE')
                   ? 'AI 建議方向'
@@ -457,9 +476,9 @@ function Mod1Panel({ ctx }) {
               <div
                 className={`text-xl font-bold font-mono mt-1 ${
                   m1Data.llm_result?.decision_payload?.action === 'BUY'
-                    ? 'text-emerald-400'
+                    ? colorOf(1)
                     : m1Data.llm_result?.decision_payload?.action === 'SELL'
-                      ? 'text-rose-400'
+                      ? colorOf(-1)
                       : 'text-amber-300'
                 }`}
               >
@@ -474,7 +493,7 @@ function Mod1Panel({ ctx }) {
                 })()}
               </div>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+            <div className="ta-card rounded-xl p-3.5">
               <div className="text-[11px] text-slate-400">
                 RSI (14) 強弱
                 <Tip text="RSI：0–100 的強弱指標。高於 70 常視為過熱、低於 30 常視為過冷，不代表一定會反轉。MACD 柱體由負轉正代表動能轉強。" />
@@ -486,7 +505,7 @@ function Mod1Panel({ ctx }) {
                 MACD柱: {fmt2(m1Data.snapshot.indicators.MACD_hist)}
               </div>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+            <div className="ta-card rounded-xl p-3.5">
               <div className="text-[11px] text-slate-400">
                 ATR (14) 波動值
                 <Tip text="ATR：近 14 天平均每天的真實波動幅度（價格單位）。例如 ATR 38 代表這檔平常一天大約會上下動 38 元，常用來設停損距離。量能比＝今日成交量 ÷ 近 20 日均量。" />
@@ -498,7 +517,7 @@ function Mod1Panel({ ctx }) {
                 量能比: {m1Data.snapshot.volume_ratio_20d}x
               </div>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+            <div className="ta-card rounded-xl p-3.5">
               <div className="text-[11px] text-slate-400">
                 AI 數字核對（防幻覺稽核）
                 <Tip text="「幻覺」是指 AI 編造出資料裡沒有的數字。系統會逐一比對決策裡的價位是否來自真實行情與程式算出的支撐壓力、停損是否在合理位置，不通過就改用內建規則。" />
@@ -607,7 +626,7 @@ function Mod1Panel({ ctx }) {
 
           {/* 支撐壓力檔位與 AI 決策依據 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="ta-card rounded-2xl p-4 space-y-3">
               <div className="text-xs font-semibold text-slate-300">
                 關鍵支撐與壓力價位（已隨最新 Tick 對齊{' '}
                 {m1Data.snapshot.market === 'TW' ? '台股六級跳動單位' : '0.01 精度'}）
@@ -654,7 +673,7 @@ function Mod1Panel({ ctx }) {
               </div>
             </div>
 
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-2.5">
+            <div className="ta-card rounded-2xl p-4 space-y-2.5">
               <div className="text-xs font-semibold text-slate-300">
                 {m1Data.llm_result?.execution_mode?.startsWith('LIVE')
                   ? 'AI 決策邏輯'

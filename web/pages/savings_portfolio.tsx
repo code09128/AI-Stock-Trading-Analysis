@@ -2,7 +2,8 @@
 // 多檔 ETF 照比例定期定額，算組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、
 // 過去 N 年實際回測（每月照比例投入、不賣出），可存多組並排比較、一鍵帶入我的持股
 // 公式都在後端 src/portfolio/savings_plan.py（/api/savings/portfolio）
-import { fmt, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { colorOf, fmt, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { Donut, topSlices } from './mini_charts';
 import { savingsUI } from './savings_plan';
 import { postJob } from '../desktop_bridge';
 
@@ -83,7 +84,7 @@ function allocation(p, s) {
   });
   return { rows, sum, monthly, initial, split, over: sum > 100.0001, currency: curOf(p) };
 }
-const upDown = (v) => (v == null ? 'text-slate-400' : v < 0 ? 'text-emerald-400' : 'text-rose-400');
+const upDown = (v) => (v == null ? 'text-slate-400' : colorOf(v));
 
 function usePersist(key, defaults) {
   const [s, setS] = useState(() => ({ ...defaults, ...readLS(key, {}) }));
@@ -604,7 +605,24 @@ function PortfolioTab() {
         )}
         {!(alloc.monthly > 0) && <div className="text-xs text-amber-300">先填每月定額，才能用金額換算比例。</div>}
         {fxNote && <div className="text-xs text-slate-400">{fxNote}</div>}
-        <AllocBar alloc={alloc} />
+        <div className="flex flex-wrap items-center gap-6">
+          <AllocBar alloc={alloc} />
+          <Donut
+            items={topSlices(
+              [
+                ...p.items
+                  .filter((it: any) => String(it.symbol || '').trim() && Number(it.weight) > 0)
+                  .map((it: any) => ({ label: String(it.symbol).toUpperCase(), value: Number(it.weight) })),
+                ...(alloc.split.cash > 0 ? [{ label: '未分配現金', value: Math.round(alloc.split.cash * 1000) / 10 }] : []),
+              ],
+              6,
+            )}
+            size={128}
+            center={`${p.items.filter((it: any) => String(it.symbol || '').trim()).length}檔`}
+            sub="比例"
+            label="投資組合比例圓餅圖"
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Btn tone="sky" onClick={() => run(p)} disabled={cur?.loading}>
             {cur?.loading ? '計算中（第一次約需 10～40 秒）…' : '投資試算'}

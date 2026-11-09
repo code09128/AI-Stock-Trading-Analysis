@@ -82,7 +82,7 @@ function BackgroundServicePanel() {
   };
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+    <div className="ta-card rounded-2xl p-5 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-white">常駐背景提醒與系統匣（System Tray）</h3>
         <span className="text-[11px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">

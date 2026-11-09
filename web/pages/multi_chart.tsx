@@ -3,6 +3,7 @@
 // 資料：/api/intraday（後端快取 30 秒）；同時最多抓 3 檔，每 60 秒更新一輪。
 import { bus } from '../bus';
 import { DEFAULT_WATCH, LS_WATCH, Tip, baseCode, colorOf, fmt, normSym, readLS, tzOf, uniqueSymbols, writeLS } from '../ui';
+import { PageHead, PCard } from './card_box';
 import { openInWatch } from './watch';
 import { pollEvery } from '../desktop_bridge';
 
@@ -79,8 +80,8 @@ function MiniIntraday({ data, tz }) {
         <line x1="0" x2={W} y1={y(prev)} y2={y(prev)} stroke="#475569" strokeDasharray="3 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
         <polyline points={line} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       </svg>
-      <span className="absolute left-1 top-0 text-[10px] mono text-rose-300/80">{pct(hi)}</span>
-      <span className="absolute left-1 bottom-3 text-[10px] mono text-emerald-300/80">{pct(lo)}</span>
+      <span className="absolute left-1 top-0 text-[10px] mono opacity-85" style={{ color: 'var(--up)' }}>{pct(hi)}</span>
+      <span className="absolute left-1 bottom-3 text-[10px] mono opacity-85" style={{ color: 'var(--down)' }}>{pct(lo)}</span>
       <span className="absolute left-1 bottom-0 text-[9px] mono text-slate-500">{hm(start)}</span>
       <span className="absolute right-1 bottom-0 text-[9px] mono text-slate-500">{hm(end)}</span>
     </div>
@@ -104,8 +105,8 @@ function Cell({ sym, data, quote, onChange, height, drag }) {
       onDragOver={drag.over}
       onDragLeave={drag.leave}
       onDrop={drag.drop}
-      className={`bg-slate-950/70 border rounded-xl p-2 flex flex-col min-w-0 transition-colors ${
-        drag.isTarget ? 'border-sky-400 bg-sky-950/40' : drag.isSource ? 'border-slate-600 opacity-50' : 'border-slate-800'
+      className={`ta-card rounded-2xl p-2.5 flex flex-col min-w-0 transition-colors ${
+        drag.isTarget ? 'border-sky-400 bg-sky-950/40' : drag.isSource ? 'border-slate-600 opacity-50' : ''
       }`}
       style={{ height }}
     >
@@ -269,7 +270,7 @@ function SideInput({ label, value, onCommit }) {
 // ---------- 功能說明 ----------
 function MultiHelp() {
   return (
-    <details className="bg-slate-900/70 border border-slate-800 rounded-2xl px-5 py-3 text-xs text-slate-300">
+    <details className="ta-card rounded-2xl px-5 py-3 text-xs text-slate-300">
       <summary className="cursor-pointer font-semibold text-slate-200 select-none">📘 這頁怎麼用（功能說明）</summary>
       <ul className="mt-3 list-disc pl-5 space-y-1 leading-relaxed">
         <li>
@@ -436,74 +437,84 @@ function MultiChartPage() {
     `px-2.5 py-1 rounded-lg border text-xs cursor-pointer ${on ? 'bg-sky-500/20 border-sky-400 text-white' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}`;
 
   return (
-    <div className="space-y-4" data-tour="multichart-root">
+    <div className="space-y-3.5" data-tour="multichart-root">
+      <PageHead
+        title="多圖走勢"
+        sub="最多 6×6 格同畫面監看，支援多組版面儲存、拖曳換位、自訂列高與點選連動看盤。"
+      />
       <MultiHelp />
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-400">版面</span>
-        {state.slots.map((s, i) =>
-          renaming === i ? (
-            <input
-              key={i}
-              ref={(el) => el?.focus()}
-              defaultValue={s.name}
-              aria-label="版面名稱"
-              onBlur={(e) => {
-                const v = e.target.value.trim().slice(0, 12);
-                if (v) setState((st) => ({ ...st, slots: st.slots.map((x, j) => (j === i ? { ...x, name: v } : x)) }));
-                setRenaming(null);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              className="w-24 bg-slate-950 border border-sky-500 rounded-lg px-2 py-1 text-xs text-white outline-none"
-            />
-          ) : (
-            <button
-              type="button"
-              key={i}
-              onClick={() => setState((st) => ({ ...st, active: i }))}
-              onDoubleClick={() => setRenaming(i)}
-              title="點一下切換，雙擊改名"
-              className={btn(state.active === i)}
-            >
-              {i + 1}．{s.name}
-            </button>
-          ),
-        )}
-        {state.slots.length < MAX_SLOTS && (
-          <button type="button" onClick={addSlot} className={btn(false)} title="新增一組空白版面">
-            ＋ 新增版面
-          </button>
-        )}
-        {state.slots.length > 1 && (
-          <button type="button" onClick={removeSlot} className={`${btn(false)} hover:text-rose-300`} title="刪除目前這一組版面">
-            刪除這組
-          </button>
-        )}
-      </div>
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-400">格數</span>
-        {GRIDS.map((g) => (
-          <button type="button" key={g} onClick={() => setGrid(g, g)} className={btn(rows === g && colN === g)}>
-            {g}×{g}
-          </button>
-        ))}
-        <GridPicker rows={rows} cols={colN} onPick={setGrid} />
-        <span className="text-xs text-slate-400 ml-2">自訂</span>
-        <SideInput label="列數" value={rows} onCommit={(v) => setGrid(v, colN)} />
-        <span className="text-xs text-slate-400">列 ×</span>
-        <SideInput label="欄數" value={colN} onCommit={(v) => setGrid(rows, v)} />
-        <span className="text-xs text-slate-400">欄（{n} 格，每邊最多 {MAX_SIDE}）</span>
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" onClick={() => updateSlot({ symbols: fill(myWatch(), Math.max(n, 16)) })} className={btn(false)}>
-            帶入自選股
-          </button>
-          <button type="button" onClick={() => updateSlot({ symbols: fill(myHoldings(), Math.max(n, 16)) })} className={btn(false)}>
-            帶入持股
-          </button>
-          <Tip text="用目前的自選股或持股清單覆蓋這一組版面的股票（依格數帶入前幾檔）。" />
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+        <PCard id="mc_ctrl" title="版面與格數控制" sub={`目前版面：${slot.name}（${rows}×${colN} 共 ${n} 格）`} span={12}>
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400">版面</span>
+              {state.slots.map((s, i) =>
+                renaming === i ? (
+                  <input
+                    key={i}
+                    ref={(el) => el?.focus()}
+                    defaultValue={s.name}
+                    aria-label="版面名稱"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim().slice(0, 12);
+                      if (v) setState((st) => ({ ...st, slots: st.slots.map((x, j) => (j === i ? { ...x, name: v } : x)) }));
+                      setRenaming(null);
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    className="w-24 bg-slate-950 border border-sky-500 rounded-lg px-2 py-1 text-xs text-white outline-none"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    key={i}
+                    onClick={() => setState((st) => ({ ...st, active: i }))}
+                    onDoubleClick={() => setRenaming(i)}
+                    title="點一下切換，雙擊改名"
+                    className={btn(state.active === i)}
+                  >
+                    {i + 1}．{s.name}
+                  </button>
+                ),
+              )}
+              {state.slots.length < MAX_SLOTS && (
+                <button type="button" onClick={addSlot} className={btn(false)} title="新增一組空白版面">
+                  ＋ 新增版面
+                </button>
+              )}
+              {state.slots.length > 1 && (
+                <button type="button" onClick={removeSlot} className={`${btn(false)} hover:text-rose-300`} title="刪除目前這一組版面">
+                  刪除這組
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/70">
+              <span className="text-xs text-slate-400">格數</span>
+              {GRIDS.map((g) => (
+                <button type="button" key={g} onClick={() => setGrid(g, g)} className={btn(rows === g && colN === g)}>
+                  {g}×{g}
+                </button>
+              ))}
+              <GridPicker rows={rows} cols={colN} onPick={setGrid} />
+              <span className="text-xs text-slate-400 ml-2">自訂</span>
+              <SideInput label="列數" value={rows} onCommit={(v) => setGrid(v, colN)} />
+              <span className="text-xs text-slate-400">列 ×</span>
+              <SideInput label="欄數" value={colN} onCommit={(v) => setGrid(rows, v)} />
+              <span className="text-xs text-slate-400">欄（{n} 格，每邊最多 {MAX_SIDE}）</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button type="button" onClick={() => updateSlot({ symbols: fill(myWatch(), Math.max(n, 16)) })} className={btn(false)}>
+                  帶入自選股
+                </button>
+                <button type="button" onClick={() => updateSlot({ symbols: fill(myHoldings(), Math.max(n, 16)) })} className={btn(false)}>
+                  帶入持股
+                </button>
+                <Tip text="用目前的自選股或持股清單覆蓋這一組版面的股票（依格數帶入前幾檔）。" />
+              </div>
+            </div>
+          </div>
+        </PCard>
       </div>
 
-      <ul className="grid gap-2 list-none p-0 m-0" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      <ul className="grid gap-3.5 list-none p-0 m-0" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {slot.symbols.slice(0, n).map((sym, i) => (
           <Cell
             key={i}

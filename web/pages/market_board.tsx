@@ -2,24 +2,27 @@
 // 資料：/api/board/world（國際指數＋台指期，30 秒）、/api/board/tw50（30 秒）、
 //       /api/board/sectors、/api/board/flow（證交所盤後資料，10 分鐘）
 import { Tip, colorOf, fmt, signed } from '../ui';
+import { PCard, PageHead } from './card_box';
+import { Donut, HBars, VBars, topSlices } from './mini_charts';
 import { openInWatch } from './watch';
 import { pollEvery } from '../desktop_bridge';
+import { cachedJson } from '../fetch_cache';
+import { Sparkline } from '../live_widgets';
 
 const { useState, useEffect, useCallback, useRef } = React;
 
-
 // 定時抓一個 GET 端點：上一輪還沒回來就跳過；頁面離開就停止
-function usePoll(url, ms) {
-  const [data, setData] = useState(null);
+function usePoll(url: string, ms: number) {
+  const [data, setData] = useState<any>(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
   const busy = useRef(false);
-  const load = useCallback(() => {
+  const load = useCallback((force?: boolean) => {
     if (busy.current) return;
     busy.current = true;
     setLoading(true);
-    fetch(url)
-      .then((r) => r.json())
+    // 離開再回來不用全部重抓：快取時間比輪詢短一點，輪詢照常更新；按 ↻ 一定重抓
+    cachedJson(url, undefined, force === true ? 0 : ms - 2000)
       .then((d) => {
         if (d.error && !(d.rows || d.days || d.groups || []).length) setErr(d.error);
         else setErr('');
@@ -30,48 +33,35 @@ function usePoll(url, ms) {
         busy.current = false;
         setLoading(false);
       });
-  }, [url]);
+  }, [url, ms]);
   useEffect(() => {
     load();
-    return pollEvery(load, ms);
+    return pollEvery(() => load(), ms);
   }, [load, ms]);
   return { data, err, loading, load };
 }
 
-const Arrow = ({ v }) => (v > 0 ? '▲' : v < 0 ? '▼' : '');
+const Arrow = ({ v }: { v: number }) => (v > 0 ? '▲' : v < 0 ? '▼' : '');
 
-function Card({ title, tip, extra, children }) {
-  return (
-    <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
-        {tip && <Tip text={tip} />}
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">{extra}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-const Refresh = ({ poll }) => (
+const Refresh = ({ poll }: { poll: any }) => (
   <button
     type="button"
-    onClick={poll.load}
+    onClick={() => poll.load(true)}
     disabled={poll.loading}
-    className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer"
+    className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 cursor-pointer text-[11px]"
   >
     {poll.loading ? '更新中…' : `↻ ${poll.data?.timestamp || '更新'}`}
   </button>
 );
 
-const Err = ({ text }) => (text ? <div className="text-xs text-rose-300">⚠️ {text}</div> : null);
-const Wait = ({ poll }) => (!poll.data && !poll.err ? <div className="text-xs text-slate-500">載入中…</div> : null);
+const Err = ({ text }: { text: string }) => (text ? <div className="text-xs text-rose-300">⚠️ {text}</div> : null);
+const Wait = ({ poll }: { poll: any }) => (!poll.data && !poll.err ? <div className="text-xs text-slate-500">載入中…</div> : null);
 
 // ---------- 功能說明 ----------
 function BoardHelp() {
-  const H = ({ children }) => <b className="text-white">{children}</b>;
+  const H = ({ children }: { children: any }) => <b className="text-white">{children}</b>;
   return (
-    <details className="bg-slate-900/70 border border-slate-800 rounded-2xl px-5 py-3 text-xs text-slate-300">
+    <details className="ta-card rounded-2xl px-5 py-3 text-xs text-slate-300">
       <summary className="cursor-pointer font-semibold text-slate-200 select-none">📘 這頁怎麼用（功能說明）</summary>
       <div className="mt-3 space-y-3 leading-relaxed">
         <p>
@@ -85,15 +75,15 @@ function BoardHelp() {
             <b>價差</b>＝台指期日盤 − 加權指數，正數代表期貨比現貨貴（偏樂觀）。每 30 秒更新。
           </li>
           <li>
-            <H>資金流向</H>：最近 5 個交易日三大法人（外資、投信、自營商）在上市市場的買賣超金額（億元），
-            以及今天成交金額集中在哪些類股（占比越高＝資金越集中）。
+            <H>三大法人與外資 10 日</H>：最近 10 個交易日三大法人（外資、投信、自營商）在上市市場的買賣超金額（億元），
+            並單獨列出外資近 10 日買賣超直條圖與累計動能。
           </li>
           <li>
-            <H>產業漲跌排行</H>：證交所各類股指數依漲跌幅排序，強勢族群浮在上面。
-            <b>量比</b>＝類股成交金額 ÷ 前一交易日，大於 1 代表比昨天熱絡。可點欄位標題換排序。
+            <H>產業漲跌排行與資金流向</H>：證交所各類股指數依漲跌幅排序，並用圓餅與橫條顯示今天成交金額集中在哪些類股（占比越高＝資金越集中）。
+            <b>量比</b>＝類股成交金額 ÷ 前一交易日，大於 1 代表比昨天熱絡。可點欄位標題換排序，點類股可切到產業鏈頁。
           </li>
           <li>
-            <H>台灣 50</H>：上市市值前 50 大個股（接近台灣 50 指數成分股），盤中每 30 秒更新價格。
+            <H>台灣 50 與產業權重</H>：上市市值前 50 大個股（接近台灣 50 指數成分股），盤中每 30 秒更新價格並統計各產業市值權重。
             <b>量比</b>＝今天累計成交量 ÷ 前一交易日成交量（盤中還沒收完，數字會一路變大）。
             點股票名稱會切到看盤頁看那一檔的五檔、新聞並可模擬下單。
           </li>
@@ -109,15 +99,15 @@ function BoardHelp() {
 }
 
 // ---------- 國際指數與台指期 ----------
-function FuturesRow({ label, f }) {
+function FuturesTile({ label, f }: { label: string; f: any }) {
   return (
-    <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 min-w-0">
-      <div className="text-[11px] text-slate-400">
+    <div className="rounded-xl bg-white/[0.025] border border-white/[0.06] px-3 py-2.5 min-w-0">
+      <div className="text-[11px] text-slate-400 truncate">
         {label}・{f?.name || '台指期'}
       </div>
       {f?.price != null ? (
         <>
-          <div className={`mono text-lg font-bold ${colorOf(f.change)}`}>{fmt(f.price, 0)}</div>
+          <div className={`mono text-base font-extrabold mt-0.5 ${colorOf(f.change)}`}>{fmt(f.price, 0)}</div>
           <div className={`mono text-xs ${colorOf(f.change)}`}>
             <Arrow v={f.change} /> {fmt(Math.abs(f.change ?? 0), 0)}（{signed(f.change_pct)}%）
           </div>
@@ -136,144 +126,238 @@ function WorldCard() {
   const poll = usePoll('/api/board/world', 30000);
   const d = poll.data;
   const fut = d?.futures || {};
+  const flatRows = (d?.groups || []).flatMap((g: any) => (g.rows || []).map((r: any) => ({ ...r, group: g.name })));
+  // 走勢小圖只查 Yahoo 有的代號（^ 指數、=F 期貨、=X 匯率）；日線小圖 10 分鐘更新一次就夠
+  const sparkKey = flatRows.map((r: any) => r.symbol).filter((s: string) => /[\^=]/.test(s)).join(',');
+  const [sparks, setSparks] = useState<Record<string, number[]>>({});
+  useEffect(() => {
+    if (!sparkKey) return undefined;
+    let stop = false;
+    cachedJson('/api/sparks', { symbols: sparkKey.split(',') }, 600000)
+      .then((x) => !stop && setSparks(x.sparks || {}))
+      .catch(() => {});
+    return () => {
+      stop = true;
+    };
+  }, [sparkKey]);
   return (
-    <Card
+    <PCard
+      id="board-world"
+      span={12}
       title="國際指數與台指期"
-      tip="美股、美股期貨、亞洲指數、美元指數；台指期分日盤與夜盤，價差＝台指期日盤 − 加權指數。每 30 秒更新。"
-      extra={<Refresh poll={poll} />}
+      sub="美股／亞股／匯率／VIX／台指期日夜盤與價差"
+      tip={<Tip text="美股、美股期貨、亞洲指數、美元指數；台指期分日盤與夜盤，價差＝台指期日盤 − 加權指數。每 30 秒更新。" />}
+      right={<Refresh poll={poll} />}
     >
       <Err text={poll.err} />
       <Wait poll={poll} />
       {d && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <FuturesRow label="日盤" f={fut.day} />
-            <FuturesRow label="夜盤" f={fut.night} />
-            <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
-              <div className="text-[11px] text-slate-400">
-                價差（期貨 − 加權）
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-2.5">
+            {flatRows.map((r: any) => (
+              <div key={r.symbol} className="rounded-xl bg-white/[0.025] border border-white/[0.06] px-3 py-2.5 min-w-0">
+                <div className="flex items-center justify-between gap-1 text-[11px] text-slate-400">
+                  <span className="truncate">{r.name}</span>
+                  <span className="text-[10px] text-slate-500 shrink-0">{r.group}</span>
+                </div>
+                {r.price != null ? (
+                  <>
+                    <div className="mono text-base font-extrabold text-slate-100 mt-0.5">
+                      {fmt(r.price, r.symbol === 'TWD=X' ? 3 : 2)}
+                    </div>
+                    <div className={`mono text-xs font-semibold ${colorOf(r.change)}`}>
+                      {signed(r.change)}（{signed(r.change_pct)}%）
+                    </div>
+                    {sparks[r.symbol]?.length > 1 && (
+                      <div className="mt-1">
+                        <Sparkline values={sparks[r.symbol]} w={110} h={24} />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-xs text-slate-500 mt-1 truncate">{r.error || '沒有資料'}</div>
+                )}
+              </div>
+            ))}
+            <FuturesTile label="日盤" f={fut.day} />
+            <FuturesTile label="夜盤" f={fut.night} />
+            <div className="rounded-xl bg-white/[0.025] border border-white/[0.06] px-3 py-2.5 min-w-0">
+              <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                <span>價差（期貨 − 加權）</span>
                 <Tip text="台指期近月日盤價格減加權指數。正價差＝期貨比現貨高，市場偏樂觀；逆價差＝偏悲觀。除息旺季（6～9 月）期貨會因為預期除息而自然偏低。" />
               </div>
-              <div className={`mono text-lg font-bold ${colorOf(fut.basis)}`}>{signed(fut.basis, 0)}</div>
-              <div className="text-[10px] text-slate-500">
-                {fut.basis > 0 ? '正價差' : fut.basis < 0 ? '逆價差' : '--'}
+              <div className={`mono text-base font-extrabold mt-0.5 ${colorOf(fut.basis)}`}>{signed(fut.basis, 0)}</div>
+              <div className="text-[11px] text-slate-400">
+                {fut.basis > 0 ? '正價差（偏多）' : fut.basis < 0 ? '逆價差（偏保守）' : '--'}
               </div>
             </div>
           </div>
-          <table className="w-full text-xs">
-            <tbody>
-              {(d.groups || []).map((g) =>
-                g.rows.map((r, i) => (
-                  <tr key={r.symbol} className="border-t border-slate-800/60">
-                    <td className="py-1 pr-2 text-slate-500 w-16 align-top">{i === 0 ? g.name : ''}</td>
-                    <td className="py-1 pr-2 text-slate-200">{r.name}</td>
-                    {r.price != null ? (
-                      <>
-                        <td className="py-1 pr-2 mono text-right text-white">
-                          {fmt(r.price, r.symbol === 'TWD=X' ? 3 : 2)}
+          <details className="text-xs text-slate-400">
+            <summary className="cursor-pointer hover:text-slate-200 select-none">展開分組明細表</summary>
+            <table className="w-full text-xs mt-2">
+              <tbody>
+                {(d.groups || []).map((g: any) =>
+                  g.rows.map((r: any, i: number) => (
+                    <tr key={r.symbol} className="border-t border-slate-800/60">
+                      <td className="py-1 pr-2 text-slate-500 w-16 align-top">{i === 0 ? g.name : ''}</td>
+                      <td className="py-1 pr-2 text-slate-200">{r.name}</td>
+                      {r.price != null ? (
+                        <>
+                          <td className="py-1 pr-2 mono text-right text-white">
+                            {fmt(r.price, r.symbol === 'TWD=X' ? 3 : 2)}
+                          </td>
+                          <td className={`py-1 pr-2 mono text-right ${colorOf(r.change)}`}>{signed(r.change)}</td>
+                          <td className={`py-1 mono text-right ${colorOf(r.change)}`}>{signed(r.change_pct)}%</td>
+                        </>
+                      ) : (
+                        <td colSpan={3} className="py-1 text-right text-slate-500">
+                          {r.error || '沒有資料'}
                         </td>
-                        <td className={`py-1 pr-2 mono text-right ${colorOf(r.change)}`}>{signed(r.change)}</td>
-                        <td className={`py-1 mono text-right ${colorOf(r.change)}`}>{signed(r.change_pct)}%</td>
-                      </>
-                    ) : (
-                      <td colSpan={3} className="py-1 text-right text-slate-500">
-                        {r.error || '沒有資料'}
-                      </td>
-                    )}
-                  </tr>
-                )),
-              )}
-            </tbody>
-          </table>
+                      )}
+                    </tr>
+                  )),
+                )}
+              </tbody>
+            </table>
+          </details>
           <div className="text-[10px] text-slate-500">來源：{d.source}</div>
         </>
       )}
-    </Card>
+    </PCard>
   );
 }
 
-// ---------- 資金流向 ----------
-const INST = [
+// ---------- 三大法人與外資近 10 日 ----------
+const INST: [string, string][] = [
   ['foreign', '外資'],
   ['trust', '投信'],
   ['dealer', '自營商'],
   ['total', '合計'],
 ];
 
-function FlowCard({ sectors }) {
-  const poll = usePoll('/api/board/flow', 600000);
+function InstFlowCard({ poll }: { poll: any }) {
   const days = poll.data?.days || [];
-  const shares = [...(sectors?.rows || [])]
-    .filter((r) => r.turnover_share_pct != null)
-    .sort((a, b) => b.turnover_share_pct - a.turnover_share_pct)
-    .slice(0, 8);
-  const maxShare = shares[0]?.turnover_share_pct || 1;
+  const latest = days[0];
+  const barItems = latest
+    ? INST.map(([k, label]) => ({
+        label,
+        value: Number(latest[k] || 0),
+      }))
+    : [];
   return (
-    <Card
-      title="資金流向"
-      tip="上：最近 5 個交易日三大法人在上市市場的買賣超（億元，紅＝買超、綠＝賣超）。下：今天成交金額最集中的類股。證交所收盤後更新。"
-      extra={<Refresh poll={poll} />}
+    <PCard
+      id="board-inst"
+      span={4}
+      title="三大法人買賣超（億元）"
+      sub={latest ? `${latest.date} 盤後` : '證交所盤後統計'}
+      tip={<Tip text="圖：最近交易日三大法人（外資、投信、自營商）在上市市場的買賣超；表：最近 10 個交易日（億元，紅＝買超、綠＝賣超）。證交所每日收盤後更新。" />}
+      right={<Refresh poll={poll} />}
     >
       <Err text={poll.err} />
       <Wait poll={poll} />
+      {barItems.length > 0 && <VBars items={barItems} height={150} unit="億" label="三大法人買賣超直條圖" />}
       {days.length > 0 && (
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-slate-400">
-              <th className="py-1 text-left font-normal">日期</th>
-              {INST.map(([k, label]) => (
-                <th key={k} className="py-1 text-right font-normal">
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {days.map((d) => (
-              <tr key={d.date} className="border-t border-slate-800/60">
-                <td className="py-1 mono text-slate-300">{d.date.slice(5)}</td>
-                {INST.map(([k]) => (
-                  <td
-                    key={k}
-                    className={`py-1 mono text-right ${colorOf(d[k])} ${k === 'total' ? 'font-semibold' : ''}`}
-                  >
-                    {signed(d[k])}
-                  </td>
+        <div className="overflow-x-auto max-h-44 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-900/95">
+              <tr className="text-slate-400">
+                <th className="py-1 text-left font-normal">日期</th>
+                {INST.map(([k, label]) => (
+                  <th key={k} className="py-1 text-right font-normal">
+                    {label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {shares.length > 0 && (
-        <div className="space-y-1 pt-1">
-          <div className="text-[11px] text-slate-400">
-            類股成交比重（{sectors.date}，前 8 名）
-          </div>
-          {shares.map((r) => (
-            <div key={r.name} className="flex items-center gap-2 text-xs">
-              <span className="w-24 shrink-0 truncate text-slate-300">{r.name}</span>
-              <div className="flex-1 h-2.5 bg-slate-800 rounded">
-                <div
-                  className="h-2.5 rounded bg-sky-500/70"
-                  style={{ width: `${(r.turnover_share_pct / maxShare) * 100}%` }}
-                />
-              </div>
-              <span className="w-14 text-right mono text-slate-200">{fmt(r.turnover_share_pct, 1)}%</span>
-              <span className={`w-14 text-right mono ${colorOf(r.change_pct)}`}>{signed(r.change_pct)}%</span>
-            </div>
-          ))}
+            </thead>
+            <tbody>
+              {days.map((d: any) => (
+                <tr key={d.date} className="border-t border-slate-800/60">
+                  <td className="py-1 mono text-slate-300">{d.date.slice(5)}</td>
+                  {INST.map(([k]) => (
+                    <td
+                      key={k}
+                      className={`py-1 mono text-right ${colorOf(d[k])} ${k === 'total' ? 'font-semibold' : ''}`}
+                    >
+                      {signed(d[k])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
-      <div className="text-[10px] text-slate-500">
-        單位：億元・來源：{poll.data?.source || '證交所'}
-      </div>
-    </Card>
+      <div className="text-[10px] text-slate-500">單位：億元・來源：{poll.data?.source || '證交所'}</div>
+    </PCard>
+  );
+}
+
+function Foreign10dCard({ poll }: { poll: any }) {
+  const days = [...(poll.data?.days || [])].slice(0, 10).reverse();
+  const sum = days.reduce((a, d) => a + Number(d.foreign || 0), 0);
+  const items = days.map((d: any) => ({
+    label: String(d.date || '').slice(5).replace('-', '/'),
+    value: Number(d.foreign || 0),
+  }));
+  return (
+    <PCard
+      id="board-foreign10"
+      span={4}
+      title="外資近 10 日買賣超"
+      sub={days.length ? `近 ${days.length} 日累計 ${signed(sum, 1)} 億` : '載入中'}
+      tip={<Tip text="外資及陸資最近 10 個交易日每日買賣超金額（億元），由舊到新排列，觀察外資連續買超或調節趨勢。" />}
+      right={<Refresh poll={poll} />}
+    >
+      <Err text={poll.err} />
+      <Wait poll={poll} />
+      {items.length > 0 ? (
+        <VBars items={items} height={180} label="外資近 10 日買賣超直條圖" />
+      ) : (
+        !poll.loading && <div className="text-xs text-slate-500">尚無外資近 10 日資料</div>
+      )}
+      {items.length > 0 && items.length < 10 && (
+        <div className="text-[11px] text-amber-300">目前只有 {items.length} 日資料（舊版後端只回 5 日，要重新安裝新版才有 10 日）。</div>
+      )}
+      <div className="text-[10px] text-slate-500">單位：億元・來源：證交所 BFI82U</div>
+    </PCard>
+  );
+}
+
+function Tw50IndustryWeightCard({ poll }: { poll: any }) {
+  const rows = poll.data?.rows || [];
+  const byInd = new Map<string, number>();
+  for (const r of rows) {
+    const ind = r.industry || '其他';
+    const w = Number(r.weight_pct ?? r.market_cap ?? 0);
+    if (w > 0) byInd.set(ind, (byInd.get(ind) || 0) + w);
+  }
+  const slices = topSlices(
+    Array.from(byInd.entries()).map(([label, value]) => ({ label, value })),
+    5,
+  );
+  return (
+    <PCard
+      id="board-tw50-weight"
+      span={4}
+      title="台灣 50 權值股產業權重"
+      sub={poll.data?.rank_date ? `${poll.data.rank_date} 市值加權` : '上市前 50 大市值占比'}
+      tip={<Tip text="統計台灣 50（上市市值前 50 大）成分股在各產業的市值權重占比。" />}
+    >
+      <Err text={poll.err} />
+      <Wait poll={poll} />
+      {rows.length > 0 && !rows.some((r: any) => r.industry) ? (
+        <div className="text-xs text-amber-300">這個版本的後端沒有產業資料（要重新安裝新版才有）。</div>
+      ) : slices.length > 0 ? (
+        <Donut items={slices} size={156} center="TW50" sub="產業占比" label="台灣 50 權值股產業權重圓餅圖" />
+      ) : (
+        !poll.loading && <div className="text-xs text-slate-500">尚無產業權重資料</div>
+      )}
+    </PCard>
   );
 }
 
 // ---------- 可排序表格的欄位標題 ----------
-function SortTh({ k, label, sort, setSort, align = 'text-right' }) {
+function SortTh({ k, label, sort, setSort, align = 'text-right' }: any) {
   const on = sort.key === k;
   return (
     <th className={`py-1.5 px-1.5 font-normal ${align}`}>
@@ -288,7 +372,7 @@ function SortTh({ k, label, sort, setSort, align = 'text-right' }) {
     </th>
   );
 }
-const sortRows = (rows, sort) =>
+const sortRows = (rows: any[], sort: { key: string; desc: boolean }) =>
   [...rows].sort((a, b) => {
     const x = a[sort.key];
     const y = b[sort.key];
@@ -298,15 +382,23 @@ const sortRows = (rows, sort) =>
   });
 
 // ---------- 產業漲跌排行 ----------
-function SectorCard({ poll }) {
+function SectorCard({ poll }: { poll: any }) {
   const [sort, setSort] = useState({ key: 'change_pct', desc: true });
-  const rows = sortRows(poll.data?.rows || [], sort);
-  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.change_pct || 0)));
+  const raw = poll.data?.rows || [];
+  const rows = sortRows(raw, sort);
+  const maxAbs = Math.max(1, ...raw.map((r: any) => Math.abs(r.change_pct || 0)));
+  const topBot = raw.length > 8 ? [...raw.slice(0, 4), ...raw.slice(-4)] : raw;
+  const goChains = () => {
+    location.hash = '#chains';
+  };
   return (
-    <Card
+    <PCard
+      id="board-sectors"
+      span={6}
       title="產業漲跌排行"
-      tip="證交所各類股指數的漲跌幅（上市，細分類）。量比＝類股成交金額 ÷ 前一交易日。點欄位標題可換排序。證交所收盤後更新。"
-      extra={
+      sub="點類股可切到產業鏈地圖"
+      tip={<Tip text="證交所各類股指數的漲跌幅（上市，細分類）。量比＝類股成交金額 ÷ 前一交易日。點欄位標題可換排序。證交所收盤後更新。" />}
+      right={
         <>
           {poll.data?.date && <span>{poll.data.date}</span>}
           <Refresh poll={poll} />
@@ -315,10 +407,21 @@ function SectorCard({ poll }) {
     >
       <Err text={poll.err} />
       <Wait poll={poll} />
+      {topBot.length > 0 && (
+        <HBars
+          items={topBot.map((r: any) => ({
+            id: r.name,
+            label: r.name,
+            value: Number(r.change_pct || 0),
+          }))}
+          format={(v) => `${signed(v)}%`}
+          onPick={goChains}
+        />
+      )}
       {rows.length > 0 && (
-        <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
           <table className="w-full text-xs whitespace-nowrap">
-            <thead className="sticky top-0 bg-slate-900">
+            <thead className="sticky top-0 bg-slate-900/95 z-10">
               <tr className="text-slate-400">
                 <th className="py-1.5 px-1.5 text-left font-normal">類股</th>
                 <SortTh k="change_pct" label="漲跌%" sort={sort} setSort={setSort} />
@@ -329,15 +432,22 @@ function SectorCard({ poll }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.name} className="border-t border-slate-800/60">
-                  <td className="py-1 px-1.5 text-slate-200">{r.name}</td>
+              {rows.map((r: any) => (
+                <tr key={r.name} className="border-t border-slate-800/60 hover:bg-white/[0.02]">
+                  <td className="py-1 px-1.5 text-slate-200">
+                    <button type="button" onClick={goChains} className="hover:text-sky-300 hover:underline cursor-pointer text-left">
+                      {r.name}
+                    </button>
+                  </td>
                   <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change_pct)}`}>{signed(r.change_pct)}%</td>
                   <td className="py-1 px-1.5">
                     <div className="relative h-2 bg-slate-800/60 rounded">
                       <div
-                        className={`absolute top-0 h-2 rounded ${r.change_pct >= 0 ? 'left-1/2 bg-rose-500/70' : 'right-1/2 bg-emerald-500/70'}`}
-                        style={{ width: `${(Math.abs(r.change_pct || 0) / maxAbs) * 50}%` }}
+                        className={`absolute top-0 h-2 rounded ${r.change_pct >= 0 ? 'left-1/2' : 'right-1/2'}`}
+                        style={{
+                          width: `${(Math.abs(r.change_pct || 0) / maxAbs) * 50}%`,
+                          background: r.change_pct >= 0 ? 'var(--up)' : 'var(--down)',
+                        }}
                       />
                     </div>
                   </td>
@@ -359,21 +469,71 @@ function SectorCard({ poll }) {
         </div>
       )}
       {poll.data?.source && <div className="text-[10px] text-slate-500">來源：{poll.data.source}</div>}
-    </Card>
+    </PCard>
+  );
+}
+
+// ---------- 資金流向（類股成交比重） ----------
+function SectorShareCard({ poll }: { poll: any }) {
+  const sectors = poll.data;
+  const shares = [...(sectors?.rows || [])]
+    .filter((r: any) => r.turnover_share_pct != null)
+    .sort((a: any, b: any) => b.turnover_share_pct - a.turnover_share_pct);
+  const top8 = shares.slice(0, 8);
+  const maxShare = top8[0]?.turnover_share_pct || 1;
+  const slices = topSlices(
+    shares.map((r: any) => ({ label: r.name, value: Number(r.turnover_share_pct || 0) })),
+    6,
+  );
+  return (
+    <PCard
+      id="board-flow-share"
+      span={6}
+      title="資金流向：類股成交比重"
+      sub={sectors?.date ? `${sectors.date} 前 8 大成交類股` : '證交所盤後統計'}
+      tip={<Tip text="今天成交金額最集中的類股（占比越高＝市場資金越集中）。證交所收盤後更新。" />}
+      right={<Refresh poll={poll} />}
+    >
+      <Err text={poll.err} />
+      <Wait poll={poll} />
+      {slices.length > 0 && (
+        <Donut items={slices} size={140} center="成交" sub="類股比重" label="類股成交比重圓餅圖" />
+      )}
+      {top8.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          {top8.map((r: any) => (
+            <div key={r.name} className="flex items-center gap-2 text-xs">
+              <span className="w-24 shrink-0 truncate text-slate-300">{r.name}</span>
+              <div className="flex-1 h-2.5 bg-white/5 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6]"
+                  style={{ width: `${(r.turnover_share_pct / maxShare) * 100}%` }}
+                />
+              </div>
+              <span className="w-14 text-right mono text-slate-200">{fmt(r.turnover_share_pct, 1)}%</span>
+              <span className={`w-14 text-right mono ${colorOf(r.change_pct)}`}>{signed(r.change_pct)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-500">來源：證交所 BFIAMU 各類股成交金額比重</div>
+    </PCard>
   );
 }
 
 // ---------- 台灣 50 ----------
-function Tw50Card() {
-  const poll = usePoll('/api/board/tw50', 30000);
+function Tw50Card({ poll }: { poll: any }) {
   const [sort, setSort] = useState({ key: 'market_cap', desc: true });
   const d = poll.data;
   const rows = sortRows(d?.rows || [], sort);
   return (
-    <Card
+    <PCard
+      id="board-tw50"
+      span={12}
       title="台灣 50 成分股"
-      tip="上市市值前 50 大（不含 ETF），接近台灣 50 指數成分股。量比＝今天累計成交量 ÷ 前一交易日成交量。點欄位標題可換排序，每 30 秒更新。"
-      extra={
+      sub="點列跳個股看盤"
+      tip={<Tip text="上市市值前 50 大（不含 ETF），接近台灣 50 指數成分股。量比＝今天累計成交量 ÷ 前一交易日成交量。點欄位標題可換排序，每 30 秒更新。" />}
+      right={
         <>
           {d && <span>即時 {d.live_count}／{(d.rows || []).length} 檔</span>}
           <Refresh poll={poll} />
@@ -385,10 +545,12 @@ function Tw50Card() {
       {rows.length > 0 && (
         <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
           <table className="w-full text-xs whitespace-nowrap">
-            <thead className="sticky top-0 bg-slate-900">
+            <thead className="sticky top-0 bg-slate-900/95 z-10">
               <tr className="text-slate-400">
                 <th className="py-1.5 px-1.5 text-left font-normal">代號</th>
                 <th className="py-1.5 px-1.5 text-left font-normal">名稱</th>
+                <th className="py-1.5 px-1.5 text-left font-normal">產業</th>
+                <SortTh k="weight_pct" label="權重%" sort={sort} setSort={setSort} />
                 <SortTh k="price" label="成交價" sort={sort} setSort={setSort} />
                 <SortTh k="change_pct" label="漲跌%" sort={sort} setSort={setSort} />
                 <SortTh k="volume_ratio" label="量比" sort={sort} setSort={setSort} />
@@ -397,29 +559,33 @@ function Tw50Card() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.code} className="border-t border-slate-800/60" title={`資料時間 ${r.quote_time}`}>
-                  <td className="py-1 px-1.5 mono text-slate-400">{r.code}</td>
-                  <td className="py-1 px-1.5 text-slate-200">
+              {rows.map((r: any) => (
+                <tr key={r.code} className="border-t border-slate-800/60 hover:bg-white/[0.02]" title={`資料時間 ${r.quote_time}`}>
+                  <td className="py-1.5 px-1.5 mono font-bold text-slate-300">{r.code}</td>
+                  <td className="py-1.5 px-1.5 text-slate-200">
                     <button
                       type="button"
                       onClick={() => openInWatch?.(r.code)}
                       title="到看盤頁看這檔的五檔、新聞與下單"
-                      className="hover:text-sky-300 hover:underline cursor-pointer text-left"
+                      className="hover:text-sky-300 hover:underline cursor-pointer text-left font-medium"
                     >
                       {r.name}
                     </button>
                     {!r.is_live && <span className="ml-1 text-[10px] text-slate-500">收盤</span>}
                   </td>
-                  <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change)}`}>{fmt(r.price)}</td>
-                  <td className={`py-1 px-1.5 mono text-right ${colorOf(r.change)}`}>{signed(r.change_pct)}%</td>
+                  <td className="py-1.5 px-1.5 text-slate-400">{r.industry || '其他'}</td>
+                  <td className="py-1.5 px-1.5 mono text-right text-slate-300">
+                    {r.weight_pct != null ? `${fmt(r.weight_pct, 2)}%` : '--'}
+                  </td>
+                  <td className={`py-1.5 px-1.5 mono text-right font-semibold ${colorOf(r.change)}`}>{fmt(r.price)}</td>
+                  <td className={`py-1.5 px-1.5 mono text-right font-semibold ${colorOf(r.change)}`}>{signed(r.change_pct)}%</td>
                   <td
-                    className={`py-1 px-1.5 mono text-right ${r.volume_ratio >= 1 ? 'text-amber-300' : 'text-slate-400'}`}
+                    className={`py-1.5 px-1.5 mono text-right ${r.volume_ratio >= 1 ? 'text-amber-300' : 'text-slate-400'}`}
                   >
                     {r.volume_ratio != null ? fmt(r.volume_ratio, 2) : '--'}
                   </td>
-                  <td className="py-1 px-1.5 mono text-right text-slate-300">{fmt(r.volume, 0)}</td>
-                  <td className="py-1 px-1.5 mono text-right text-slate-300">{fmt(r.market_cap, 0)}</td>
+                  <td className="py-1.5 px-1.5 mono text-right text-slate-300">{fmt(r.volume, 0)}</td>
+                  <td className="py-1.5 px-1.5 mono text-right text-slate-300">{fmt(r.market_cap, 0)}</td>
                 </tr>
               ))}
             </tbody>
@@ -427,21 +593,30 @@ function Tw50Card() {
         </div>
       )}
       {d?.note && <div className="text-[10px] text-slate-500">{d.note}</div>}
-    </Card>
+    </PCard>
   );
 }
 
 function MarketBoardPage() {
-  // 產業排行與資金流向共用類股資料（同一份請求）
+  // 產業排行與資金流向共用類股資料；三大法人與外資 10 日共用 flow；產業權重與台灣 50 共用 tw50
   const sectors = usePoll('/api/board/sectors', 600000);
+  const flow = usePoll('/api/board/flow', 600000);
+  const tw50 = usePoll('/api/board/tw50', 30000);
   return (
-    <div className="space-y-4" data-tour="board-root">
+    <div className="space-y-3.5" data-tour="board-root">
+      <PageHead
+        title="大盤籌碼"
+        desc="開盤前先看國際指數、台指期、資金流向、產業強弱與台灣 50，再決定今天怎麼操作。"
+      />
       <BoardHelp />
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
         <WorldCard />
-        <FlowCard sectors={sectors.data} />
+        <InstFlowCard poll={flow} />
+        <Foreign10dCard poll={flow} />
+        <Tw50IndustryWeightCard poll={tw50} />
         <SectorCard poll={sectors} />
-        <Tw50Card />
+        <SectorShareCard poll={sectors} />
+        <Tw50Card poll={tw50} />
       </div>
     </div>
   );

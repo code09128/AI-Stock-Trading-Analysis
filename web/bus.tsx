@@ -8,6 +8,7 @@ export const bus: {
   backtestSymbol?: (sym: string) => void;
   startTour?: (step?: number | string) => void;
   currentPage?: string;
+  quoteMemo?: Record<string, { q: any; at: number }>; // 最近抓到的報價（看盤頁與提醒檢查共用）
   appRendered?: boolean;
   desktopHidden?: boolean;
   [key: string]: any;

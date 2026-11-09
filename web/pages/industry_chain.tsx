@@ -2,7 +2,8 @@
 // 畫面由 chain_engine.tsx 的 Canvas 引擎繪製；這支檔案負責抓資料、HUD（清單、明細、回放列、小地圖）與把兩邊接起來。
 // 資料：/api/chains/map（全景，30 秒）、/api/chains/detail（單一產業鏈的即時報價，30 秒）、/api/chains/history（回放，按需載入）
 // 產業鏈結構在 src/market/chain_data.py（自行整理的示意分類，更新方式見該檔開頭）。
-import { Tip } from '../ui';
+import { Tip, colorOf } from '../ui';
+import { PageHead } from './card_box';
 import { ChainEngine } from './chain_engine';
 import { pollEvery } from '../desktop_bridge';
 
@@ -15,8 +16,8 @@ const STAGE_COLORS = ['#22d3ee', '#a78bfa', '#f59e0b', '#34d399'];
 
 const fmtPct = (v) => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
 const toneCls = (v) =>
-  v === null || v === undefined ? 'text-slate-400' : Math.abs(v) < 0.05 ? 'text-sky-300' : v > 0 ? 'text-rose-400' : 'text-emerald-400';
-const barColor = (v) => (Math.abs(v) < 0.05 ? '#7aa2ff' : v > 0 ? '#ff4d6d' : '#2dffa0');
+  v === null || v === undefined ? 'text-slate-400' : Math.abs(v) < 0.05 ? 'text-sky-300' : colorOf(v);
+const barColor = (v) => (Math.abs(v) < 0.05 ? '#7aa2ff' : v > 0 ? 'var(--up)' : 'var(--down)');
 const fmtAsOf = (s) => (s || '').replace(/^(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
 const fmtYi = (v, market) => (!v ? '—' : market === 'US' ? `$${(v / 1e9).toFixed(v >= 1e10 ? 0 : 1)}B` : `${(v / 1e8).toFixed(v >= 1e10 ? 0 : 1)} 億`);
 
@@ -563,6 +564,9 @@ function IndustryChainPage() {
     engineRef.current?.refit();
   }, [listOpen, view.sector]);
   useEffect(() => {
+    engineRef.current?.markDirty?.();
+  }, [details, history, replay]);
+  useEffect(() => {
     engineRef.current?.setAnim(anim);
   }, [anim]);
   useEffect(() => {
@@ -590,6 +594,28 @@ function IndustryChainPage() {
   };
 
   const [trip, setTrip] = useState('');
+  const [typedTrip, setTypedTrip] = useState('');
+  useEffect(() => {
+    if (!trip) {
+      setTypedTrip('');
+      return undefined;
+    }
+    const reduced =
+      document.documentElement.dataset.motion === 'reduce' ||
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setTypedTrip(trip);
+      return undefined;
+    }
+    let i = 0;
+    setTypedTrip('');
+    const id = setInterval(() => {
+      i += 1;
+      setTypedTrip(trip.slice(0, i));
+      if (i >= trip.length) clearInterval(id);
+    }, 22);
+    return () => clearInterval(id);
+  }, [trip]);
   // 視角變了就更新網址（飛行動畫途中的中間站只覆蓋、不新增歷史，免得上一頁要退好幾步）
   useEffect(() => {
     if (pendingHash.current) return; // 還在等地圖載入，網址上的目標還沒套用
@@ -659,6 +685,10 @@ function IndustryChainPage() {
 
   return (
     <div className="space-y-3" data-tour="chains-root">
+      <PageHead
+        title="產業鏈地圖"
+        desc="證交所 31 類股與美股 11 大板塊 GICS 供應鏈圖譜：點擊類股展開上中下游環節與代表個股，回放近 30 日資金傳導。"
+      />
       <div
         ref={boxRef}
         role="application"
@@ -674,7 +704,7 @@ function IndustryChainPage() {
           }
           if (!tgt.matches?.('input,select,textarea') && engineRef.current?.key(e)) e.preventDefault();
         }}
-        className="relative rounded-2xl border border-slate-800 overflow-hidden outline-none"
+        className="ta-card rounded-2xl overflow-hidden outline-none"
         style={{ height: 'calc(100vh - 230px)', minHeight: 560, background: '#03050b' }}
       >
         <canvas
@@ -732,8 +762,9 @@ function IndustryChainPage() {
         </div>
 
         {trip && (
-          <div className={`${PANEL} absolute left-1/2 -translate-x-1/2 top-16 max-w-[92%] text-center px-4 py-1.5 text-sm text-cyan-100 pointer-events-none z-10 animate-pulse`} role="status">
-            ✈ 前往 {trip}…
+          <div className={`${PANEL} absolute left-1/2 -translate-x-1/2 top-16 max-w-[92%] text-center px-4 py-1.5 text-sm text-cyan-100 pointer-events-none z-10`} role="status">
+            ✈ 前往 {typedTrip || trip}
+            {typedTrip.length < trip.length && <span className="ml-0.5 text-cyan-300">▍</span>}
           </div>
         )}
 
@@ -814,8 +845,8 @@ function IndustryChainPage() {
                     setReplay((r) => ({ ...r, day, playing: false }));
                   }}
                 />
-                <span className="text-xs text-slate-300 tabular-nums w-24">{hist.dates[replay.day]}</span>
-                <label className="text-xs text-slate-400 flex items-center gap-1 cursor-pointer">
+                <span className="text-xs text-slate-300 tabular-nums mono min-w-[88px] text-center">{hist.dates[replay.day]}</span>
+                <label className="text-xs text-slate-400 flex items-center gap-1 cursor-pointer shrink-0">
                   <input type="checkbox" checked={replay.cum} onChange={(e) => setReplay((r) => ({ ...r, cum: e.target.checked }))} className="accent-cyan-400" />
                   累積
                 </label>

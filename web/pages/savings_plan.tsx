@@ -5,7 +5,9 @@
 // 公式都在後端 src/portfolio/savings_plan.py（/api/savings/calc），這裡只負責輸入與顯示
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { LS_CART, Tip, baseCode, currencyOf, fmt, marketOf, normSym, readLS, twFee, writeLS } from '../ui';
+import { LS_CART, Tip, baseCode, colorOf, currencyOf, fmt, marketOf, normSym, readLS, twFee, writeLS } from '../ui';
+import { PCard, PageHead } from './card_box';
+import { VBars } from './mini_charts';
 import { orderLabel } from './order_panel';
 import { openInWatch } from './watch';
 import { SavingsPortfolioTab } from './savings_portfolio';
@@ -97,16 +99,16 @@ function Num({ label, value, onChange, step = 1, suffix, tip }: { label: any; va
   );
 }
 
-function Card({ title, tip, extra, children }: { title: any; tip?: string; extra?: any; children?: any }) {
+function Card({ title, tip, extra, children, span = 12 }: { title: any; tip?: string; extra?: any; children?: any; span?: 4 | 6 | 8 | 12 }) {
   return (
-    <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
-        {tip && <Tip text={tip} />}
-        <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px] text-slate-500">{extra}</div>
-      </div>
+    <PCard
+      span={span}
+      title={title}
+      tip={tip ? <Tip text={tip} /> : undefined}
+      right={extra}
+    >
       {children}
-    </section>
+    </PCard>
   );
 }
 
@@ -115,10 +117,10 @@ const Btn = ({ onClick, children, disabled, tone = 'slate' }: { onClick?: () => 
     type="button"
     onClick={onClick}
     disabled={disabled}
-    className={`px-2.5 py-1 rounded text-xs cursor-pointer disabled:opacity-50 ${
+    className={`px-2.5 py-1 rounded-lg text-xs cursor-pointer disabled:opacity-50 ${
       tone === 'sky'
-        ? 'bg-sky-600 text-white hover:bg-sky-500'
-        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+        ? 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white font-semibold shadow-sm'
+        : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
     }`}
   >
     {children}
@@ -252,6 +254,7 @@ function ReturnsCard({ s, set, ret }) {
   const d = ret.data;
   return (
     <Card
+      span={4}
       title="① 選擇存股標的"
       tip="報酬率用這檔的還權日 K 計算（含配息再投入）。也可以直接填「自訂報酬率」，不選標的。"
     >
@@ -266,7 +269,7 @@ function ReturnsCard({ s, set, ret }) {
       >
         <label className="space-y-1">
           <span className="text-[11px] text-slate-400 block">代號（台股、美股都可以）</span>
-          <input value={input} onChange={(e) => setInput(e.target.value)} className={`${inputCls} w-32`} />
+          <input value={input} onChange={(e) => setInput(e.target.value)} className={`${inputCls} w-28`} />
         </label>
         <Btn tone="sky" disabled={ret.loading}>
           {ret.loading ? '計算中…' : '取得報酬率'}
@@ -307,7 +310,7 @@ function ReturnsCard({ s, set, ret }) {
             </button>
             <div className="text-[10px] text-slate-500">資料來源：{d.data_source}</div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-xs">
             {[
               ['歷史報酬率', d.cagr, `上市以來 ${d.years} 年年化`],
               ['穩定報酬率', d.rolling_median, '近 15 年持有 5 年中位數'],
@@ -315,7 +318,7 @@ function ReturnsCard({ s, set, ret }) {
               ['近 3 年平均殖利率', d.avg_yield_pct, d.avg_yield_years ? `${d.avg_yield_years} 年平均` : ''],
               ['近 3 年總報酬', d.total_3y, '含配息'],
             ].map(([label, v, note]) => (
-              <div key={label} className="bg-slate-950/60 rounded-lg px-3 py-2">
+              <div key={label} className="bg-white/[0.025] border border-white/[0.06] rounded-xl px-3 py-2">
                 <div className="text-slate-400 text-[11px]">{label}</div>
                 <div className="mono text-base font-bold text-white">{v == null ? '資料不足' : pct(v)}</div>
                 <div className="text-[10px] text-slate-500">{note}</div>
@@ -411,6 +414,7 @@ function PlanTab({ s, set, ret }) {
 
   return (
     <Card
+      span={8}
       title="② 定期定額試算"
       extra={
         <>
@@ -538,6 +542,7 @@ function IncomeTab({ s, set }) {
 
   return (
     <Card
+      span={8}
       title="股息現金流試算"
       tip="所需本金＝每月想領 × 12 ÷ 近 3 年平均殖利率；每月可領＝一次投入 × 殖利率 ÷ 12。依近 3 年平均殖利率排序；規模未達 100 億的標灰色。點 ETF 名稱可以直接用那一檔做定期定額試算。"
       extra={
@@ -578,7 +583,18 @@ function IncomeTab({ s, set }) {
       )}
       {err && <div className="text-xs text-rose-300">⚠️ {err}</div>}
       {rows.length > 0 && (
-        <div className="overflow-x-auto">
+        <>
+          <VBars
+            items={rows.slice(0, 8).map((r) => ({
+              label: r.symbol,
+              value: Number((r.avg_yield_pct ?? r.ttm_yield_pct ?? 0).toFixed(2)),
+              color: r.symbol === s.symbol ? '#fbbf24' : '#4f7cff',
+            }))}
+            height={145}
+            unit="%"
+            label="高股息 ETF 近 3 年平均殖利率直條圖"
+          />
+          <div className="overflow-x-auto">
           <table className="w-full text-xs mono">
             <thead className="text-slate-400">
               <tr className="border-b border-slate-800">
@@ -621,7 +637,7 @@ function IncomeTab({ s, set }) {
                     <td className="text-right">{pct(r.ttm_yield_pct)}</td>
                     <td className="text-right font-sans">{r.frequency || '--'}</td>
                     <td
-                      className={`text-right ${r.total_3y == null ? '' : r.total_3y < 0 ? 'text-emerald-400' : 'text-rose-400'}`}
+                      className={`text-right ${r.total_3y == null ? '' : colorOf(r.total_3y)}`}
                     >
                       {r.total_3y == null ? '未滿 3 年' : pct(r.total_3y)}
                     </td>
@@ -635,6 +651,7 @@ function IncomeTab({ s, set }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
       <div className="text-[11px] text-slate-400 leading-relaxed">
         ⚠️ 試算未扣稅：單筆股利 2 萬元以上扣 2.11% 二代健保補充保費，股利併入所得課稅，實際月領會比較少。
@@ -737,7 +754,7 @@ function LifeTab({ s, set, ret }) {
   };
 
   return (
-    <Card title="生命週期試算（存到退休 → 退休後提領）">
+    <Card span={8} title="生命週期試算（存到退休 → 退休後提領）">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Num label="目前年齡" value={s.age} onChange={(v) => set({ age: v })} />
         <Num label="退休年齡" value={s.retireAge} onChange={(v) => set({ retireAge: v })} />
@@ -877,31 +894,51 @@ function SavingsPlanPage() {
   }, []);
 
   return (
-    <div className="space-y-4" data-tour="savings-root">
-      <div className="flex flex-wrap gap-2">
-        {TABS.map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => set({ tab: id })}
-            className={`px-3 py-1.5 rounded-lg text-sm cursor-pointer ${
-              s.tab === id ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-3.5" data-tour="savings-root">
+      <PageHead
+        title="存股計畫"
+        desc="定期定額正推／反推、股息現金流試算、生命週期退休規劃與多檔 ETF 投資組合回測。"
+        right={
+          <div className="flex flex-wrap gap-1.5">
+            {TABS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => set({ tab: id })}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer ${
+                  s.tab === id
+                    ? 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white shadow-lg shadow-indigo-500/20'
+                    : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        }
+      />
       <PlanHelp />
-      {s.tab === 'plan' && (
-        <>
-          <ReturnsCard s={s} set={set} ret={ret} />
-          <PlanTab s={s} set={set} ret={ret} />
-        </>
-      )}
-      {s.tab === 'portfolio' && SavingsPortfolioTab && <SavingsPortfolioTab />}
-      {s.tab === 'income' && <IncomeTab s={s} set={set} />}
-      {s.tab === 'life' && <LifeTab s={s} set={set} ret={ret} />}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+        {s.tab === 'plan' && (
+          <>
+            <ReturnsCard s={s} set={set} ret={ret} />
+            <PlanTab s={s} set={set} ret={ret} />
+          </>
+        )}
+        {s.tab === 'portfolio' && SavingsPortfolioTab && <SavingsPortfolioTab />}
+        {s.tab === 'income' && (
+          <>
+            <ReturnsCard s={s} set={set} ret={ret} />
+            <IncomeTab s={s} set={set} />
+          </>
+        )}
+        {s.tab === 'life' && (
+          <>
+            <ReturnsCard s={s} set={set} ret={ret} />
+            <LifeTab s={s} set={set} ret={ret} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

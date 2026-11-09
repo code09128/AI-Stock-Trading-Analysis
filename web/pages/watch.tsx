@@ -1,7 +1,7 @@
 // 看盤頁：左側清單（自選股/ETF/持股）＋右側報價、分時圖、五檔、模擬下單
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { DEFAULT_WATCH, LS_CART, LS_WATCH, baseCode, colorOf, currencyOf, feeDiscount, fmt, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
+import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
 import { Row } from './watch_parts';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
@@ -19,6 +19,7 @@ import { DepthBody, HoldBody, NewsBody, StatsBody } from './quote_cards';
 import { HBars } from './mini_charts';
 import { openSavings } from './savings_plan';
 import { pollEvery } from '../desktop_bridge';
+import { cachedJson } from '../fetch_cache';
 
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
@@ -54,7 +55,10 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => {
     bus._watchSelected = selected;
   }, [selected]);
-  const [quotes, setQuotes] = useState({});
+  // 切頁回來先顯示上次的報價（bus.quoteMemo），不用等新一輪回來才有畫面
+  const [quotes, setQuotes] = useState<any>(() =>
+    Object.fromEntries(Object.entries((bus.quoteMemo || {}) as Record<string, any>).map(([k, m]) => [k, m.q])),
+  );
   const [updatedAt, setUpdatedAt] = useState('--:--:--');
   const [netError, setNetError] = useState(null);
   const [polling, setPolling] = useState(true);
@@ -155,12 +159,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     let stop = false;
     setDigest({ symbol: selected, data: null, error: '', loading: true });
     const timer = setTimeout(() => {
-      fetch('/api/news/digest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: selected }),
-      })
-        .then((r) => r.json())
+      cachedJson('/api/news/digest', { symbol: selected }, 295000) // 後端快取 5 分鐘
         .then((d) => {
           if (stop) return;
           setDigest({ symbol: selected, data: d, error: d?.error ? String(d.error) : '', loading: false });
@@ -176,12 +175,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => {
     let stop = false;
     setSelOverview(null);
-    fetch('/api/overview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols: [selected] }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/overview', { symbols: [selected] }, 295000)
       .then((d) => !stop && setSelOverview(d.rows?.[0] || null))
       .catch(() => {});
     return () => {
@@ -226,13 +220,12 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => {
     let stop = false;
     let timer = null;
-    const load = () =>
-      fetch('/api/etf')
-        .then((r) => r.json())
+    const load = (ttl = 600000) =>
+      cachedJson('/api/etf', undefined, ttl)
         .then((d) => {
           if (stop) return;
           setEtfs(d);
-          if (d.pending_yields > 0) timer = setTimeout(load, 6000); // 殖利率背景計算中
+          if (d.pending_yields > 0) timer = setTimeout(() => load(0), 6000); // 殖利率背景計算中
         })
         .catch(() => {});
     load();
@@ -242,28 +235,38 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     };
   }, []);
 
-  // 需要報價的代號：自選 + ETF 名單 + 目前選中
+  // 需要報價的代號：自選 + 目前選中 + 持股 + 提醒；ETF 名單只有打開 ETF 分頁才抓（平常每 5 秒多抓幾十檔沒人看）
   const allSyms = useMemo(() => {
     const set = new Set(watch);
     if (selected) set.add(selected);
-    for (const e of etfs.etfs) set.add(e.symbol);
+    if (listTab === 'etf') for (const e of etfs.etfs) set.add(e.symbol);
     for (const h of holdings) set.add(h.symbol);
     for (const a of alerts) set.add(a.symbol);
     return [...set];
-  }, [watch, etfs, selected, holdings, alerts]);
+  }, [watch, etfs, selected, holdings, alerts, listTab]);
   const symKey = allSyms.join(',');
 
   const quotesBusy = useRef(false);
-  const loadQuotes = useCallback(async () => {
+  const quotesDone = useRef<Record<string, { at: number; key: string }>>({});
+  const loadQuotes = useCallback(async (mode?: unknown) => {
     // 上一輪還沒回來（網路或資料來源卡住）就跳過這一輪，請求不會越疊越多
     if (quotesBusy.current) return;
     quotesBusy.current = true;
     // 台股與美股分開請求：台股很快就能先顯示，美股（Yahoo 較慢）晚點補上
     const syms = symKey.split(',').filter(Boolean);
-    const groups = [syms.filter(isTW), syms.filter((x) => !isTW(x))].filter((g) => g.length);
+    // 自動更新時，整組都在休市就 30 秒才抓一次（清單有變或按「立即更新」不受限）
+    const closedSkip = (group: string[], name: string) => {
+      if (mode !== 'auto') return false;
+      const last = quotesDone.current[name];
+      return !!last && last.key === group.join(',') && Date.now() - last.at < 30000 && !group.some((s) => marketSessionOpen(s));
+    };
+    const groups = [
+      ['tw', syms.filter(isTW)] as [string, string[]],
+      ['intl', syms.filter((x) => !isTW(x))] as [string, string[]],
+    ].filter(([name, g]) => g.length && !closedSkip(g, name));
     try {
       await Promise.all(
-        groups.map(async (group) => {
+        groups.map(async ([name, group]) => {
           try {
             const res = await fetch('/api/quotes', {
               method: 'POST',
@@ -272,6 +275,9 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             });
             const data = await res.json();
             if (data.error) throw new Error(data.error);
+            bus.quoteMemo = bus.quoteMemo || {};
+            for (const qq of data.quotes) bus.quoteMemo[baseCode(qq.symbol)] = { q: qq, at: Date.now() }; // 提醒檢查共用
+            quotesDone.current[name] = { at: Date.now(), key: group.join(',') };
             setQuotes((prev) => {
               const next = { ...prev };
               for (const qq of data.quotes) next[baseCode(qq.symbol)] = qq;
@@ -294,7 +300,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => {
     loadQuotes();
     if (!polling) return undefined;
-    return pollEvery(loadQuotes, 5000);
+    return pollEvery(() => loadQuotes('auto'), 5000);
   }, [loadQuotes, polling]);
 
   // 迷你走勢：自選股與持股（10 分鐘快取在後端）
@@ -302,12 +308,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => {
     const syms = sparkKey.split(',').filter(Boolean);
     if (!syms.length) return;
-    fetch('/api/sparks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols: syms }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/sparks', { symbols: syms }, 600000) // 後端快取 10 分鐘
       .then((d) => setSparks((prev) => ({ ...prev, ...(d.sparks || {}) })))
       .catch(() => {});
   }, [sparkKey]);
@@ -330,12 +331,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     }
     let stop = false;
     const load = () =>
-      fetch('/api/fx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currencies: holdCurrencies.split(',') }),
-      })
-        .then((r) => r.json())
+      cachedJson('/api/fx', { currencies: holdCurrencies.split(',') }, 295000)
         .then((d) => {
           if (stop) return;
           setFx(Object.fromEntries(Object.entries(d.rates || {}).map(([c, r]: [string, any]) => [c, r.rate])));
@@ -361,12 +357,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     const load = () => {
       if (busy) return;
       busy = true;
-      fetch('/api/intraday', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: selected }),
-      })
-        .then((r) => r.json())
+      cachedJson('/api/intraday', { symbol: selected }, 25000) // 切頁回來不用重抓；30 秒輪詢照常更新
         .then((d) => !stop && setIntraday(d))
         .catch(() => {})
         .finally(() => {
@@ -395,12 +386,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     setTradeRules(null);
     const m = marketOf(selected);
     if (m === 'TW') return; // 美股也要查：SEC 規費、FINRA TAF 由後端依今天日期決定
-    fetch('/api/trade_rules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: selected }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/trade_rules', { symbol: selected }, 3600000)
       .then((d) => !stop && setTradeRules(d))
       .catch(
         (e) =>
@@ -420,12 +406,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     let stop = false;
     const load = () => {
       setOverviewLoading(true);
-      fetch('/api/overview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbols: ovKey.split(',').filter(Boolean) }),
-      })
-        .then((r) => r.json())
+      cachedJson('/api/overview', { symbols: ovKey.split(',').filter(Boolean) }, 295000)
         .then((d) => {
           if (stop) return;
           const m = {};
@@ -448,12 +429,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => {
     const syms = catKey.split(',').filter(Boolean);
     if (!syms.length) return;
-    fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols: syms }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/categories', { symbols: syms }, 3600000)
       .then((d) => setCategories((prev) => ({ ...prev, ...(d.categories || {}) })))
       .catch(() => {});
   }, [catKey]);
@@ -796,6 +772,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             <StockChart
               symbol={selected}
               quoteTime={q?.quote_time}
+              livePrice={q?.is_live ? q.price : undefined}
               intraday={intraday}
               tz={tzOf(selected)}
               news={chartNews}
@@ -916,12 +893,12 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                 aria-hidden="true"
                 className={`w-[7px] h-[7px] rounded-full ${polling ? 'ta-live-dot' : 'bg-slate-500'}`}
               />
-              {polling ? '即時行情・每 5 秒自動更新' : '已暫停自動更新'}
+              {polling ? '即時行情・每 5 秒更新（休市 30 秒）' : '已暫停自動更新'}
               <span className="mono">{updatedAt}</span>
             </button>
             <button
               type="button"
-              onClick={loadQuotes}
+              onClick={() => loadQuotes()}
               className="px-2.5 py-1 rounded-[10px] border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 cursor-pointer"
             >
               ↻ 立即更新

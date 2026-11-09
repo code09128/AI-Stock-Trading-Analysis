@@ -241,6 +241,7 @@ def _spark_one(symbol: str) -> List[float]:
         closes = [round(c, 4) for c in (res["indicators"]["quote"][0].get("close") or []) if c]
         _put(key, closes)
         return closes
+    _put(key, [])  # 查不到也記住，SPARK_TTL 內不要每次都再連 Yahoo
     return []
 
 

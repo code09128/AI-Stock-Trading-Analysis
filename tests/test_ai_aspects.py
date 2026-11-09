@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from src.ai import ai_context
+from src.ai import ai_client, ai_context
 from src.market import chart_data
 
 
@@ -57,6 +57,66 @@ def _fake_chart(n=3):
     day = 1762387200
     return {"meta": {"gmtoffset": 28800}, "timestamp": [day + i * 900 for i in range(n)],
             "indicators": {"quote": [{"close": [10 + i for i in range(n)], "volume": [5] * n}]}}
+
+
+class QuestionPromptTests(unittest.TestCase):
+    profile = {"type": "gemini", "api_key": "x", "model": "m"}
+
+    def build(self, question):
+        with patch.object(ai_client, "is_enabled", return_value=True):
+            return ai_client._build_explain_prompt(self.profile, "stock", {"code": "2330"}, question)[0]
+
+    def test_question_gets_direct_answer_not_fixed_report(self):
+        user = self.build("估值貴不貴？")
+        self.assertIn("【使用者想問】估值貴不貴？", user)
+        self.assertIn("第一句就正面回答", user)
+        self.assertNotIn("【部位建議】", user)  # 固定報告的段落不能出現
+        self.assertNotIn("請直接從下面的骨架開始寫", user)
+
+    def test_every_ai_page_answers_the_question(self):
+        for module in ai_client.MODULE_TASKS:
+            with self.subTest(module=module), patch.object(ai_client, "is_enabled", return_value=True):
+                q = f"問題-{module}"
+                user = ai_client._build_explain_prompt(self.profile, module, {"symbol": "2330"}, q)[0]
+                self.assertIn(q, user)
+                self.assertNotIn("骨架", user)
+                report = ai_client._build_explain_prompt(self.profile, module, {"symbol": "2330"}, "")[0]
+                self.assertIn("骨架", report)
+
+    def test_different_questions_produce_different_prompts(self):
+        self.assertNotEqual(self.build("估值貴不貴？"), self.build("法人最近在買還是賣？"))
+
+    def test_blank_question_writes_full_report(self):
+        for q in ("", "   "):
+            user = self.build(q)
+            self.assertIn("【部位建議】", user)
+            self.assertIn("請直接從下面的骨架開始寫", user)
+            self.assertNotIn("【使用者想問】", user)
+
+
+class TechIndicatorsTests(unittest.TestCase):
+    def test_reads_values_from_snapshot_indicators(self):
+        snap = {"latest_date": "2026-11-09", "trend_score": {"total": 39, "signal_label": "觀望"},
+                "indicators": {"RSI14": 41.5, "MA5": 100.0, "MA20": 110.0, "MA60": 120.0, "ATR14": 3.2,
+                               "MACD_DIF": -1.1, "MACD_SIGNAL": -0.9, "MACD_HIST": -0.2},
+                "recent_low_20d": 95.0, "recent_high_20d": 125.0}
+        with patch.object(ai_context, "DualMarketDataAdapter") as adapter:
+            adapter.return_value.build_technical_snapshot.return_value = snap
+            out = ai_context.tech_indicators("2330")
+        self.assertEqual(out["RSI14"], 41.5)
+        self.assertEqual(out["MA20"], 110.0)
+        self.assertEqual(out["ATR14"], 3.2)
+        self.assertIn("DIF -1.1", out["MACD"])
+        self.assertEqual(out["支撐(20日低)"], 95.0)
+
+
+class SparkMissTests(unittest.TestCase):
+    def test_failed_symbol_is_not_requested_again_within_ttl(self):
+        sym = "NOSUCHSPARK"
+        with patch.object(chart_data, "_yahoo_symbols", return_value=[sym]),                 patch.object(chart_data, "_chart", side_effect=RuntimeError("404")) as chart:
+            self.assertEqual(chart_data._spark_one(sym), [])
+            self.assertEqual(chart_data._spark_one(sym), [])
+        self.assertEqual(chart.call_count, 1)
 
 
 class FiveDaysTests(unittest.TestCase):

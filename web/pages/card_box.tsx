@@ -146,7 +146,7 @@ function CardBox({
         if (ctl.dragId && ctl.dragId !== id) ctl.move(ctl.dragId, id);
         ctl.setDragId(null);
       }}
-      className={`ta-card bg-slate-900/90 border border-slate-800 rounded-2xl min-w-0 ${spanClass(def?.span || 12, wide)} ${
+      className={`ta-card rounded-2xl min-w-0 ${spanClass(def?.span || 12, wide)} ${
         collapsed ? 'self-start' : ''
       } ${ctl.dragId === id ? 'opacity-40' : ''} ${over ? 'outline outline-2 outline-dashed outline-[#4f7cff] outline-offset-2' : ''} ${className}`}
     >
@@ -258,5 +258,89 @@ function LayoutMenu({ ctl }: { ctl: Ctl }) {
   );
 }
 
-export { CardBox, CardGrid, LayoutMenu, useCardLayout };
+// V4 頁面標題列：每頁上方標題＋一句說明＋右側操作區
+function PageHead({ title, desc, sub, right }: { title: any; desc?: any; sub?: any; right?: any }) {
+  const subtitle = desc ?? sub;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3.5">
+      <div className="min-w-0">
+        <h2 className="m-0 text-[20px] font-extrabold tracking-[-0.02em] text-slate-100">{title}</h2>
+        {subtitle && <p className="mt-0.5 mb-0 text-[12.5px] text-slate-400">{subtitle}</p>}
+      </div>
+      {right && <div className="flex flex-wrap items-center gap-2">{right}</div>}
+    </div>
+  );
+}
+
+const pSpanClass = (span: number) =>
+  span === 4
+    ? 'md:col-span-6 xl:col-span-4'
+    : span === 5
+      ? 'md:col-span-6 xl:col-span-5'
+      : span === 6
+        ? 'md:col-span-6'
+        : span === 7
+          ? 'md:col-span-6 xl:col-span-7'
+          : span === 8
+            ? 'md:col-span-12 xl:col-span-8'
+            : 'md:col-span-12';
+
+// V4 通用毛玻璃卡片：支援 12 欄跨度（s4/s5/s6/s7/s8/s12）、副標、提示、右上角動作與收合
+function PCard({
+  id,
+  title,
+  sub,
+  tip,
+  right,
+  span = 12,
+  defaultCollapsed = false,
+  className = '',
+  bodyClass = '',
+  children,
+}: {
+  id?: string;
+  title?: any;
+  sub?: any;
+  tip?: any;
+  right?: any;
+  span?: 4 | 5 | 6 | 7 | 8 | 12;
+  defaultCollapsed?: boolean;
+  className?: string;
+  bodyClass?: string;
+  children: any;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  return (
+    <section
+      data-card={id}
+      className={`ta-card ta-fade-up rounded-2xl min-w-0 flex flex-col ${pSpanClass(span)} ${
+        collapsed ? 'self-start' : ''
+      } ${className}`}
+    >
+      {title != null && (
+        <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-1.5">
+          <h3 className="m-0 text-[13.5px] font-bold text-slate-100 flex items-center gap-1.5">{title}</h3>
+          {tip}
+          {sub != null && <span className="text-xs text-slate-400 truncate min-w-0">{sub}</span>}
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-slate-400 shrink-0">
+            {right}
+            <button
+              type="button"
+              onClick={() => setCollapsed((v) => !v)}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? '展開卡片' : '收合卡片'}
+              title={collapsed ? '展開' : '收合'}
+              className="w-6 h-6 grid place-items-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+            >
+              {collapsed ? '▸' : '▾'}
+            </button>
+          </div>
+        </div>
+      )}
+      {!collapsed && <div className={`ta-cardbody px-3.5 pb-3.5 ${title != null ? 'pt-1.5' : 'pt-3.5'} space-y-3 flex-1 ${bodyClass}`}>{children}</div>}
+    </section>
+  );
+}
+
+export { CardBox, CardGrid, LayoutMenu, PCard, PageHead, useCardLayout };
 export type { Ctl as CardCtl };

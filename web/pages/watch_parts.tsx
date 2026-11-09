@@ -33,7 +33,14 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
         active
           ? 'border-[#4f7cff] bg-gradient-to-r from-[#4f7cff]/20 to-[#4f7cff]/5'
           : 'border-transparent bg-white/5 hover:bg-white/10'
-      } ${flash === 'up' ? '!bg-rose-500/30' : flash === 'down' ? '!bg-emerald-500/30' : ''}`}
+      }`}
+      style={
+        flash === 'up'
+          ? { background: 'var(--up-bg)' }
+          : flash === 'down'
+            ? { background: 'var(--down-bg)' }
+            : undefined
+      }
     >
       <div className="flex items-center gap-2">
         {rank && <span className="text-[11px] text-slate-500 w-4 shrink-0">{rank}</span>}
@@ -96,18 +103,29 @@ const Field = ({ label, tip, children }: { label: any; tip?: any; children?: any
 
 const Seg = ({ value, onChange, options }) => (
   <div className="flex rounded-lg overflow-hidden border border-slate-700">
-    {options.map(([v, label, on]) => (
-      <button
-        type="button"
-        key={v}
-        onClick={() => onChange(v)}
-        className={`flex-1 py-1.5 text-xs font-semibold cursor-pointer ${
-          value === v ? `${on || 'bg-sky-600'} text-white` : 'bg-slate-950 text-slate-400'
-        }`}
-      >
-        {label}
-      </button>
-    ))}
+    {options.map(([v, label, on]) => {
+      const active = value === v;
+      const isUpDown = on === 'up' || on === 'down';
+      return (
+        <button
+          type="button"
+          key={v}
+          onClick={() => onChange(v)}
+          style={
+            active && isUpDown
+              ? { background: on === 'up' ? 'var(--up)' : 'var(--down)' }
+              : undefined
+          }
+          className={`flex-1 py-1.5 text-xs font-semibold cursor-pointer ${
+            active
+              ? `${isUpDown ? '' : on || 'bg-sky-600'} text-white`
+              : 'bg-slate-950 text-slate-400'
+          }`}
+        >
+          {label}
+        </button>
+      );
+    })}
   </div>
 );
 

@@ -1,4 +1,5 @@
 // 技術分析頁的獨立卡片：籌碼面板（FinMind 三大法人、融資融券、外資持股）、「你持有這檔」部位卡片
+import { cachedJson } from '../fetch_cache';
 import { bus } from '../bus';
 import { Tip, baseCode, colorOf, currencyOf, fmt, normSym } from '../ui';
 import { usePortfolio } from '../portfolio_store';
@@ -9,7 +10,7 @@ const { useState, useEffect } = React;
 const fmtLots = (v) =>
   v == null ? '--' : `${v > 0 ? '+' : ''}${Math.round(v).toLocaleString()}`;
 const fmtPp = (v) => (v == null ? '--' : `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}`);
-const lotTone = (v) => (v > 0 ? 'text-rose-400' : v < 0 ? 'text-emerald-400' : 'text-slate-300');
+const lotTone = (v) => colorOf(v);
 function ChipPanel({ symbol }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -18,12 +19,7 @@ function ChipPanel({ symbol }) {
     let stop = false;
     setData(null);
     setErr(null);
-    fetch('/api/chips', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
-    })
-      .then((r) => r.json())
+    cachedJson('/api/chips', { symbol }, 600000)
       .then((d) => {
         if (stop) return;
         if (d.error) setErr(d.error);
@@ -38,7 +34,7 @@ function ChipPanel({ symbol }) {
     };
   }, [symbol]);
 
-  const box = 'bg-slate-900 border border-slate-800 rounded-xl p-3.5';
+  const box = 'ta-card rounded-2xl p-4';
   if (err) return <div className={`${box} text-xs text-rose-300`}>籌碼資料讀取失敗：{err}</div>;
   if (!data) return <div className={`${box} text-xs text-slate-500`}>籌碼資料載入中…</div>;
   if (!data.supported)
@@ -197,14 +193,17 @@ function ChipPanel({ symbol }) {
                 >
                   <div className="h-1/2 flex items-end">
                     {v > 0 && (
-                      <div className="w-full bg-rose-500/80 rounded-t-sm" style={{ height: h }} />
+                      <div
+                        className="w-full rounded-t-sm"
+                        style={{ height: h, background: 'var(--up)', opacity: 0.85 }}
+                      />
                     )}
                   </div>
                   <div className="h-1/2 flex items-start border-t border-slate-700">
                     {v < 0 && (
                       <div
-                        className="w-full bg-emerald-500/80 rounded-b-sm"
-                        style={{ height: h }}
+                        className="w-full rounded-b-sm"
+                        style={{ height: h, background: 'var(--down)', opacity: 0.85 }}
                       />
                     )}
                   </div>
@@ -231,7 +230,7 @@ function MyPositionCard({ m1Data, onAnalyze }) {
     return (
       <div
         data-tour="mod1-holding"
-        className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2 text-xs text-slate-400"
+        className="ta-card rounded-xl px-4 py-2 text-xs text-slate-400"
       >
         還沒有持股。到看盤頁「我的持股」輸入或用模擬下單成交後，這裡會顯示你持有部位在這次分析下的停損／目標損益。
       </div>

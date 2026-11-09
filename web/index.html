@@ -246,8 +246,8 @@
     }
 
     /* ===== 個股工作區配色（與設計稿一致）：深藍黑底、藍紫漸層強調色 ===== */
-    :root { --up: #ff4d6d; --down: #22d3a0; }
-    html[data-color="us"] { --up: #22d3a0; --down: #ff4d6d; }
+    :root { --up: #ff4d6d; --down: #22d3a0; --up-bg: color-mix(in srgb, var(--up) 16%, transparent); --down-bg: color-mix(in srgb, var(--down) 16%, transparent); }
+    html[data-color="us"] { --up: #22d3a0; --down: #ff4d6d; --up-bg: color-mix(in srgb, var(--up) 16%, transparent); --down-bg: color-mix(in srgb, var(--down) 16%, transparent); }
     body {
       background:
         radial-gradient(900px 500px at 8% -10%, rgba(79, 124, 255, 0.16), transparent 60%),
@@ -261,9 +261,22 @@
     .ta-nav-active { background: linear-gradient(135deg, rgba(79, 124, 255, 0.28), rgba(139, 92, 246, 0.2)) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
     button.bg-sky-600, button.bg-blue-600 { background-image: linear-gradient(135deg, #4f7cff, #8b5cf6); box-shadow: 0 6px 20px -8px rgba(79, 124, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
 
+    /* V4 卡片：半透明底、白色細框。刻意不用 backdrop-filter：它會讓卡片內 position: fixed 的東西（K 線放大、提示框）
+       改以卡片為定位基準而跑位或被擋住；這裡的背景是平滑漸層，有沒有模糊看不出差別 */
+    .ta-card {
+      position: relative;
+      background-color: rgba(17, 22, 37, 0.76);
+      background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 55%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+      transition: border-color .25s ease, box-shadow .25s ease;
+    }
+    .ta-card:hover { border-color: rgba(255, 255, 255, 0.16); }
+
     /* 卡片格線（CardBox）裡再放一張舊式大卡（例如模擬下單面板）時，拿掉內層的框，避免卡片套卡片 */
     .ta-cardbody .rounded-2xl[class*="bg-slate-900"],
-    .ta-cardbody .rounded-2xl[class*="bg-slate-900"]:hover { background: none; border: 0; box-shadow: none; padding: 0; }
+    .ta-cardbody .rounded-2xl[class*="bg-slate-900"]:hover,
+    .ta-cardbody .ta-card, .ta-cardbody .ta-card:hover { background: none; border: 0; box-shadow: none; padding: 0; }
 
     /* 卡片裡的長網址、長代號要能換行，不要把卡片撐破 */
     .ta-cardbody { min-width: 0; overflow-wrap: anywhere; }

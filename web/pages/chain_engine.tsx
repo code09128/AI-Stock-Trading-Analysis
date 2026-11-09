@@ -15,10 +15,16 @@ const ease = {
     return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
   },
 };
-// 台股習慣：紅漲綠跌
+// 台股習慣：紅漲綠跌；若切換為美股配色（html[data-color="us"]）則綠漲紅跌
 const TONE = { up: [255, 77, 109], down: [45, 255, 160], flat: [122, 162, 255], none: [96, 112, 150] };
 const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
-const toneOf = (v, has) => (!has ? TONE.none : Math.abs(v) < 0.05 ? TONE.flat : v > 0 ? TONE.up : TONE.down);
+const isUsColor = () => typeof document !== 'undefined' && document.documentElement?.dataset?.color === 'us';
+const toneOf = (v, has) => {
+  if (!has) return TONE.none;
+  if (Math.abs(v) < 0.05) return TONE.flat;
+  const pos = v > 0;
+  return isUsColor() ? (pos ? TONE.down : TONE.up) : pos ? TONE.up : TONE.down;
+};
 const fmt = (v, has) => (!has ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
 const FONT = '"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif';
 
@@ -319,9 +325,10 @@ class HubEntity extends Entity {
     const mag = this.has ? clamp(Math.abs(this.v) / 3, 0, 1) : 0;
     const sel = eng.S.sector === this.name;
     c.save();
+    const glowR = r * (1.35 + 0.35 * mag + 0.18 * this.hover + (sel ? 0.22 : 0));
+    c.globalAlpha = this.alpha * (0.28 + 0.32 * mag + 0.2 * this.hover + (sel ? 0.2 : 0));
+    c.drawImage(eng.pool.sprite(col), this.x - glowR, this.y - glowR, glowR * 2, glowR * 2);
     c.globalAlpha = this.alpha;
-    c.shadowColor = rgba(col, 0.9);
-    c.shadowBlur = 12 + 26 * mag + 12 * this.hover + (sel ? 22 : 0) + (this.hasChains ? 6 : 0);
     hexPath(c, this.x, this.y, r);
     const g = c.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
     g.addColorStop(0, rgba(col, 0.1 + 0.28 * mag));
@@ -331,7 +338,6 @@ class HubEntity extends Entity {
     c.lineWidth = sel ? 4.5 : this.hasChains ? 3.2 : 2;
     c.strokeStyle = sel ? '#ffffff' : rgba(col, this.hasChains ? 1 : 0.7);
     c.stroke();
-    c.shadowBlur = 0;
     if (this.hasChains) {
       // 有產業鏈的站點：內圈旋轉虛線，提示可以點進去
       c.save();
@@ -374,9 +380,11 @@ class NodeEntity extends Entity {
     const h = NODE_H * this.scale;
     const s = this.scale;
     c.save();
+    const glowW = w * (0.85 + 0.25 * mag + 0.15 * this.hover + (sel ? 0.18 : 0));
+    const glowH = h * (1.1 + 0.3 * mag + 0.2 * this.hover + (sel ? 0.2 : 0));
+    c.globalAlpha = this.alpha * (0.26 + 0.3 * mag + 0.2 * this.hover + (sel ? 0.2 : 0));
+    c.drawImage(eng.pool.sprite(col), this.x - glowW, this.y - glowH, glowW * 2, glowH * 2);
     c.globalAlpha = this.alpha;
-    c.shadowColor = rgba(col, 0.95);
-    c.shadowBlur = 12 + 22 * mag + 12 * this.hover + (sel ? 18 : 0);
     bevelPath(c, this.x, this.y, w, h, 16 * s);
     const g = c.createLinearGradient(this.x - w / 2, this.y - h / 2, this.x + w / 2, this.y + h / 2);
     g.addColorStop(0, rgba(col, 0.18 + 0.3 * mag));
@@ -386,7 +394,6 @@ class NodeEntity extends Entity {
     c.lineWidth = sel ? 4 : 2.4;
     c.strokeStyle = sel ? '#ffffff' : rgba(col, 1);
     c.stroke();
-    c.shadowBlur = 0;
     glowText(c, this.n.name, this.x, this.y - 26 * s, 21 * s, '#fff');
     glowText(c, fmt(this.v, this.has), this.x, this.y + 8 * s, 30 * s, rgba(col, 1), 800);
     glowText(c, `${this.n.stocks.length} 檔${this.note ? `・${this.note}` : ''}`, this.x, this.y + 36 * s, 13 * s, 'rgba(170,190,230,.85)', 500);
@@ -423,8 +430,10 @@ class StockEntity extends Entity {
     c.lineTo(this.x, this.y);
     c.stroke();
     c.setLineDash([]);
-    c.shadowColor = rgba(col, 0.9);
-    c.shadowBlur = 14 + 12 * this.hover;
+    const glowR = r * (1.45 + 0.25 * this.hover);
+    c.globalAlpha = this.alpha * (0.3 + 0.25 * this.hover);
+    c.drawImage(this.eng.pool.sprite(col), this.x - glowR, this.y - glowR, glowR * 2, glowR * 2);
+    c.globalAlpha = this.alpha;
     c.beginPath();
     c.arc(this.x, this.y, r, 0, Math.PI * 2);
     c.fillStyle = 'rgba(6,10,24,.92)';
@@ -432,7 +441,6 @@ class StockEntity extends Entity {
     c.lineWidth = 2.4;
     c.strokeStyle = rgba(col, 1);
     c.stroke();
-    c.shadowBlur = 0;
     glowText(c, this.code, this.x, this.y - 11 * s, 13 * s, 'rgba(170,190,230,.9)', 500);
     glowText(c, fmt(this.v, this.has), this.x, this.y + 8 * s, 15 * s, rgba(col, 1), 800);
     glowText(c, this.name, this.x, this.y + r + 15 * s, 15 * s, '#e8f0ff', 600);
@@ -619,6 +627,8 @@ function create(canvas, host) {
     drawn: 0,
     fps: 0,
     anim: !host.reduced,
+    dirty: true,
+    bgCanvas: null as HTMLCanvasElement | null,
     sig: '',
     map: null as any,
   };
@@ -859,22 +869,37 @@ function create(canvas, host) {
     m.strokeRect(ox + x0 * k, oy + y0 * k, (x1 - x0) * k, (y1 - y0) * k);
     mini._k = { k, ox, oy };
   }
+  function buildBg(w, h) {
+    if (typeof document === 'undefined' || !document.createElement || w <= 0 || h <= 0) return;
+    if (!eng.bgCanvas) eng.bgCanvas = document.createElement('canvas');
+    const bg = eng.bgCanvas;
+    bg.width = Math.max(1, Math.round(w));
+    bg.height = Math.max(1, Math.round(h));
+    const bc = bg.getContext('2d');
+    if (!bc) return;
+    bc.fillStyle = '#03050b';
+    bc.fillRect(0, 0, w, h);
+    let g = bc.createRadialGradient(w * 0.2, 0, 0, w * 0.2, 0, Math.max(w, h) * 0.8);
+    g.addColorStop(0, 'rgba(99,102,241,.2)');
+    g.addColorStop(1, 'rgba(99,102,241,0)');
+    bc.fillStyle = g;
+    bc.fillRect(0, 0, w, h);
+    g = bc.createRadialGradient(w, h * 0.1, 0, w, h * 0.1, Math.max(w, h) * 0.7);
+    g.addColorStop(0, 'rgba(34,211,238,.13)');
+    g.addColorStop(1, 'rgba(34,211,238,0)');
+    bc.fillStyle = g;
+    bc.fillRect(0, 0, w, h);
+  }
   function render() {
     const w = cam.vw;
     const h = cam.vh;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.fillStyle = '#03050b';
-    ctx.fillRect(0, 0, w, h);
-    let g = ctx.createRadialGradient(w * 0.2, 0, 0, w * 0.2, 0, Math.max(w, h) * 0.8);
-    g.addColorStop(0, 'rgba(99,102,241,.2)');
-    g.addColorStop(1, 'rgba(99,102,241,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-    g = ctx.createRadialGradient(w, h * 0.1, 0, w, h * 0.1, Math.max(w, h) * 0.7);
-    g.addColorStop(0, 'rgba(34,211,238,.13)');
-    g.addColorStop(1, 'rgba(34,211,238,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
+    if (eng.bgCanvas && eng.bgCanvas.width > 0 && eng.bgCanvas.height > 0) {
+      ctx.drawImage(eng.bgCanvas, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#03050b';
+      ctx.fillRect(0, 0, w, h);
+    }
     cam.apply(ctx, DPR);
     const [x0, y0] = cam.s2w(0, 0);
     const [x1, y1] = cam.s2w(w, h);
@@ -932,12 +957,30 @@ function create(canvas, host) {
   function loop(t) {
     const dt = Math.min((t - last) / 1000, 0.1);
     last = t;
-    acc += dt;
-    while (acc >= STEP) {
-      update(STEP);
-      acc -= STEP;
+    const isMoving = eng.anim && !host.reduced;
+    const hasWork = isMoving || tw.list.length > 0 || eng.effects.length > 0 || eng.dirty;
+    if (hasWork) {
+      acc += dt;
+      while (acc >= STEP) {
+        update(STEP);
+        acc -= STEP;
+      }
+      render();
+      // 若數值或 hover 仍在平滑追趕中，保持 dirty 直到收斂
+      let settling = false;
+      if (!isMoving && tw.list.length === 0 && eng.effects.length === 0) {
+        for (const e of scene.list) {
+          if (!e.visible) continue;
+          const r = e.read();
+          const has = r.v !== null && r.v !== undefined;
+          if (Math.abs((has ? r.v : 0) - e.v) > 0.01 || Math.abs((e.hovered ? 1 : 0) - e.hover) > 0.01) {
+            settling = true;
+            break;
+          }
+        }
+      }
+      eng.dirty = settling;
     }
-    render();
     fpsF++;
     fpsT += dt;
     if (fpsT >= 0.5) {
@@ -955,6 +998,7 @@ function create(canvas, host) {
   };
   const pickAt = (sx, sy) => scene.pick(...cam.s2w(sx, sy));
   function setHover(e, ev?: any) {
+    if (hoverEnt !== e) eng.dirty = true;
     if (hoverEnt && hoverEnt !== e) hoverEnt.hovered = false;
     hoverEnt = e;
     if (e) e.hovered = true;
@@ -964,6 +1008,7 @@ function create(canvas, host) {
   const clampCam = () => {
     cam.x = clamp(cam.x, -200, world.w + 200);
     cam.y = clamp(cam.y, -200, world.h + 200);
+    eng.dirty = true;
   };
   function stopTweens() {
     tw.cancel(cam);
@@ -1041,6 +1086,7 @@ function create(canvas, host) {
     eng,
     setMap(map) {
       eng.map = map;
+      eng.dirty = true;
       const sig = JSON.stringify([map.columns, map.hubs.map((h) => [h.name, h.col, h.order]), map.links, map.chains.map((c) => [c.id, c.sector, c.stages, c.nodes.map((n) => [n.id, n.stage, n.stocks.length]), c.edges])]);
       if (sig === eng.sig) {
         for (const h of map.hubs) if (eng.hubs[h.name]) eng.hubs[h.name].def = h; // 結構沒變：只更新資料，不重建場景
@@ -1055,12 +1101,14 @@ function create(canvas, host) {
     go(next: any, instant?: boolean) {
       if (!eng.map) return;
       if (next.state !== 'overview' && !eng.chains[next.chain]) return;
+      eng.dirty = true;
       const base = { state: next.state, chain: next.state === 'overview' ? null : next.chain, node: next.state === 'node' ? next.node : null };
       const sector = next.state === 'overview' ? next.sector ?? null : hubOfChain(next.chain).name;
       show({ ...base, sector }, instant);
     },
     select(name) {
       S.sector = name;
+      eng.dirty = true;
       moveCamera(0.5);
       emit();
     },
@@ -1070,6 +1118,7 @@ function create(canvas, host) {
       else if (S.sector) api.select(null);
     },
     refit() {
+      eng.dirty = true;
       if (eng.map) moveCamera(0.5);
     },
     resize(w, h) {
@@ -1078,10 +1127,13 @@ function create(canvas, host) {
       canvas.height = Math.round(h * DPR);
       cam.vw = w;
       cam.vh = h;
+      buildBg(w, h);
+      eng.dirty = true;
       if (eng.map) moveCamera(0, true);
     },
     // 回放時：漲跌超標的環節（或全景的站點）放出衝擊波
     burst(threshold = 1.6) {
+      eng.dirty = true;
       if (host.reduced) return;
       if (S.state === 'overview') {
         for (const h of Object.values(eng.hubs)) if (h.has && Math.abs(h.v) >= threshold) eng.effects.push({ x: h.x, y: h.y, r: h.r, max: 260, life: 1, color: toneOf(h.v, true) });
@@ -1091,15 +1143,23 @@ function create(canvas, host) {
     },
     // 搜尋導向用：在目標站點（kind='hub'）或環節（kind='node'）放兩圈青色擴散波，讓人看得出「飛到這裡了」
     ping(kind: 'hub' | 'node', name: string) {
+      eng.dirty = true;
       if (host.reduced) return;
       const t: any = kind === 'hub' ? eng.hubs[name] : S.chain && eng.chains[S.chain]?.nodeEnts[name];
       if (!t) return;
       for (const [delay, max] of [[0, 300], [220, 400]]) {
-        setTimeout(() => eng.effects.push({ x: t.x, y: t.y, r: kind === 'hub' ? t.r : 60, max, life: 1, color: [34, 211, 238] }), delay);
+        setTimeout(() => {
+          eng.dirty = true;
+          eng.effects.push({ x: t.x, y: t.y, r: kind === 'hub' ? t.r : 60, max, life: 1, color: [34, 211, 238] });
+        }, delay);
       }
     },
     setAnim(on) {
       eng.anim = on && !host.reduced;
+      eng.dirty = true;
+    },
+    markDirty() {
+      eng.dirty = true;
     },
     key(e) {
       const pan = 90 / cam.zoom;

@@ -1,4 +1,5 @@
 // 估值參考卡：近四季 EPS × 同產業本益比，直接標示「便宜／偏便宜／合理／偏貴／貴」（後端 src/company/valuation.py）
+import { cachedJson } from '../fetch_cache';
 import { Tip } from '../ui';
 import { CardBox } from './card_box';
 
@@ -22,16 +23,9 @@ export function ValuationCard({ symbol, ctl }: { symbol: string; ctl?: any }) {
   useEffect(() => {
     let stop = false;
     setV(null);
-    fetch('/api/valuation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
-    })
-      .then((r) => {
-        // 舊版後端沒有這個路由：不顯示整張卡，不要讓使用者看到錯誤
-        if (r.status === 404) return { supported: false, hidden: true };
-        return r.json();
-      })
+    cachedJson('/api/valuation', { symbol }, 295000)
+      // 舊版後端沒有這個路由：不顯示整張卡，不要讓使用者看到錯誤
+      .then((d) => (d?._status === 404 ? { supported: false, hidden: true } : d))
       .then((d) => !stop && setV(d))
       .catch((e) => !stop && setV({ supported: false, reason: `估值資料取得失敗：${e.message}` }));
     return () => {

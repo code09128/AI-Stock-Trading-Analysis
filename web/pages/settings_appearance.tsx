@@ -102,7 +102,7 @@ function AppearanceSettings() {
   return (
     <div
       data-tour="settings-appearance"
-      className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3"
+      className="ta-card rounded-2xl p-5 space-y-3"
     >
       <h3 className="font-bold text-white">外觀：動態效果、資訊密度與漲跌配色</h3>
       <p className="text-xs text-slate-400 leading-relaxed">

@@ -3,6 +3,7 @@
 
 import { bus } from '../bus';
 import { LS_TOUR, readLS } from '../ui';
+import { PageHead } from './card_box';
 import { CandleGuide } from './candle_guide';
 import { StrategyGuide } from './strategy_guide';
 import { FlowGuide, TourChapters } from './tour';
@@ -206,8 +207,8 @@ const FEATURES = [
     tab: 'board',
     chapter: 'market',
     title: '大盤籌碼（開盤前看大環境）',
-    what: '國際指數與美股期貨、台指期日盤＋夜盤與期現貨價差、三大法人近 5 日買賣超、類股成交比重、產業漲跌排行、台灣 50（市值前 50 大）。',
-    how: '開盤前先看美股與台指期夜盤怎麼走、法人在買還是賣、哪個產業最強，決定今天要積極還是保守。產業排行可點欄位標題換排序。',
+    what: '國際指數與美股期貨、台指期日盤＋夜盤與期現貨價差、三大法人近 10 日買賣超、外資近 10 日買賣超、台灣 50 權值股產業權重圓餅、類股成交比重、產業漲跌排行、台灣 50（市值前 50 大）。',
+    how: '開盤前先看美股與台指期夜盤怎麼走、外資連續買賣方向、哪個產業最強，決定今天要積極還是保守。產業排行與台灣 50 可點欄位標題換排序。',
     links: [
       ['watch', '台灣 50 點股票名稱 → 看盤頁看那一檔'],
       ['multichart', '把強勢族群放進多圖走勢一起盯'],
@@ -262,9 +263,9 @@ const FEATURES = [
 
 function NewFeatures({ onGo }) {
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
-      <h3 className="font-bold text-white">新功能說明</h3>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div className="ta-card rounded-2xl p-5 space-y-3">
+      <h3 className="font-bold text-white">重點功能說明</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         {FEATURES.map((f) => (
           <div key={f.title} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -315,11 +316,15 @@ function NewFeatures({ onGo }) {
 
 function GuidePage({ onGo, onShowTour }) {
   return (
-    <div className="space-y-5">
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+    <div className="space-y-3.5">
+      <PageHead
+        title="功能說明與常見問題"
+        sub="快速上手導覽、各頁功能總覽、資料來源透明說明與常見問題解答。"
+      />
+      <div className="ta-card rounded-2xl p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-white">使用說明</h2>
+            <h2 className="text-lg font-bold text-white">新手導覽與章節</h2>
             <p className="text-xs text-slate-400">
               第一次使用？按右邊按鈕從頭走一遍；也可以在下方只挑想了解的章節。導覽會自動切換頁面並框出要看的位置。
             </p>
@@ -327,7 +332,7 @@ function GuidePage({ onGo, onShowTour }) {
           <button
             type="button"
             onClick={onShowTour}
-            className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] hover:opacity-90 text-white font-semibold text-sm cursor-pointer"
           >
             開始新手導覽
           </button>
@@ -339,19 +344,19 @@ function GuidePage({ onGo, onShowTour }) {
 
       <FlowGuide onGo={onGo} />
 
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
+      <div className="ta-card rounded-2xl p-5">
         <h3 className="font-bold text-white mb-3">建議操作流程</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
-            ['board', '① 大盤籌碼', '開盤前：國際股市、台指期夜盤、法人動向與強勢產業，決定今天積極或保守'],
+            ['board', '① 大盤籌碼', '開盤前：國際股市、台指期夜盤、外資 10 日與法人動向、產業權重與強勢產業'],
             ['watch', '② 個股・行情', '個股頁的行情分頁：挑標的、看走勢（分時／5 日／日 K）、五檔、模擬下單、新聞、估值、基本資料；熱力圖分頁看今天資金在哪個族群'],
-            ['multichart', '③ 多圖走勢', '盤中同時盯持股與觀察名單的分時，哪一格有異動就點「看盤」'],
+            ['multichart', '③ 多圖走勢', '盤中同時盯持股與觀察名單的分時（最多 6×6 格），哪一格有異動就點「看盤」'],
             ['mod1', '④ 個股・技術分析', '個股頁的技術分析分頁：K 線買賣訊號 / 均線 / RSI / 支撐壓力 / 買進觀望賣出條件'],
             ['mod2', '⑤ 個股・新聞研究', '個股頁的新聞研究分頁：按「分析新聞」：整體語氣、重點新聞、是否已被股價反映、資料缺口與時間軸；每則新聞都附原文連結與逐則細節，想自己填標題測試假設在最下方「手動輸入」'],
-            ['mod3', '⑥ 策略回測', '策略過去真的有優勢嗎？預設只顯示單檔回測（績效、交易明細）；今日訊號、策略組合、自訂條件在「進階功能」，前後段驗證、最佳化、蒙地卡羅、K 線回放在「更多驗證與工具」'],
-            ['mod4', '⑦ 組合風控', '是不是押太集中？大盤跌 20% 會虧多少？'],
-            ['mod5', '⑧ 交易檢討', '從過去交易找壞習慣，產生 3 條個人規則'],
-            ['savings', '⑨ 存股計畫', '長期規劃：每月存多少、要存幾年、退休後每月能領多少；多檔投資組合'],
+            ['mod3', '⑥ 策略回測', '策略過去真的有優勢嗎？預設只顯示單檔回測（績效、勝負與出場圓餅、交易明細）；今日訊號、策略組合、自訂條件在「進階功能」，前後段驗證、最佳化、蒙地卡羅、K 線回放在「更多驗證與工具」；右上角「✦ AI 策略回測分析」開啟右側 AI 抽屜'],
+            ['mod4', '⑦ 組合風控', '是不是押太集中？大盤跌 20% 會虧多少？風險等級、目前與目標配置、再平衡、多情境壓力測試、拖累排行、相關係數矩陣與避險比較；支援右側 AI 抽屜'],
+            ['mod5', '⑧ 交易檢討', '從過去交易找壞習慣，產生 3 條個人規則：檢討成績、勝負與賣飛分布、每筆報酬、持有天數 × 報酬散佈圖；支援右側 AI 抽屜'],
+            ['savings', '⑨ 存股計畫', '長期規劃：每月存多少、要存幾年、退休後每月能領多少；定期定額正推反推、股息試算、多檔投資組合與回測比較'],
           ].map(([id, t, d]) => (
             <button
               type="button"
@@ -366,7 +371,7 @@ function GuidePage({ onGo, onShowTour }) {
         </div>
       </div>
 
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-3">
+      <div className="ta-card rounded-2xl p-5 space-y-3">
         <h3 className="font-bold text-white">資料從哪裡來？（透明說明）</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -390,7 +395,7 @@ function GuidePage({ onGo, onShowTour }) {
                   '看盤頁：美股報價（NVDA、SPCX…）',
                   'Yahoo Finance Chart API',
                   '伺服器端 HTTP 取 JSON',
-                  '真實，盤中實測延遲約 0–5 秒（每 5 秒更新一次畫面），無五檔',
+                  '真實，盤中實測延遲約 0–5 秒（每 5 秒更新一次畫面；休市時段改成每 30 秒），無五檔',
                 ],
                 [
                   '看盤頁：分時圖、52 週高低、迷你走勢、頂部大盤指數',
@@ -521,33 +526,34 @@ function GuidePage({ onGo, onShowTour }) {
 
       <StrategyGuide />
 
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
-        <h3 className="font-bold text-white mb-3">名詞小辭典</h3>
-        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-          {GLOSSARY.map(([t, d]) => (
-            <div key={t}>
-              <dt className="text-sm font-semibold text-sky-300">{t}</dt>
-              <dd className="text-xs text-slate-400 leading-relaxed">{d}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+        <div className="md:col-span-7 ta-card rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-3">名詞小辭典</h3>
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            {GLOSSARY.map(([t, d]) => (
+              <div key={t}>
+                <dt className="text-sm font-semibold text-sky-300">{t}</dt>
+                <dd className="text-xs text-slate-400 leading-relaxed">{d}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
 
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-2">
-        <h3 className="font-bold text-white">常見問題</h3>
-        {[
-          [
-            '為什麼畫面上沒有五檔？',
-            '美股公開資料源不提供五檔；台股在非交易時段或無掛單時也可能是空的。',
-          ],
-          [
-            '行情分頁的卡片可以調整嗎？',
-            '可以。每張卡的 ⋮⋮ 拖曳換位置（鍵盤按方向鍵也行）、⇔ 加寬成整列、▾ 收合、✕ 隱藏；右上角「版面設定」可以勾選顯示哪些卡、全部收合或展開、還原預設。設定會記住並包含在備份裡。上方搜尋欄輸入代號或台股名稱按 Enter，可以從任何頁面直接跳到那一檔，打字時也會篩選左邊的自選股。',
-          ],
-          [
-            '上方的「✦ AI 分析」能問什麼？',
-            '個股頁選好一檔後按上方「✦ AI 分析」，可選個股研究、技術面、事件，並看到每個資料面向有沒有資料（點開看內容）、勾選要傳哪些；建議問題需要的面向沒勾時會變灰。沒勾的面向不會送給 AI，它會寫「資料不足」。按按鈕才會送出，使用前要在設定頁新增 AI 連線，AI 回答的數字會逐一回頭核對。',
-          ],
+        <div className="md:col-span-5 ta-card rounded-2xl p-5 space-y-2">
+          <h3 className="font-bold text-white">常見問題</h3>
+          {[
+            [
+              '為什麼畫面上沒有五檔？',
+              '美股公開資料源不提供五檔；台股在非交易時段或無掛單時也可能是空的。',
+            ],
+            [
+              '行情分頁的卡片可以調整嗎？',
+              '可以。每張卡的 ⋮⋮ 拖曳換位置（鍵盤按方向鍵也行）、⇔ 加寬成整列、▾ 收合、✕ 隱藏；右上角「版面設定」可以勾選顯示哪些卡、全部收合或展開、還原預設。設定會記住並包含在備份裡。上方搜尋欄輸入代號或台股名稱按 Enter，可以從任何頁面直接跳到那一檔，打字時也會篩選左邊的自選股。',
+            ],
+            [
+              '上方的「✦ AI 分析」能問什麼？',
+              '在個股頁、策略回測、組合風控或交易檢討按右上角「✦ AI 分析」會打開右側 AI 抽屜：個股頁可選個股研究、技術面、事件，單獨勾選資料面向（價格走勢、技術指標、籌碼面、基本面與評價、財報與市場預期、近期新聞與公告、大盤環境、我的持股部位）並點開預覽內容，建議問題需要的面向沒勾時會變灰。有填問題時 AI 會直接回答那個問題，輸入框留空才寫完整報告；策略回測、組合風控、交易檢討也可勾選要附帶的報告面向、點預設問題或自由追問，沒勾的面向不會送給 AI，它會寫「資料不足」。按按鈕才會送出，使用前要在設定頁新增 AI 連線，AI 回答的數字會逐一回頭核對。',
+            ],
           ['價格怎麼不動？', '收盤後或週末是最後一筆成交價；畫面上的「最後成交」時間可以確認。'],
           [
             '模擬下單會真的送單嗎？',
@@ -597,7 +603,8 @@ function GuidePage({ onGo, onShowTour }) {
             <summary className="cursor-pointer text-slate-200">{qq}</summary>
             <p className="text-xs text-slate-400 mt-1.5">{a}</p>
           </details>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

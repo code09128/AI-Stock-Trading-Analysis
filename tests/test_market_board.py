@@ -113,7 +113,8 @@ class Tw50Tests(unittest.TestCase):
             {"Code": "2317", "Name": "鴻海", "ClosingPrice": "200", "Change": "-2", "TradeVolume": "4000000", "Date": "1151027"},
             {"Code": "0050", "Name": "元大台灣50", "ClosingPrice": "70", "Change": "0", "TradeVolume": "1", "Date": "1151027"},
         ]
-        reg = {"2330": {"已發行普通股數或TDR原股發行股數": "100"}, "2317": {"已發行普通股數或TDR原股發行股數": "1000"}}
+        reg = {"2330": {"已發行普通股數或TDR原股發行股數": "100", "產業別": "24"},
+               "2317": {"已發行普通股數或TDR原股發行股數": "1000", "產業別": "25"}}
         live = {"2317": {"z": "210", "y": "200", "v": "2000", "d": "20261028", "t": "10:00:00"}}
         with patch.object(mb.qp, "_http_json", return_value=day_all), \
                 patch.object(mb.stock_info, "_company_registry", return_value=reg), \
@@ -122,6 +123,9 @@ class Tw50Tests(unittest.TestCase):
         self.assertEqual([r["code"] for r in out["rows"]], ["2317", "2330"])  # 市值 200×1000 > 1000×100；ETF 不列
         hon, tsmc = out["rows"]
         self.assertTrue(hon["is_live"])
+        self.assertEqual(hon["industry"], "電腦及週邊設備")
+        self.assertEqual(tsmc["industry"], "半導體")
+        self.assertAlmostEqual((hon["weight_pct"] or 0) + (tsmc["weight_pct"] or 0), 100.0, places=1)
         self.assertEqual(hon["change_pct"], 5.0)
         self.assertEqual(hon["volume_ratio"], 0.5)  # 今日 2000 張 ÷ 前一日 4000 張
         self.assertFalse(tsmc["is_live"])  # 沒有即時價：用收盤資料並標示

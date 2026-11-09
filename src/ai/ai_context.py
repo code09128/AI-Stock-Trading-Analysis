@@ -49,6 +49,25 @@ def price_action(symbol: str) -> Dict[str, Any]:
     }
 
 
+def tech_indicators(symbol: str) -> Dict[str, Any]:
+    snap = DualMarketDataAdapter().build_technical_snapshot(symbol)
+    score = snap.get("trend_score") or {}
+    ind = snap.get("indicators") or {}
+    has_macd = ind.get("MACD_DIF") is not None
+    return {
+        "資料日期": snap.get("latest_date"),
+        "趨勢評分": f"{score.get('total')}/100（{score.get('signal_label')}）" if score else None,
+        "RSI14": ind.get("RSI14"),
+        "MA5": ind.get("MA5"),
+        "MA20": ind.get("MA20"),
+        "MA60": ind.get("MA60"),
+        "MACD": f"DIF {ind.get('MACD_DIF')} / DEA {ind.get('MACD_SIGNAL')} / 柱狀 {ind.get('MACD_HIST')}" if has_macd else None,
+        "ATR14": ind.get("ATR14"),
+        "支撐(20日低)": snap.get("recent_low_20d"),
+        "壓力(20日高)": snap.get("recent_high_20d"),
+    }
+
+
 def chips(symbol: str) -> Dict[str, Any]:
     c = chip_data.chips(symbol)
     if not c.get("supported") or c.get("empty"):
@@ -116,14 +135,15 @@ def build(symbol: str, sections=("price", "chips", "fundamentals", "news", "mark
         pass
     jobs: Dict[str, Callable[[], Any]] = {
         "price": lambda: price_action(symbol),
+        "tech": lambda: tech_indicators(symbol),
         "chips": lambda: chips(symbol),
         "fundamentals": lambda: fundamentals(symbol),
         "earnings": lambda: fin.compact(symbol),
         "news": lambda: news(symbol, name),
         "market": lambda: market_backdrop(symbol),
     }
-    labels = {"price": "價格走勢", "chips": "籌碼面", "fundamentals": "基本面與評價", "earnings": "財報與市場預期",
-              "news": "近期新聞與公告", "market": "大盤環境"}
+    labels = {"price": "價格走勢", "tech": "技術指標", "chips": "籌碼面", "fundamentals": "基本面與評價",
+              "earnings": "財報與市場預期", "news": "近期新聞與公告", "market": "大盤環境"}
     out: Dict[str, Any] = {"標的": symbol, "名稱": name}
 
     def run(key: str):
@@ -150,14 +170,14 @@ def symbol_of(module: str, data: Any) -> Optional[str]:
 
 
 SECTIONS_BY_MODULE = {
-    "mod1": ("price", "chips", "fundamentals", "earnings", "news", "market"),
-    "stock": ("price", "chips", "fundamentals", "earnings", "news", "market"),
-    "mod2": ("price", "news", "market"),
+    "mod1": ("price", "tech", "chips", "fundamentals", "earnings", "news", "market"),
+    "stock": ("price", "tech", "chips", "fundamentals", "earnings", "news", "market"),
+    "mod2": ("price", "tech", "news", "market"),
 }
 
 
-SECTION_LABELS = {"price": "價格走勢", "chips": "籌碼面", "fundamentals": "基本面與評價", "earnings": "財報與市場預期",
-                  "news": "近期新聞與公告", "market": "大盤環境"}
+SECTION_LABELS = {"price": "價格走勢", "tech": "技術指標", "chips": "籌碼面", "fundamentals": "基本面與評價",
+                  "earnings": "財報與市場預期", "news": "近期新聞與公告", "market": "大盤環境"}
 
 
 def _flat_facts(val: Any) -> Dict[str, str]:
