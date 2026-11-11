@@ -107,13 +107,15 @@ def fetch_tw_quotes(
         price = _num(r.get("z")) or _num(r.get("pz"))
         asks = _split_levels(r.get("a"), r.get("f"))
         bids = _split_levels(r.get("b"), r.get("g"))
-        if price is None and bids and asks:
-            price = (bids[0]["price"] + asks[0]["price"]) / 2  # 尚未成交時取中間價
+        price_is_mid = price is None and bool(bids and asks)
+        if price_is_mid:
+            price = (bids[0]["price"] + asks[0]["price"]) / 2  # 尚未成交時取中間價（畫面會標示，不當成成交價）
         change = round(price - prev, 4) if price and prev else None
         bid_vol, ask_vol = sum(b["vol"] for b in bids), sum(a["vol"] for a in asks)
         q.update(
             is_live=price is not None,
             price=price,
+            price_is_mid=price_is_mid,
             prev_close=prev,
             change=change,
             change_pct=round(change / prev * 100, 2) if change is not None and prev else None,

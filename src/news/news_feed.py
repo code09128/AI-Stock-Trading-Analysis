@@ -29,7 +29,7 @@ from src.market import quote_provider as qp
 from src.market.data_adapter import DualMarketDataAdapter
 from src.market.cache import TTLCache
 from src.market.net import http_bytes, http_json
-from src.news import announcement_store
+from src.news import announcement_store, news_archive
 
 TW_TZ = zone("Asia/Taipei")
 SEC_UA_DEFAULT = "local-trading-research-tool/1.0"
@@ -314,5 +314,6 @@ def fetch_news(symbol: str, name: str = "") -> Dict[str, Any]:
     uniq = dedupe(items)
     result = {"symbol": n["symbol"], "market": market, "items": uniq[:60], "sources": sources,
               "errors": errors}
+    news_archive.save(n["symbol"], result["items"])  # 累積歷史標題，之後才能回測新聞語氣
     _CACHE.put(key, result)
     return result

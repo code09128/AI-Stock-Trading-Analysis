@@ -772,7 +772,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             <StockChart
               symbol={selected}
               quoteTime={q?.quote_time}
-              livePrice={q?.is_live ? q.price : undefined}
+              livePrice={q?.is_live && !q.price_is_mid ? q.price : undefined}
               intraday={intraday}
               tz={tzOf(selected)}
               news={chartNews}
@@ -1263,6 +1263,11 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                 </div>
                 <div className="text-right shrink-0">
                   <div className={`mono text-[28px] sm:text-[38px] leading-tight font-extrabold ${colorOf(q.change)}`}>{fmt(q.price)}</div>
+                  {q.price_is_mid && (
+                    <div className="text-[11px] text-amber-300" title="證交所這一刻沒有回傳成交價，這裡顯示的是最佳買價與最佳賣價的平均，不是實際成交價；有成交後會自動換成成交價。">
+                      買賣中間價（尚未成交）
+                    </div>
+                  )}
                   <span
                     className={`mono inline-block mt-1 px-2.5 py-0.5 rounded-full text-[13px] font-semibold whitespace-nowrap ${colorOf(q.change)}`}
                     style={{

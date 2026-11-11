@@ -124,9 +124,9 @@ function TickerName({ ticker }) {
 }
 
 const SCEN_STYLE = {
-  bull: 'border-emerald-500/40 bg-emerald-500/5 text-emerald-200',
+  bull: 'ta-up-chip',
   neutral: 'border-amber-500/40 bg-amber-500/5 text-amber-200',
-  bear: 'border-rose-500/40 bg-rose-500/5 text-rose-200',
+  bear: 'ta-down-chip',
 };
 
 function TrendLine({ t }) {
@@ -616,6 +616,8 @@ function Mod1Panel({ ctx }) {
             bars={m1Data.recent_bars}
             signals={m1Data.signals}
             signalsError={m1Data.signals_error}
+            klineRules={m1Data.kline_rules}
+            klineError={m1Data.kline_rules_error}
             supports={m1Data.snapshot.support_levels}
             resistances={m1Data.snapshot.resistance_levels}
             key={`${m1Data.snapshot.symbol}-${m1Timeframe}`}
@@ -722,6 +724,7 @@ function Mod1Panel({ ctx }) {
           data={{
             snapshot: m1Data.snapshot,
             signals: m1Data.signals,
+            kline_rules: m1Data.kline_rules,
             bollinger: m1Data.bollinger,
             weekly: m1Data.weekly_snapshot,
             scenarios: m1Data.scenarios,

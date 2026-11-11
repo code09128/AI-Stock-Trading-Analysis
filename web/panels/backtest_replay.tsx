@@ -292,7 +292,7 @@ function ReplayPanel({ m3Data }) {
   const btn = 'px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-200 hover:bg-slate-800 cursor-pointer text-xs';
   const TONE = {
     sky: 'border-sky-500/40 bg-sky-500/10 text-sky-100',
-    rose: 'border-rose-500/40 bg-rose-500/10 text-rose-100',
+    rose: 'ta-up-chip', // 買進
     emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100',
     amber: 'border-amber-500/40 bg-amber-500/10 text-amber-100',
   };

@@ -282,6 +282,9 @@
     .ta-cardbody { min-width: 0; overflow-wrap: anywhere; }
     /* 頂欄行情狀態的小綠點 */
     @keyframes ta-live { 50% { opacity: .35; } }
+    /* 漲跌／買賣／多空的標籤底色：跟著 --up／--down，切換紅漲綠跌時一起換 */
+    .ta-up-chip { color: color-mix(in srgb, var(--up) 55%, #fff); background: var(--up-bg); border-color: color-mix(in srgb, var(--up) 45%, transparent); }
+    .ta-down-chip { color: color-mix(in srgb, var(--down) 55%, #fff); background: var(--down-bg); border-color: color-mix(in srgb, var(--down) 45%, transparent); }
     .ta-live-dot { background: var(--down); box-shadow: 0 0 8px var(--down); animation: ta-live 1.8s infinite; }
 
     .glass-card {

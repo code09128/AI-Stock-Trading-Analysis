@@ -5,6 +5,27 @@ import { Sparkline } from '../live_widgets';
 const { useState, useEffect, useRef } = React;
 
 
+// 當日小 K 棒：影線＝最高到最低，實體＝開盤到現價；收高於開盤用漲色，收低用跌色（和漲跌幅比的是昨收，兩者可能不同色）
+function MiniCandle({ quote }: { quote: any }) {
+  const { open, high, low, price } = quote || {};
+  const W = 9;
+  const H = 30;
+  if (![open, high, low, price].every((v) => typeof v === 'number' && v > 0) || high < low) {
+    return <span className="shrink-0 inline-block" style={{ width: W, height: H }} aria-hidden="true" />;
+  }
+  const span = high - low;
+  const y = (v: number) => (span > 0 ? 1 + ((high - v) / span) * (H - 2) : H / 2);
+  const col = price > open ? 'var(--up)' : price < open ? 'var(--down)' : '#94a3b8';
+  const top = y(Math.max(open, price));
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0" role="img" aria-label={`今日開 ${open} 高 ${high} 低 ${low} 現價 ${price}`}>
+      <title>{`今日 K 棒：開 ${open}・高 ${high}・低 ${low}・現價 ${price}`}</title>
+      <line x1={W / 2} x2={W / 2} y1={y(high)} y2={y(low)} stroke={col} strokeWidth="1.2" />
+      <rect x="1" width={W - 2} y={top} height={Math.max(1.5, y(Math.min(open, price)) - top)} fill={col} />
+    </svg>
+  );
+}
+
 function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any }) {
   const chg = quote?.change;
   const prevPrice = useRef(quote?.price);
@@ -44,6 +65,7 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
     >
       <div className="flex items-center gap-2">
         {rank && <span className="text-[11px] text-slate-500 w-4 shrink-0">{rank}</span>}
+        <MiniCandle quote={quote?.error ? null : quote} />
         <div className="min-w-0 flex-1">
           <b className="block text-[13px] text-white truncate">{nameOverride || quote?.name || sym}</b>
           <small className="flex items-center gap-1 text-[11.5px] text-slate-400 min-w-0">

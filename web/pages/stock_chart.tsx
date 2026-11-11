@@ -1,6 +1,7 @@
 // 走勢卡：分時／5 日／日 K 三種模式。分時沿用原本的 IntradayChart（真實資料、休市提示、時區處理）；
 // 5 日與日 K 只在切過去時才抓，舊版後端（線上更新只更新畫面）沒有 5 日路由時顯示原因，不用假資料補。
 import { IntradayChart, useChartWidth } from '../live_widgets';
+import { SignalMark, signalColor, signalTitle } from '../charts';
 import { cachedJson } from '../fetch_cache';
 import { Tip, fmt } from '../ui';
 
@@ -129,6 +130,12 @@ function DailyK({ data }: { data: any }) {
   const i = hover ?? bars.length - 1;
   const b = bars[i];
   const prev = bars[i - 1]?.close;
+  // K 線收盤規則的標記（舊版後端沒有這份資料時就只畫 K 棒）
+  const rules = data.kline_rules;
+  const sigBy = new Map<string, any>((rules?.signals || []).map((s: any) => [s.date, s]));
+  const pivBy = new Map<string, any>((rules?.pivots || []).map((p: any) => [p.date, p]));
+  const bigVol = new Set<string>(rules?.big_volume || []);
+  const sg = sigBy.get(b.date);
   return (
     <div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 my-2 min-h-5 mono">
@@ -138,7 +145,13 @@ function DailyK({ data }: { data: any }) {
         <span>低 {fmt(b.low)}</span>
         <span>收 {fmt(b.close)}</span>
         {prev != null && <span className={cls(b.close - prev)}>{pctStr((b.close / prev - 1) * 100)}</span>}
-        <span>量 {fmt(b.volume, 0)}</span>
+        <span>量 {fmt(b.volume, 0)}{bigVol.has(b.date) ? '（大量）' : ''}</span>
+        {sg && (
+          <span className="w-full font-sans" style={{ color: signalColor(sg) }}>
+            {signalTitle(sg)}
+            {sg.confirmed ? '' : '（盤中，尚未確認）'}：{sg.reason}（僅供參考）
+          </span>
+        )}
       </div>
       <svg
         ref={boxRef}
@@ -171,7 +184,22 @@ function DailyK({ data }: { data: any }) {
             <g key={k.date}>
               <line x1={cx} x2={cx} y1={y(k.high)} y2={y(k.low)} stroke={c} />
               <rect x={cx - w * 0.32} width={w * 0.64} y={y(Math.max(k.open, k.close))} height={Math.max(1, Math.abs(y(k.open) - y(k.close)))} fill={c} />
-              <rect x={cx - w * 0.32} width={w * 0.64} y={VB - vh} height={vh} fill={c} opacity=".45" />
+              <rect x={cx - w * 0.32} width={w * 0.64} y={VB - vh} height={vh} fill={c} opacity={bigVol.has(k.date) ? '.95' : '.45'} />
+              {bigVol.has(k.date) && <circle cx={cx} cy={VB - vh - 4} r="2" fill="#fcd34d" />}
+              {pivBy.has(k.date) && !sigBy.has(k.date) && (
+                <text
+                  x={cx}
+                  y={pivBy.get(k.date).kind === 'high' ? Math.max(y(k.high) - 4, PT + 8) : y(k.low) + 11}
+                  textAnchor="middle"
+                  fontSize="9"
+                  fill="#cbd5e1"
+                >
+                  {pivBy.get(k.date).kind === 'high' ? '頭' : '底'}
+                </text>
+              )}
+              {sigBy.has(k.date) && (
+                <SignalMark sg={sigBy.get(k.date)} cx={cx} yLow={y(k.low)} yHigh={y(k.high)} r={Math.max(Math.min(w * 0.4, 5), 3.5)} top={PT} bottom={H - PB} />
+              )}
             </g>
           );
         })}
@@ -183,7 +211,9 @@ function DailyK({ data }: { data: any }) {
           {bars[bars.length - 1].date.slice(5)}
         </text>
       </svg>
-      <div className="text-[11.5px] text-slate-400 mt-1.5">近 {bars.length} 日日 K 與成交量（{data.source}）。要看均線、訊號與更長區間請到「技術分析」分頁。</div>
+      <div className="text-[11.5px] text-slate-400 mt-1.5">近 {bars.length} 日日 K 與成交量（{data.source}）。
+        {rules ? `目前：${rules.trend_label}。▲多頭確認／回補、▼出場／空頭確認、▽! 轉弱觀察、● 大量；固定規則標記，歷史統計沒有明顯優勢，僅供參考。` : ''}
+        要看均線、20 日突破訊號與更長區間請到「技術分析」分頁。</div>
     </div>
   );
 }
@@ -223,6 +253,12 @@ function StockChart({ symbol, quoteTime, livePrice, intraday, tz, news, showNews
       {mode === 'intra' && (
         <div className="mt-2">
           <IntradayChart data={intraday} lastTrade={quoteTime} livePrice={livePrice} tz={tz} news={showNews ? news : undefined} />
+          {intraday?.source && (
+            <div className="text-[11.5px] text-slate-400 mt-1.5">
+              {intraday.source}
+              {intraday.delay_note ? `；${intraday.delay_note}，交易時段內線尾另外接上每 5 秒的最新成交價` : ''}。
+            </div>
+          )}
         </div>
       )}
       {mode === 'd5' && <FiveDay data={d5} />}

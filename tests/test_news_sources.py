@@ -95,10 +95,12 @@ class FetchIsolationTests(unittest.TestCase):
                 patch.object(news_feed, "_cnyes_news", side_effect=OSError("cnyes down")), \
                 patch.object(news_feed, "_yahoo_tw_rss", return_value=ok), \
                 patch.object(news_feed, "_google_site", return_value=[]), \
-                patch.object(news_feed, "_twse_material", return_value=[]):
+                patch.object(news_feed, "_twse_material", return_value=[]), \
+                patch.object(news_feed.news_archive, "save") as saved:
             r = news_feed.fetch_news("2330", "台積電")
         news_feed._CACHE.clear()
         self.assertEqual(len(r["items"]), 1)
+        saved.assert_called_once()  # 抓到的標題要交給每日存檔
         self.assertTrue(any("鉅亨網 抓取失敗" in e for e in r["errors"]))
         self.assertIn("Yahoo奇摩股市：1 則", r["sources"])
 

@@ -19,6 +19,56 @@ const readShowSignals = () => {
   }
 };
 
+// 訊號規則：kline＝K 線收盤規則（頭底趨勢＋前一天高低點）；breakout＝20 日突破＋MACD
+const SIGNAL_SET_LS_KEY = 'ta_signal_set_v1';
+const readSignalSet = () => {
+  try {
+    return localStorage.getItem(SIGNAL_SET_LS_KEY) === 'breakout' ? 'breakout' : 'kline';
+  } catch {
+    return 'kline';
+  }
+};
+const SIGNAL_SET_TIP = {
+  kline:
+    'K 線收盤規則：頭頭高、底底高是多頭。底不破前低、收盤突破前一個頭＝多頭確認（多）；之後收盤跌破前一天低點＝出場（出）。空頭相反：收盤跌破前一個底＝空頭確認（空），收盤突破前一天高點＝回補（補）。高檔爆量的長上影線、長紅、長黑會標「!」提醒轉弱。只看收盤價，盤中跌破不算。歷史統計沒有明顯優勢（見說明頁），僅供參考，不是投資建議。',
+  breakout:
+    '20 日突破：收盤突破近 20 日高點＋MACD 金叉或紅柱放大＝買；跌破近 20 日低點＋死叉或綠柱放大＝賣。歷史統計相對隨機進場優勢很小（見說明頁 K 線怎麼看），僅供參考，不是投資建議。',
+};
+const SIGNAL_CHAR = { 多頭確認: '多', 出場: '出', 空頭確認: '空', 回補: '補' };
+const signalTitle = (sg) => sg.label || (sg.type === 'buy' ? '買進訊號' : '賣出訊號');
+const signalColor = (sg) => (sg.type === 'warn' ? '#fbbf24' : sg.type === 'buy' ? 'var(--up)' : 'var(--down)');
+
+// 一個訊號標記：買在 K 棒下方（▲）、賣與轉弱在上方（▼／!）；有 label 的規則會多標一個字
+function SignalMark({ sg, cx, yLow, yHigh, r, top, bottom }: { sg: any; cx: number; yLow: number; yHigh: number; r: number; top: number; bottom: number }) {
+  const buy = sg.type === 'buy';
+  const col = signalColor(sg);
+  const baseY = buy ? Math.min(yLow + r + 3, bottom - 2) : Math.max(yHigh - r - 3, top + 2);
+  const pts = buy
+    ? `${cx},${baseY - r} ${cx - r},${baseY + r * 0.8} ${cx + r},${baseY + r * 0.8}`
+    : `${cx},${baseY + r} ${cx - r},${baseY - r * 0.8} ${cx + r},${baseY - r * 0.8}`;
+  const ch = sg.type === 'warn' ? '!' : SIGNAL_CHAR[sg.label];
+  return (
+    <g pointerEvents="none">
+      <polygon
+        points={pts}
+        fill={sg.confirmed && sg.type !== 'warn' ? col : 'none'}
+        stroke={col}
+        strokeWidth="1.4"
+        strokeDasharray={sg.confirmed ? undefined : '2 2'}
+      >
+        <title>
+          {signalTitle(sg)}：{sg.reason}
+        </title>
+      </polygon>
+      {ch && (
+        <text x={cx} y={buy ? baseY + r + 10 : baseY - r - 3} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={col}>
+          {ch}
+        </text>
+      )}
+    </g>
+  );
+}
+
 const BB_LS_KEY = 'ta_show_bollinger_v1';
 const readShowBB = () => {
   try {
@@ -29,12 +79,15 @@ const readShowBB = () => {
 };
 
 // signals：[{date, type: 'buy'|'sell', reason, confirmed}]，由後端依固定規則算出，只在 K 線上標記
+// klineRules：{signals, pivots, big_volume, trend_label}，K 線收盤規則的結果（後端沒給時只能用 20 日突破）
 function CandlestickChart({
   bars: allBars,
   supports,
   resistances,
   signals = [],
   signalsError = null,
+  klineRules = null,
+  klineError = null,
   hideSignals = false,
   barCount = 60,
   unit = '日',
@@ -45,6 +98,8 @@ function CandlestickChart({
   resistances?: any;
   signals?: any[];
   signalsError?: string | null;
+  klineRules?: any;
+  klineError?: string | null;
   barCount?: number;
   unit?: string;
 }) {
@@ -56,6 +111,9 @@ function CandlestickChart({
   const [expanded, setExpanded] = useState(false);
   const [showSignalsPref, setShowSignals] = useState(readShowSignals);
   const showSignals = showSignalsPref && !hideSignals; // 分 K 不標訊號（歷史統計只驗證過日 K）
+  const [signalSetPref, setSignalSet] = useState(readSignalSet);
+  const signalSet = klineRules ? signalSetPref : 'breakout'; // 舊版後端沒有 K 線收盤規則
+  const useKline = showSignals && signalSet === 'kline';
   const [showBB, setShowBB] = useState(readShowBB);
   const svgRef = useRef(null);
   const drag = useRef(null);
@@ -158,7 +216,11 @@ function CandlestickChart({
   const activeIdx = hoverIdx !== null && hoverIdx < bars.length ? hoverIdx : bars.length - 1;
   const activeBar = bars[activeIdx];
   const sigByDate = new Map<string, any>();
-  if (showSignals) for (const sg of signals || []) sigByDate.set(sg.date, sg);
+  if (showSignals) for (const sg of (useKline ? klineRules.signals : signals) || []) sigByDate.set(sg.date, sg);
+  const pivotByDate = new Map<string, any>();
+  if (useKline) for (const pv of klineRules.pivots || []) pivotByDate.set(pv.date, pv);
+  const bigVol = new Set<string>(useKline ? klineRules.big_volume || [] : []);
+  const shownError = useKline ? klineError : signalsError;
   const activeSignal = sigByDate.get(activeBar.date);
   const isActiveUp = activeBar.close >= activeBar.open;
 
@@ -285,7 +347,7 @@ function CandlestickChart({
             <button
               type="button"
               aria-pressed={showSignals}
-              title="依固定規則標出買賣訊號：收盤突破近 20 日高點＋MACD 金叉或紅柱放大＝買；跌破近 20 日低點＋死叉或綠柱放大＝賣。歷史統計相對隨機進場優勢很小（見說明頁 K 線怎麼看），僅供參考，不是投資建議。"
+              title={`在 K 線上標出買賣訊號。${SIGNAL_SET_TIP[signalSet]}`}
               onClick={() => {
                 const next = !showSignalsPref;
                 setShowSignals(next);
@@ -303,6 +365,25 @@ function CandlestickChart({
             >
               買賣訊號
             </button>
+          )}
+          {showSignals && klineRules && (
+            <select
+              aria-label="買賣訊號規則"
+              title={SIGNAL_SET_TIP[signalSet]}
+              value={signalSet}
+              onChange={(e) => {
+                setSignalSet(e.target.value);
+                try {
+                  localStorage.setItem(SIGNAL_SET_LS_KEY, e.target.value);
+                } catch {
+                  /* 瀏覽器不給存也不影響顯示 */
+                }
+              }}
+              className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-slate-200 cursor-pointer"
+            >
+              <option value="kline">K 線收盤規則</option>
+              <option value="breakout">20 日突破</option>
+            </select>
           )}
           <button
             type="button"
@@ -349,10 +430,20 @@ function CandlestickChart({
           <span className="flex items-center gap-1 text-rose-400">
             <span className="w-3 h-0.5 border-b border-dashed border-rose-400 inline-block" /> 壓力
           </span>
-          {showSignals && (
+          {showSignals && !useKline && (
             <>
               <span style={{ color: 'var(--up)' }}>▲買</span>
               <span style={{ color: 'var(--down)' }}>▼賣</span>
+            </>
+          )}
+          {useKline && (
+            <>
+              <span style={{ color: 'var(--up)' }}>▲多頭確認／回補</span>
+              <span style={{ color: 'var(--down)' }}>▼出場／空頭確認</span>
+              <span className="text-amber-400">▽! 轉弱觀察</span>
+              <span className="text-slate-300">頭・底</span>
+              <span className="text-amber-300">● 大量</span>
+              {klineRules.trend_label && <span className="text-slate-200 font-sans">目前：{klineRules.trend_label}</span>}
             </>
           )}
         </div>
@@ -399,9 +490,10 @@ function CandlestickChart({
         {activeSignal && (
           <span
             className="w-full font-sans"
-            style={{ color: activeSignal.type === 'buy' ? 'var(--up)' : 'var(--down)' }}
+            style={{ color: signalColor(activeSignal) }}
           >
-            {activeSignal.type === 'buy' ? '▲ 買進訊號' : '▼ 賣出訊號'}
+            {activeSignal.type === 'buy' ? '▲ ' : '▼ '}
+            {signalTitle(activeSignal)}
             {activeSignal.confirmed ? '' : '（盤中，尚未確認）'}：{activeSignal.reason}（僅供參考）
           </span>
         )}
@@ -550,35 +642,42 @@ function CandlestickChart({
                 width={candleW}
                 height={Math.max(volTop + volH - vY, 1)}
                 fill={color}
-                opacity={isHovered ? 0.95 : 0.5}
+                opacity={isHovered || bigVol.has(b.date) ? 0.95 : 0.5}
               />
-              {(() => {
-                const sg = sigByDate.get(b.date);
-                if (!sg) return null;
-                const buy = sg.type === 'buy';
-                const r = Math.max(Math.min(stepX * 0.55, 6), 3.5);
-                const baseY = buy
-                  ? Math.min(toY(b.low) + r + 3, padTop + priceH - 2)
-                  : Math.max(toY(b.high) - r - 3, padTop + 2);
-                const pts = buy
-                  ? `${cx},${baseY - r} ${cx - r},${baseY + r * 0.8} ${cx + r},${baseY + r * 0.8}`
-                  : `${cx},${baseY + r} ${cx - r},${baseY - r * 0.8} ${cx + r},${baseY - r * 0.8}`;
-                const col = buy ? 'var(--up)' : 'var(--down)';
-                return (
-                  <polygon
-                    points={pts}
-                    fill={sg.confirmed ? col : 'none'}
-                    stroke={col}
-                    strokeWidth="1.4"
-                    strokeDasharray={sg.confirmed ? undefined : '2 2'}
-                    pointerEvents="none"
-                  >
-                    <title>
-                      {buy ? '買進訊號' : '賣出訊號'}：{sg.reason}
-                    </title>
-                  </polygon>
-                );
-              })()}
+              {bigVol.has(b.date) && (
+                <circle cx={cx} cy={Math.max(vY - 4, volTop - 3)} r="2.2" fill="#fcd34d" pointerEvents="none">
+                  <title>大量：成交量是前 5 根均量的 1.5 倍以上</title>
+                </circle>
+              )}
+              {pivotByDate.has(b.date) &&
+                !sigByDate.has(b.date) &&
+                (() => {
+                  const pv = pivotByDate.get(b.date);
+                  const hi = pv.kind === 'high';
+                  return (
+                    <text
+                      x={cx}
+                      y={hi ? Math.max(toY(b.high) - 4, padTop + 8) : Math.min(toY(b.low) + 11, padTop + priceH - 1)}
+                      textAnchor="middle"
+                      fontSize="9"
+                      fill="#cbd5e1"
+                      pointerEvents="none"
+                    >
+                      {hi ? '頭' : '底'}
+                    </text>
+                  );
+                })()}
+              {sigByDate.has(b.date) && (
+                <SignalMark
+                  sg={sigByDate.get(b.date)}
+                  cx={cx}
+                  yLow={toY(b.low)}
+                  yHigh={toY(b.high)}
+                  r={Math.max(Math.min(stepX * 0.55, 6), 3.5)}
+                  top={padTop}
+                  bottom={padTop + priceH}
+                />
+              )}
               {idx % labelEvery === 0 && (
                 <text
                   x={cx}
@@ -686,7 +785,8 @@ function CandlestickChart({
           <span>
             滾輪縮放・拖曳左右平移・手機兩指縮放・雙擊還原{expanded ? '・Esc 關閉' : ''}
             {showSignals ? '・買賣訊號為固定規則標記，歷史統計優勢很小，僅供參考' : ''}
-            {showSignals && signalsError ? `・⚠️ ${signalsError}` : ''}
+            {useKline ? '・頭和底要等後面 3 根走完才會標出來' : ''}
+            {showSignals && shownError ? `・⚠️ ${shownError}` : ''}
           </span>
         </div>
       </div>
@@ -801,4 +901,4 @@ function EquityCurveChart({ curve, initialCapital }) {
   );
 }
 
-export { CandlestickChart, EquityCurveChart };
+export { CandlestickChart, EquityCurveChart, SignalMark, signalColor, signalTitle };

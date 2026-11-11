@@ -116,13 +116,17 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
     # 標題沒提到這檔（也不是官方公告）的新聞常是同一來源順帶列出的無關報導，不計入語氣、重點與時間軸
     events = [x for x in non_column if x.get("mentions", True)]
     counts = {"official": 0, "news": 0, "column": len(items) - len(non_column), "unrelated": len(non_column) - len(events),
-              "positive": 0, "negative": 0, "neutral": 0}
+              "positive": 0, "negative": 0, "neutral": 0, "conflict": 0}
     w_pos = w_neg = 0
     for x in events:
         counts["official" if x.get("official") else "news"] += 1
         w = OFFICIAL_WEIGHT if x.get("official") else 1
         sent = x.get("sentiment", "NEUTRAL")
-        if sent == "POSITIVE":
+        if x.get("sentiment_conflict"):
+            # AI 和關鍵字規則一個說利多、一個說利空：至少一個錯，不拿來投票，數量歸在中性
+            counts["conflict"] += 1
+            counts["neutral"] += 1
+        elif sent == "POSITIVE":
             counts["positive"] += 1
             w_pos += w
         elif sent == "NEGATIVE":
@@ -148,10 +152,11 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
 
     # 風險重點：重點新聞是溫和題材時，高波動的風險事件（利空）不能被蓋掉，另外列出一則
     risk_lead = None
-    for e in events:
-        if e.get("sentiment") == "NEGATIVE" and not (lead and e["title"] == lead["title"] and e["local_iso"] == lead["local_iso"]):
-            risk_lead = {k: e.get(k) for k in ("title", "source", "kind", "local_iso", "link", "sentiment_by", "timing", "check_fulltext")}
-            break
+    risky = [e for e in events if e.get("sentiment") == "NEGATIVE" and not e.get("sentiment_conflict")
+             and not (lead and e["title"] == lead["title"] and e["local_iso"] == lead["local_iso"])]
+    if risky:
+        e = max(risky, key=_risk_score)  # 分數相同時 max 取排在前面（重要性較高）的那則
+        risk_lead = {k: e.get(k) for k in ("title", "source", "kind", "local_iso", "link", "sentiment_by", "timing", "check_fulltext")}
     if lead and lead.get("sentiment") == "NEGATIVE":
         risk_lead = None  # 重點新聞本身就是利空，不用重複
 
@@ -177,7 +182,10 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
         gaps.append("新聞方向由 AI 只依標題與摘要判斷，沒讀內文，仍可能誤判")
         n_conf = sum(1 for x in events if x.get("sentiment_conflict"))
         if n_conf:
-            gaps.append(f"{n_conf} 則的 AI 方向和關鍵字規則完全相反（一個利多、一個利空），其中至少一個判斷有誤，語氣請保守看待，建議點原文確認")
+            gaps.append(f"{n_conf} 則的 AI 方向和關鍵字規則完全相反（一個利多、一個利空），其中至少一個判斷有誤，"
+                        "已不計入整體語氣（數量歸在中性），建議點原文確認")
+    if events:
+        gaps.append(COVERAGE_NOTE)
 
     timeline = [
         {"local_iso": x["local_iso"], "title": x["title"], "source": x["source"], "kind": x["kind"],
@@ -185,6 +193,21 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
         for x in sorted(events, key=lambda x: x["local_iso"])[-TIMELINE_MAX:]
     ]
     return {"tone": tone, "counts": counts, "lead": lead, "risk_lead": risk_lead, "gaps": gaps, "timeline": timeline}
+
+
+COVERAGE_NOTE = ("涵蓋範圍：Google 新聞近 14 天、鉅亨網與指定網站近 30 天、美股 8-K 近 45 天、"
+                 "台股重大訊息近 90 天（本機每日存檔）；更早的消息不在這裡")
+
+
+def _risk_score(it: Dict[str, Any]) -> float:
+    """風險重點的排序分數：和「重要性」分開算，偏重急跌、流動性與系統性風險的字眼、正在發展的事件、官方公告與已出現的跌幅。"""
+    s = 2.0 if CHECK_TEXT_RE.search(f"{it.get('title', '')} {it.get('detail', '')}") else 0.0
+    s += 1.5 if it.get("timing") == "real_time" else 0.0
+    s += 1.0 if it.get("official") else 0.0
+    r = it.get("reaction") or {}
+    if not r.get("pending") and (r.get("pct") or 0) < 0:
+        s += min(abs(r["pct"]) / 2, 3)  # 每跌 2% 加 1 分，最多 3 分
+    return s
 
 
 def _rule_score(it: Dict[str, Any], atr_pct: Optional[float]) -> float:

@@ -9,8 +9,11 @@ from typing import Any, Dict, List, Optional
 import urllib.parse
 
 from src.market import quote_provider as qp
+from src.market import markets
+from src.market.bar import Bar
+from src.technical import kline_rules
 from src.market.cache import TTLCache
-from src.market.data_adapter import DualMarketDataAdapter
+from src.market.data_adapter import DualMarketDataAdapter, is_partial_session
 
 INDICES = [
     ("^TWII", "加權指數"),
@@ -160,6 +163,8 @@ def intraday(symbol: str) -> Optional[Dict[str, Any]]:
             "is_fallback": is_fallback,
             "trade_date": trade_date,
             "source": "Yahoo Finance Chart API（5 分鐘線）",
+            # 2026-11 實測：Yahoo 台股分 K 固定落後約 20 分鐘，美股即時
+            "delay_note": "台股分時資料約延遲 20 分鐘" if ysym.endswith((".TW", ".TWO")) else "",
         }
         _put(key, data)
         return data
@@ -319,6 +324,13 @@ def five_days(symbol: str) -> Dict[str, Any]:
     return {"symbol": symbol, "points": [], "days": [], "error": last_err or "查無資料"}
 
 
+def _last_bar_partial(symbol: str, rows: List[Dict[str, Any]]) -> bool:
+    try:
+        return bool(rows) and is_partial_session(markets.market_of(symbol), rows[-1]["date"])
+    except Exception:
+        return False
+
+
 def candles(symbol: str, n: int = 15) -> Dict[str, Any]:
     n = max(5, min(60, n))
     key = f"candles:{symbol}:{n}"
@@ -328,7 +340,7 @@ def candles(symbol: str, n: int = 15) -> Dict[str, Any]:
     last_err = None
     for ysym in _yahoo_symbols(symbol):
         try:
-            res = _chart(ysym, "1d", "3mo")
+            res = _chart(ysym, "1d", "6mo")
         except Exception as e:
             last_err = str(e)
             continue
@@ -342,6 +354,10 @@ def candles(symbol: str, n: int = 15) -> Dict[str, Any]:
                          "high": round(h, 2), "low": round(lo, 2), "close": round(c, 2),
                          "volume": (q.get("volume") or [0] * (i + 1))[i] or 0})
         data = {"symbol": symbol, "bars": rows[-n:], "source": "Yahoo Finance 日 K（指數不含還權）"}
+        # K 線收盤規則標記：用抓到的全部 K 棒（約 3 個月）計算，只回傳畫面上那段
+        bars = [Bar(r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in rows]
+        data["kline_rules"], data["kline_rules_error"] = kline_rules.visible(
+            bars, data["bars"][0]["date"] if data["bars"] else "", _last_bar_partial(symbol, rows))
         _put(key, data)
         return data
     return {"symbol": symbol, "bars": [], "error": last_err or "查無資料"}

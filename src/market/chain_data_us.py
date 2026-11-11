@@ -13,7 +13,7 @@ ADR（TSM、ASML、NVO…）依其所屬產業歸類，與掛牌地無關。
 改完把 VERSION 改成修改日期。前端不用改。
 """
 
-VERSION = "2026-11-07"
+VERSION = "2026-11-11"
 
 COLUMNS = ["原料與能源", "工業與地產", "科技與消費", "金融與健康"]
 LAYOUT = [
@@ -114,14 +114,16 @@ CHAINS = [
         "edges": [("svc", "prod"), ("prod", "mid"), ("mid", "refine")],
     },
     {
-        "id": "us_aero", "name": "航太與國防", "sector": "工業", "blurb": "關鍵零件、國防主承包商，到航空公司",
-        "stages": ["零組件", "主承包商", "航空運輸"],
+        "id": "us_aero", "name": "航太、國防與太空", "sector": "工業", "blurb": "關鍵零件、國防主承包商與火箭發射，到航空公司與衛星服務",
+        "stages": ["零組件", "主承包商與發射", "航空運輸與衛星服務"],
         "nodes": [
             {"id": "parts", "name": "航太零組件", "stage": 0, "stocks": [("HWM", "Howmet"), ("HEI", "HEICO"), ("TDG", "TransDigm")]},
             {"id": "prime", "name": "主承包商", "stage": 1, "stocks": [("LMT", "洛克希德馬丁"), ("RTX", "雷神"), ("NOC", "諾斯洛普"), ("GD", "通用動力"), ("BA", "波音"), ("LHX", "L3Harris")]},
+            {"id": "launch", "name": "火箭與發射", "stage": 1, "stocks": [("SPCX", "SpaceX"), ("RKLB", "Rocket Lab"), ("FLY", "Firefly")]},
             {"id": "air", "name": "航空公司", "stage": 2, "stocks": [("DAL", "達美"), ("UAL", "聯合航空"), ("LUV", "西南航空"), ("AAL", "美國航空")]},
+            {"id": "sat", "name": "衛星通訊與太空應用", "stage": 2, "stocks": [("ASTS", "AST SpaceMobile"), ("IRDM", "銥星"), ("VSAT", "Viasat"), ("PL", "Planet Labs"), ("LUNR", "Intuitive Machines")]},
         ],
-        "edges": [("parts", "prime"), ("prime", "air")],
+        "edges": [("parts", "prime"), ("prime", "air"), ("parts", "launch"), ("launch", "sat")],
     },
     {
         "id": "us_comm", "name": "通訊與媒體娛樂", "sector": "通訊服務", "blurb": "社群廣告與遊戲，經串流內容，到電信與有線寬頻",

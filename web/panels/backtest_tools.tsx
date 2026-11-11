@@ -35,8 +35,8 @@ const strategyPayload = (f) => ({
 });
 
 const STATUS_STYLE = {
-  buy: 'bg-rose-500/15 text-rose-200 border-rose-500/40',
-  sell: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40',
+  buy: 'ta-up-chip',
+  sell: 'ta-down-chip',
   stopped: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
   blocked: 'bg-slate-700/40 text-slate-300 border-slate-600',
   hold: 'bg-sky-500/15 text-sky-200 border-sky-500/40',

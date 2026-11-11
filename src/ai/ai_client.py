@@ -668,6 +668,24 @@ def key_facts(module: str, data: Any) -> str:
                 )
                 out.append("K 線買賣訊號標記（固定規則：收盤突破／跌破近 20 日高低點，且 MACD 金叉死叉或柱體放大；"
                            "RSI≥80 不標買、≤20 不標賣；僅是規則標記，不是預測。歷史統計（2019 起 10 檔台美股，隔日開盤進場、未含手續費稅）：買進後 5/10/20 日上漲比例 58.6%/61.4%/63.4%，隨便哪天買是 55.5%/59.1%/62.7%，優勢很小；賣出標記後仍有約 55～65% 的機率上漲，沒有預警效果；樣本多為多頭期，不可說成有優勢）最近：" + recent)
+            kr = data.get("kline_rules")
+            if isinstance(kr, dict) and (kr.get("trend_label") or kr.get("signals")):
+                recent = "；".join(
+                    f"{s.get('date')} {s.get('label')}（{s.get('reason')}{'' if s.get('confirmed', True) else '，盤中尚未確認'}）"
+                    for s in [x for x in (kr.get("signals") or []) if isinstance(x, dict)][-3:]
+                )
+                pivots = "、".join(
+                    f"{p.get('date')} {'頭' if p.get('kind') == 'high' else '底'} {p.get('price')}"
+                    for p in [x for x in (kr.get("pivots") or []) if isinstance(x, dict)][-4:]
+                )
+                out.append(
+                    "K 線收盤規則（固定規則：前後各 3 根的最高／最低＝頭／底；頭頭高底底高＝多頭、頭頭低底底低＝空頭；"
+                    "底不破前低且收盤突破前一個頭＝多頭確認，之後收盤跌破前一天低點＝出場；空頭鏡像；"
+                    "高檔大量的長上影線／長紅／長黑＝轉弱觀察。僅是規則標記，不是預測。歷史統計（2019 起 10 檔台美股，隔日開盤成交、未含手續費稅）："
+                    "多頭確認後 5/10/20 日上漲比例 59.0%/58.5%/60.6%，隨便哪天買是 55.5%/59.0%/62.7%，沒有優勢；"
+                    "多頭確認進場到出場 566 筆只有 48.4% 賺錢、每筆平均 +0.60%、平均只持有 5 根；放空 309 筆只有 33.0% 賺錢、每筆平均 -0.61%；不可說成有優勢）"
+                    f"目前趨勢：{kr.get('trend_label') or '無法判斷'}｜最近的頭底：{pivots or '無'}｜最近標記：{recent or '無'}"
+                )
             bb = data.get("bollinger")
             if isinstance(bb, dict) and bb.get("text"):
                 out.append(

@@ -9,6 +9,7 @@ from src.technical import scenarios
 from src.technical.indicators import calculate_ma
 from src.technical.intraday import bollinger, bollinger_signal
 from src.technical.signals import visible_signals
+from src.technical import kline_rules
 from src.market import quote_provider
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
@@ -98,6 +99,10 @@ class TechnicalHandlers:
             bars, recent_bars[0]["date"] if recent_bars else "", bool(live_overlay.get("applied"))
         )
 
+        kline, kline_error = kline_rules.visible(
+            bars, recent_bars[0]["date"] if recent_bars else "", bool(live_overlay.get("applied"))
+        )
+
         # 布林通道目前位置：只看已收完的 K 棒（盤中暫定的最後一根不算）
         try:
             bb_now = bollinger_signal(bars[:-1] if live_overlay.get("applied") else bars)
@@ -127,6 +132,8 @@ class TechnicalHandlers:
             "signals": signals,
             "bollinger": bb_now,
             "signals_error": signals_error,
+            "kline_rules": kline,
+            "kline_rules_error": kline_error,
             "llm_result": decision,
             "scenarios": scen,
         }
