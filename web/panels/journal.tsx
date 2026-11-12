@@ -7,7 +7,7 @@ import { AiExplain } from '../ai_store';
 import { PCard, PageHead } from '../pages/card_box';
 import { TradeFlow } from '../pages/trade_flow';
 import { Donut, LinesChart, Scatter, VBars } from '../pages/mini_charts';
-import { nextTradeId, setJournal, usePortfolio } from '../portfolio_store';
+import { loadPortfolio, nextTradeId, setJournal, setOrders, usePortfolio } from '../portfolio_store';
 
 const { useState } = React;
 
@@ -169,6 +169,7 @@ function JournalHelp() {
           <ol className="list-decimal pl-5 mt-1 space-y-0.5">
             <li>在看盤頁模擬下單（或匯入 CSV），累積幾筆已賣出的交易，筆數越多結果越可信（建議 10 筆以上）。</li>
             <li>需要時可在表格修改「情緒(1-10)」：那筆交易讓你多煎熬，8 分以上代表抱得很痛苦。</li>
+            <li>「手續費＋稅」可以改成券商對帳單上的實際金額，淨損益與報酬率會自動重算，下單紀錄那筆賣出也會一起更新。</li>
             <li>按「執行交易診斷」，看成績、偏誤與 3 條規則。</li>
             <li>規則會自動帶到下單面板的「規則確認下單」，每次下單前要逐條勾選確認。</li>
           </ol>
@@ -393,6 +394,16 @@ function JournalChartsRow({ m5Data, m5Entries: tableEntries }: { m5Data: any; m5
   );
 }
 
+// 改手續費＋稅：有進出場價就照模擬成交的算法重算淨損益與報酬率（(出場價 − 進場價) × 股數 − 費用）
+const withFees = (en, fees) => {
+  const entry = Number(en.entry_price);
+  const exit = Number(en.exit_price);
+  const shares = Number(en.shares);
+  if (!(entry > 0) || !(exit > 0) || !(shares > 0)) return { ...en, fees };
+  const net = Math.round(((exit - entry) * shares - fees) * 100) / 100;
+  return { ...en, fees, net_pnl: net, return_pct: Math.round((net / (entry * shares)) * 10000) / 100 };
+};
+
 function Mod5Panel({ ctx }) {
   const { m5Data, m5Entries, m5Loading, m5Source, runMod5, setM5Entries, setM5Source } = ctx;
   // 「我的交易紀錄」模式：表格就是交易紀錄本身，改動立刻存回（否則回看盤頁成交後再診斷，會用舊表格蓋掉新紀錄）
@@ -587,6 +598,10 @@ function Mod5Panel({ ctx }) {
                   <th className="py-2 px-1.5">進場價</th>
                   <th className="py-2 px-1.5">出場/現價</th>
                   <th className="py-2 px-1.5">股數</th>
+                  <th className="py-2 px-1.5">
+                    手續費＋稅
+                    <Tip text="改成券商對帳單上的實際金額（手續費＋交易稅，同一個幣別）。有進出場價的交易會自動重算淨損益與報酬率，下單紀錄裡對應的賣出那筆也會一起更新。" />
+                  </th>
                   <th className="py-2 px-1.5">淨損益</th>
                   <th className="py-2 px-1.5">報酬率%</th>
                   <th className="py-2 px-1.5">情緒(1-10)</th>
@@ -635,6 +650,36 @@ function Mod5Panel({ ctx }) {
                     <td className="py-1.5 px-1.5 text-slate-300">{en.entry_price ?? '-'}</td>
                     <td className="py-1.5 px-1.5 text-slate-300">{en.exit_price ?? '-'}</td>
                     <td className="py-1.5 px-1.5">{en.shares}</td>
+                    <td className="py-1.5 px-1.5">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={en.fees ?? 0}
+                        aria-label={`交易紀錄 ${en.trade_id} 的手續費＋稅`}
+                        onChange={(e) => {
+                          const fees = Number(e.target.value);
+                          if (!(fees >= 0)) return; // 負數或非數字不存
+                          const next = [...m5Entries];
+                          next[idx] = withFees(next[idx], fees);
+                          edit(next, `已儲存交易紀錄 ${en.trade_id} 的手續費＋稅`);
+                          // 下單紀錄裡同一筆賣出（trade_id 相同）跟著更新，兩邊數字才對得起來
+                          if (m5Source === 'mine') {
+                            const { orders } = loadPortfolio();
+                            const t = next[idx];
+                            if (orders.some((o) => o.side === 'SELL' && o.trade_id === t.trade_id))
+                              setOrders(
+                                orders.map((o) =>
+                                  o.side === 'SELL' && o.trade_id === t.trade_id
+                                    ? { ...o, fees: t.fees, net_pnl: t.net_pnl, return_pct: t.return_pct }
+                                    : o,
+                                ),
+                              );
+                          }
+                        }}
+                        className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-20 text-white"
+                      />
+                    </td>
                     <td className={`py-1.5 px-1.5 font-bold ${colorOf(en.net_pnl)}`}>
                       {en.net_pnl}
                     </td>

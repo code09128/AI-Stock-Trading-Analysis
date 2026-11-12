@@ -2,7 +2,7 @@
 
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { fmt, localDate, marketName, normSym, setFeeDiscount, twTick } from '../ui';
+import { fmt, localDate, marketName, normSym, setFeeDiscount, setIntlFeeCfg, twTick } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
 import { Field, Seg } from './watch_parts';
 
@@ -62,6 +62,63 @@ function FeeDiscountInput({ value }) {
       />
       （{fmt(value * 10, 1)} 折，跟策略回測共用；依你的券商條件填）
     </label>
+  );
+}
+
+// 海外券商手續費（費率%、每筆最低，交易幣別）：打字時只改輸入框，是有效數字才存；離開欄位時還原成目前的值
+function IntlFeeInput({ value, currency }) {
+  const [rate, setRate] = useState(String(value.rate));
+  const [min, setMin] = useState(String(value.min));
+  useEffect(() => {
+    setRate(String(value.rate));
+    setMin(String(value.min));
+  }, [value]);
+  const save = (r, m) => {
+    const nr = Number(r);
+    const nm = Number(m);
+    if (r === '' || m === '' || !(nr >= 0 && nr <= 5) || !(nm >= 0)) return; // 輸入到一半先不存
+    setIntlFeeCfg({ rate: nr, min: nm });
+  };
+  const box = 'w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 mono text-white';
+  return (
+    <span className="flex flex-wrap items-center gap-1 text-slate-400 font-sans">
+      <label className="flex items-center gap-1">
+        券商手續費
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          max="5"
+          value={rate}
+          onChange={(e) => {
+            setRate(e.target.value);
+            save(e.target.value, min);
+          }}
+          onBlur={() => setRate(String(value.rate))}
+          aria-label="海外券商手續費率（%）"
+          className={box}
+        />
+        %
+      </label>
+      <label className="flex items-center gap-1">
+        每筆最低
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          value={min}
+          onChange={(e) => {
+            setMin(e.target.value);
+            save(rate, e.target.value);
+          }}
+          onBlur={() => setMin(String(value.min))}
+          aria-label="海外券商每筆最低手續費"
+          className={box}
+        />
+        {currency || ''}
+      </label>
+      <span className="text-slate-500">（依你的複委託券商條件填，0＝不算）</span>
+    </span>
   );
 }
 
@@ -127,6 +184,7 @@ function OrderPanel({ ctx }) {
     etfFlag,
     afterRound,
     feeDisc,
+    intlFeeSet,
   } = ctx;
   const set = (patch) => setOrder({ ...order, ...patch });
 
@@ -473,10 +531,10 @@ function OrderPanel({ ctx }) {
             {/* 買進要付成交金額＋稅費；賣出入帳是成交金額－稅費（SEC 規費、TAF 從賣出款扣） */}
             ≈ 台幣{' '}
             {fxRate
-              ? fmt((Math.max(amount, 0) + (order.side === 'SELL' ? -1 : 1) * (tax || 0)) * fxRate, 0)
+              ? fmt((Math.max(amount, 0) + (order.side === 'SELL' ? -1 : 1) * ((tax || 0) + (fee || 0))) * fxRate, 0)
               : '（匯率取得中…）'}
             {fxRate
-              ? `（匯率約 ${fmt(fxRate, 3)}，${order.side === 'SELL' ? '已扣' : '含'}法定稅費）`
+              ? `（匯率約 ${fmt(fxRate, 3)}，${order.side === 'SELL' ? '已扣' : '含'}手續費與法定稅費）`
               : ''}
           </span>
         )}
@@ -489,11 +547,9 @@ function OrderPanel({ ctx }) {
             {tradeRules.lot > 1 && `・每手 ${tradeRules.lot} 股（${tradeRules.lot_source}）`}
           </span>
         )}
-        {tradeRules && (
-          <span className="text-slate-500">
-            （未含券商佣金{tradeRules.note ? `；${tradeRules.note}` : ''}）
-          </span>
-        )}
+        {!tw && <span>券商手續費約 {fmt(fee, 2)}</span>}
+        {tradeRules?.note && <span className="text-slate-500">（{tradeRules.note}）</span>}
+        {!tw && intlFeeSet && <IntlFeeInput value={intlFeeSet} currency={q?.currency} />}
       </div>
 
       {orderIssues.length > 0 && (

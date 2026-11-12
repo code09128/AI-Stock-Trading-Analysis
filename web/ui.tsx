@@ -135,6 +135,21 @@ const setFeeDiscount = (v) => {
 // 台股手續費：成交金額 × 0.1425% × 折數，元以下捨去；整張最低 20 元、零股最低 1 元（與後端 market_rules 相同）
 const twFee = (amount, round, discount = feeDiscount()) =>
   Math.max(round ? 20 : 1, Math.floor(amount * 0.001425 * discount + 1e-9));
+// 海外（美股等）券商手續費：成交金額 × 費率%，每筆有最低收費（交易幣別），四捨五入到小數 2 位。
+// 預設 0（只算法定稅費），依你的複委託券商條件填；只用在模擬下單，策略回測有自己的成本設定。
+const LS_INTL_FEE = 'tw_us_intl_fee_v1';
+const intlFeeCfg = () => {
+  const v = readLS(LS_INTL_FEE, null) || {};
+  const rate = Number(v.rate);
+  const min = Number(v.min);
+  return { rate: rate >= 0 && rate <= 5 ? rate : 0, min: Number.isFinite(min) && min > 0 ? min : 0 };
+};
+const setIntlFeeCfg = (cfg) => {
+  writeLS(LS_INTL_FEE, cfg);
+  window.dispatchEvent(new Event('intl-fee-changed'));
+};
+const intlFee = (amount, cfg = intlFeeCfg()) =>
+  amount > 0 ? Math.round(Math.max(cfg.min, (amount * cfg.rate) / 100) * 100) / 100 : 0;
 // 本機日期 YYYY-MM-DD（toISOString 是 UTC，台灣早上 8 點前會是前一天）
 const localDate = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
@@ -253,4 +268,4 @@ const SOURCE_LABELS = {
 };
 const sourceLabel = (code) => SOURCE_LABELS[code] || code || '--';
 
-export { marketSessionOpen, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, localDate, Tip, Stat };
+export { marketSessionOpen, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, intlFee, intlFeeCfg, setIntlFeeCfg, localDate, Tip, Stat };

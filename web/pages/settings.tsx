@@ -46,6 +46,7 @@ const DATA_KEYS = [
   ['tw_us_heatmap_pool_v1', '介面偏好：熱力圖股票池', null],
   ['tw_us_heatmap_size_v1', '介面偏好：熱力圖方塊大小', null],
   ['tw_us_fee_discount_v1', '模擬下單：手續費折數', null],
+  ['tw_us_intl_fee_v1', '模擬下單：海外券商手續費率與每筆最低', 'intl-fee-changed'],
   ['tw_us_savings_plan_v1', '存股計畫：試算條件', null],
   ['tw_us_savings_portfolios_v1', '存股計畫：投資組合清單', null],
   ['tw_us_multichart_v1', '多圖走勢：版面', null],

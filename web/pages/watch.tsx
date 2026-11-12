@@ -1,7 +1,7 @@
 // 看盤頁：左側清單（自選股/ETF/持股）＋右側報價、分時圖、五檔、模擬下單
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
+import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
 import { Row } from './watch_parts';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
@@ -389,6 +389,13 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     window.addEventListener('fee-discount-changed', on);
     return () => window.removeEventListener('fee-discount-changed', on);
   }, []);
+  // 海外券商手續費（費率、每筆最低）：在下單面板改了就重算
+  const [intlFeeSet, setIntlFeeSet] = useState(intlFeeCfg);
+  useEffect(() => {
+    const on = () => setIntlFeeSet(intlFeeCfg());
+    window.addEventListener('intl-fee-changed', on);
+    return () => window.removeEventListener('intl-fee-changed', on);
+  }, []);
   useEffect(() => {
     let stop = false;
     setTradeRules(null);
@@ -620,7 +627,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   const shares = tw ? (order.lotType === 'ROUND' ? qtyNum * 1000 : qtyNum) : qtyNum;
   const amount = priceNum * shares;
   // 台股手續費與證交稅都是「元以下無條件捨去」（與券商對帳單一致）；手續費整張最低 20 元、零股最低 1 元
-  const fee = tw ? twFee(amount, order.lotType === 'ROUND', feeDisc) : 0;
+  // 海外：券商手續費依下單面板的設定（預設 0），法定稅費另外算在 tax
+  const fee = tw ? twFee(amount, order.lotType === 'ROUND', feeDisc) : intlFee(amount, intlFeeSet);
   const sideKey = order.side === 'SELL' ? 'SELL' : 'BUY';
   const statutoryTax = (tradeRules?.fees || [])
     .filter((f) => f.side === sideKey || f.side === 'BOTH')
@@ -815,6 +823,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                 amount,
                 cart,
                 fee,
+                intlFeeSet,
                 order,
                 orderIssues,
                 q,
