@@ -1189,6 +1189,22 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                 sparks={sparks}
                 selected={selected}
                 onSelect={setSelected}
+                onBuy={(r) => {
+                  // 加碼：帶入代號與現價（沒有報價就用成本），股數沿用下單卡原本的設定
+                  setSelected(r.symbol);
+                  setRightTab('quote');
+                  goTab?.('watch');
+                  cardCtl.reveal('order');
+                  setTimeout(() => document.querySelector('[data-card="order"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+                  setOrder((o) => ({
+                    ...o,
+                    side: 'BUY',
+                    price: String(r.price ?? r.cost),
+                    priceType: 'LIMIT',
+                    session: 'REGULAR',
+                  }));
+                  say('已帶入加碼買進委託：確認股數後「加入暫存匣」再按「成交」，就會合併進持股並寫入下單紀錄');
+                }}
                 onSell={(r) => {
                   // 台股：整張用張；不足 1000 股用零股；超過 1000 股又不是整張，先帶整張，零頭要再下一筆零股
                   const t = isTW(r.symbol);

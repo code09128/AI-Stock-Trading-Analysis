@@ -1,5 +1,6 @@
 // 下單紀錄頁：每筆模擬成交（買進與賣出）。買進原本只合併進「我的持股」的平均成本，這頁另外逐筆列出。
-// 資料：tw_us_orders_v1（portfolio_store 的 fillOrder 寫入）；這版以前的模擬賣出從交易紀錄（source＝模擬下單成交）補顯示。
+// 資料：tw_us_orders_v1（portfolio_store 的 fillOrder、我的持股新增／匯入時寫入）；
+// 這版以前的模擬賣出從交易紀錄（source＝模擬下單成交）補顯示，沒有任何買進紀錄的持股顯示成「期初持股」。
 import { bus } from '../bus';
 import { setOrders, usePortfolio } from '../portfolio_store';
 import { notifySaved } from '../sync_store';
@@ -36,8 +37,26 @@ function OrderLogPage() {
         net_pnl: Number(e.net_pnl),
         return_pct: Number(e.return_pct),
       }));
-    return [...orders, ...legacy].sort((a, b) => String(b.time).localeCompare(String(a.time)));
-  }, [orders, journal]);
+    // 期初持股：目前持有、但下單紀錄沒有任何一筆買進的股票（這版以前加入、之後都沒動過的持股），用目前股數與成本顯示。
+    // 第一次對這檔成交或新增時，portfolio_store 的 withInitial 會把它存成一筆 source＝期初持股 的紀錄，之後就不靠這裡
+    const bought = new Set(orders.filter((o) => o.side === 'BUY').map((o) => key(o.symbol)));
+    const initial = holdings
+      .filter((h) => !bought.has(key(h.symbol)))
+      .map((h, i) => ({
+        id: `init_${h.id || i}`,
+        legacy: true,
+        initial: true,
+        time: String(h.opened || ''),
+        symbol: h.symbol,
+        name: '',
+        side: 'BUY',
+        price: Number(h.cost),
+        shares: Number(h.shares),
+        fees: 0,
+        order_type: h.broker ? `券商 ${h.broker}` : '',
+      }));
+    return [...orders, ...legacy, ...initial].sort((a, b) => String(b.time).localeCompare(String(a.time)));
+  }, [orders, journal, holdings]);
 
   const tradeIds = new Set(journal.map((e) => e.trade_id));
   const heldShares = (sym) =>
@@ -90,7 +109,7 @@ function OrderLogPage() {
     <div className="space-y-3.5" data-tour="orders-root">
       <PageHead
         title="下單紀錄"
-        desc="每一筆模擬成交的明細：買進加進了哪些持股、賣出平倉賺賠多少，並連到個股、我的持股與交易檢討。"
+        desc="每一筆模擬成交與持股建立的明細：買進加進了哪些持股、賣出平倉賺賠多少，並連到個股、我的持股與交易檢討。"
         right={
           <button
             type="button"
@@ -163,8 +182,8 @@ function OrderLogPage() {
 
           {!rows.length ? (
             <div className="py-10 text-center text-xs text-slate-400 space-y-2">
-              <div>還沒有模擬成交。到個股頁的「模擬下單」卡填好委託、勾選規則後按成交，這裡就會出現紀錄。</div>
-              <div className="text-slate-500">這一頁是這個版本才開始記錄的：更早的買進沒有逐筆紀錄（已合併在我的持股），更早的模擬賣出會從交易紀錄補上。</div>
+              <div>還沒有紀錄。到個股頁的「模擬下單」卡填好委託、勾選規則後按成交，或在「我的持股」新增持股、按「加碼」「賣出」，這裡就會出現紀錄。</div>
+              <div className="text-slate-500">更早就在我的持股裡的部位會顯示成「期初持股」，更早的模擬賣出會從交易紀錄補上。</div>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -190,10 +209,20 @@ function OrderLogPage() {
                       <tr key={r.id} className="border-b border-slate-800/70 align-top">
                         <td className="py-1.5 pr-2 font-mono whitespace-nowrap">
                           {r.time}
-                          {r.legacy && (
+                          {r.initial || r.source === '期初持股' ? (
+                            <span className="ml-1 text-[10px] text-slate-500" title={r.initial ? '下單紀錄出現以前就在我的持股裡、還沒有任何紀錄：用目前股數與成本顯示' : '第一次加碼、賣出或新增這檔之前，原本持有的股數與成本'}>
+                              期初持股
+                            </span>
+                          ) : r.legacy ? (
                             <span className="ml-1 text-[10px] text-slate-500" title="這版以前的模擬賣出，從交易紀錄補上，只有日期">
                               舊紀錄
                             </span>
+                          ) : (
+                            r.source && (
+                              <span className="ml-1 text-[10px] text-amber-300/80" title="在我的持股新增或匯入的部位，不是模擬成交，沒有手續費">
+                                {r.source}
+                              </span>
+                            )
                           )}
                         </td>
                         <td className="pr-2">
@@ -213,7 +242,7 @@ function OrderLogPage() {
                         <td className="pr-2">
                           {r.side === 'BUY' ? (
                             <span className="text-slate-400">
-                              加入持股
+                              {r.source || r.initial ? '建立持股' : '加入持股'}
                               <span className="text-slate-500">（目前 {fmt(held, Number.isInteger(held) ? 0 : 4)} 股）</span>
                             </span>
                           ) : (
@@ -268,7 +297,8 @@ function OrderLogPage() {
           )}
           <p className="text-[11px] text-slate-500 leading-relaxed">
             刪除這頁的紀錄不會改動我的持股與交易紀錄；要修改或刪除已平倉交易請到「交易檢討」。
-            「舊紀錄」是這版以前的模擬賣出，從交易紀錄補上，只有日期、不能在這裡刪除。紀錄只存在你這台電腦（data/userdata.json）。
+            「手動新增」「CSV 匯入」是在我的持股建立的部位（用成本價、不計手續費）；「期初持股」是更早就在持股裡、沒有逐筆紀錄的部位（第一次加碼、賣出或新增那檔時，會用當時的股數與成本存成一筆）；
+            「舊紀錄」是這版以前的模擬賣出，從交易紀錄補上，只有日期。還沒存成紀錄的期初持股與舊紀錄不能在這裡刪除。紀錄只存在你這台電腦（data/userdata.json）。
           </p>
         </div>
       </PCard>

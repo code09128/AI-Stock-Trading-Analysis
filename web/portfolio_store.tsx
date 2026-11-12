@@ -95,12 +95,53 @@ const nowText = () => {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19).replace('T', ' ');
 };
+const orderId = () => `o${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 // 每筆成交另外記一筆下單紀錄（買進原本只會合併進持股的平均成本，沒有逐筆紀錄）
-const logOrder = (orders, rec) =>
+const logOrder = (orders, rec) => setOrders([...orders, { id: orderId(), time: nowText(), ...rec }]);
+// 下單紀錄出現以前就有的持股沒有買進紀錄：第一次對這檔成交或新增之前，先用「改動前」的持股記一筆「期初持股」，
+// 不然加碼或賣光之後，原本那部分就從下單紀錄消失了。holdings 一定要傳改動前的。
+const withInitial = (orders, holdings, symbol) => {
+  const k = baseCode(normSym(String(symbol)));
+  const same = (x) => baseCode(normSym(String(x.symbol))) === k;
+  if (orders.some((o) => o.side === 'BUY' && same(o))) return orders;
+  return [
+    ...orders,
+    ...holdings.filter(same).map((h) => ({
+      id: orderId(),
+      time: String(h.opened || ''),
+      symbol: h.symbol,
+      name: '',
+      side: 'BUY',
+      price: h.cost,
+      shares: h.shares,
+      fees: 0,
+      order_type: h.broker ? `券商 ${h.broker}` : '',
+      source: '期初持股',
+    })),
+  ];
+};
+// 我的持股「手動新增」「CSV 匯入」也記一筆買進：用 source 標來源，和模擬成交分開（成本價當成交價、不計手續費）
+// prevHoldings：新增前的持股（給 withInitial 用）
+const logHoldingBuys = (items, source, prevHoldings) => {
+  let { orders } = load();
+  for (const it of items) orders = withInitial(orders, prevHoldings, it.symbol);
+  const time = nowText();
   setOrders([
     ...orders,
-    { id: `o${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, time: nowText(), ...rec },
+    ...items.map((it) => ({
+      id: orderId(),
+      time,
+      symbol: it.symbol,
+      name: '',
+      side: 'BUY',
+      price: it.cost,
+      shares: it.shares,
+      fees: 0,
+      order_type: it.broker ? `券商 ${it.broker}` : '',
+      source,
+    })),
   ]);
+};
 const saveRules = (rules, source) =>
   save('rules', {
     rules,
@@ -143,7 +184,7 @@ const fillOrder = ({ symbol, side, price, shares, fees = 0, name = '', orderType
           },
         ];
     setHoldings(next);
-    logOrder(orders, rec);
+    logOrder(withInitial(orders, holdings, symbol), rec);
     return {
       ok: true,
       msg: `已成交買進 ${symbol} ${shares} 股，已加入我的持股（交易檢討的「持有中部位」可看帳面損益）`,
@@ -195,7 +236,7 @@ const fillOrder = ({ symbol, side, price, shares, fees = 0, name = '', orderType
   };
   setJournal([...journal, trade]);
   setHoldings(nextHoldings);
-  logOrder(orders, { ...rec, trade_id: trade.trade_id, net_pnl: netPnl, return_pct: trade.return_pct, cost: avgCost });
+  logOrder(withInitial(orders, holdings, symbol), { ...rec, trade_id: trade.trade_id, net_pnl: netPnl, return_pct: trade.return_pct, cost: avgCost });
   return { ok: true, msg: `已成交賣出 ${symbol} ${shares} 股，已寫入交易紀錄 ${trade.trade_id}` };
 };
 
@@ -228,4 +269,4 @@ function RulesReminder({ compact = false }) {
   );
 }
 
-export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, saveRules, fillOrder, RulesReminder };
+export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, logHoldingBuys, saveRules, fillOrder, RulesReminder };

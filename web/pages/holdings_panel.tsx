@@ -1,9 +1,9 @@
 // 我的持股：市值／成本／損益總覽（可切即時價或昨收、填帳戶現金／投資金額／已領配息以便和銀行對帳）、
-// 持股清單（分析、回測、帶入賣出委託、移除）、新增與 CSV 匯入、送去組合風控
+// 持股清單（分析、回測、帶入加碼／賣出委託、移除）、新增與 CSV 匯入、送去組合風控
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
 import { Tip, baseCode, colorOf, currencyOf, fmt, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
-import { setHoldings as TA_setHoldings } from '../portfolio_store';
+import { logHoldingBuys, setHoldings as TA_setHoldings } from '../portfolio_store';
 import { Row } from './watch_parts';
 import { Donut, topSlices } from './mini_charts';
 
@@ -19,6 +19,7 @@ function HoldingsPanel({
   sparks,
   selected,
   onSelect,
+  onBuy,
   onSell,
   say,
   onSendHoldings,
@@ -138,6 +139,7 @@ function HoldingsPanel({
       );
     }
     setHoldings(next);
+    logHoldingBuys([{ symbol: sym, shares, cost, broker }], '手動新增', holdings);
     setHoldForm({ symbol: '', shares: '', cost: '', broker: '' });
   };
   const importCsv = () => {
@@ -241,6 +243,7 @@ function HoldingsPanel({
     }
 
     setHoldings(currentHoldings);
+    logHoldingBuys(parsedRows, 'CSV 匯入', holdings);
     setCsvText('');
     const msg =
       mergedCount > 0
@@ -439,6 +442,17 @@ function HoldingsPanel({
                 className="text-[11px] px-1.5 py-0.5 rounded bg-violet-700/40 text-violet-200 hover:bg-violet-700/70 cursor-pointer"
               >
                 回測
+              </button>
+              <button
+                type="button"
+                title="用模擬下單加碼買進（會寫入下單紀錄）"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBuy(r);
+                }}
+                className="text-[11px] px-1.5 py-0.5 rounded bg-rose-700/40 text-rose-200 hover:bg-rose-700/70 cursor-pointer"
+              >
+                加碼
               </button>
               <button
                 type="button"
