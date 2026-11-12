@@ -2,7 +2,7 @@
 // 持股清單（分析、回測、帶入賣出委託、移除）、新增與 CSV 匯入、送去組合風控
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { Tip, baseCode, colorOf, currencyOf, fmt, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { Tip, baseCode, colorOf, currencyOf, fmt, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
 import { setHoldings as TA_setHoldings } from '../portfolio_store';
 import { Row } from './watch_parts';
 import { Donut, topSlices } from './mini_charts';
@@ -130,7 +130,7 @@ function HoldingsPanel({
         shares,
         cost,
         broker: broker || undefined,
-        opened: new Date().toISOString().slice(0, 10),
+        opened: localDate(),
       };
       next = [...holdings, newEntry];
       notifySaved(
@@ -234,7 +234,7 @@ function HoldingsPanel({
         currentHoldings.push({
           id: `${r.symbol}_${brokerKey || 'main'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           ...r,
-          opened: new Date().toISOString().slice(0, 10),
+          opened: localDate(),
         });
         addedCount++;
       }

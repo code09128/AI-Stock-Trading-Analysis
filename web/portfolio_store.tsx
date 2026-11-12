@@ -1,7 +1,7 @@
-// 跨頁共用的「我的資料」：持股、交易紀錄（已平倉）、交易檢討產生的個人規則。
+// 跨頁共用的「我的資料」：持股、交易紀錄（已平倉）、交易檢討產生的個人規則、下單紀錄（每筆模擬成交）。
 // 存在瀏覽器 localStorage；任何頁面改動都會廣播 'portfolio-changed'，讓看盤、組合風控、交易檢討、技術分析同步。
 import { bus } from './bus';
-import { baseCode, normSym, readLS, writeLS } from './ui';
+import { baseCode, localDate, normSym, readLS, writeLS } from './ui';
 
 const { useState, useEffect } = React;
 
@@ -10,8 +10,10 @@ const KEYS = {
   holdings: 'tw_us_holdings_v1',
   journal: 'tw_us_journal_v1',
   rules: 'tw_us_rules_v1',
+  orders: 'tw_us_orders_v1',
 };
-const today = () => new Date().toISOString().slice(0, 10);
+// 本機日期：toISOString 是 UTC，台灣早上 8 點前會變成前一天
+const today = () => localDate();
 
 // 交易編號：取現有最大編號 + 1（不能用筆數 + 1，刪過一筆後會撞號）
 const idNum = (id) => Number(String(id || '').replace(/\D/g, '')) || 0;
@@ -60,6 +62,10 @@ const load = () => {
     holdings,
     journal,
     rules: readLS(KEYS.rules, null), // { rules: [...], source, savedAt }
+    orders: (() => {
+      const o = readLS(KEYS.orders, []);
+      return Array.isArray(o) ? o : [];
+    })(),
   };
 };
 const save = (key, value) => {
@@ -83,6 +89,18 @@ const usePortfolio = () => {
 
 const setHoldings = (h) => save('holdings', h);
 const setJournal = (j) => save('journal', j);
+const setOrders = (o) => save('orders', o);
+// 下單紀錄的時間用本機時間（YYYY-MM-DD HH:mm:ss）
+const nowText = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19).replace('T', ' ');
+};
+// 每筆成交另外記一筆下單紀錄（買進原本只會合併進持股的平均成本，沒有逐筆紀錄）
+const logOrder = (orders, rec) =>
+  setOrders([
+    ...orders,
+    { id: `o${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, time: nowText(), ...rec },
+  ]);
 const saveRules = (rules, source) =>
   save('rules', {
     rules,
@@ -92,8 +110,9 @@ const saveRules = (rules, source) =>
 
 // 模擬下單「成交」：買進 → 加到持股（加權平均成本，交易檢討的「持有中部位」會顯示）；
 // 賣出 → 從持股扣除並寫一筆已平倉交易到交易紀錄（交易檢討只用已平倉交易算勝率與偏誤）
-const fillOrder = ({ symbol, side, price, shares, fees = 0 }) => {
-  const { holdings, journal } = load();
+const fillOrder = ({ symbol, side, price, shares, fees = 0, name = '', orderType = '' }) => {
+  const { holdings, journal, orders } = load();
+  const rec = { symbol, name, side, price, shares, fees, order_type: orderType };
   // 代號寫法可能不同（2330 / 2330.TW，CSV 匯入或舊資料）：跟其他頁一樣用 baseCode(normSym()) 比對
   const key = (s) => baseCode(normSym(s));
   const same = (x) => key(x.symbol) === key(symbol);
@@ -124,6 +143,7 @@ const fillOrder = ({ symbol, side, price, shares, fees = 0 }) => {
           },
         ];
     setHoldings(next);
+    logOrder(orders, rec);
     return {
       ok: true,
       msg: `已成交買進 ${symbol} ${shares} 股，已加入我的持股（交易檢討的「持有中部位」可看帳面損益）`,
@@ -175,6 +195,7 @@ const fillOrder = ({ symbol, side, price, shares, fees = 0 }) => {
   };
   setJournal([...journal, trade]);
   setHoldings(nextHoldings);
+  logOrder(orders, { ...rec, trade_id: trade.trade_id, net_pnl: netPnl, return_pct: trade.return_pct, cost: avgCost });
   return { ok: true, msg: `已成交賣出 ${symbol} ${shares} 股，已寫入交易紀錄 ${trade.trade_id}` };
 };
 
@@ -207,4 +228,4 @@ function RulesReminder({ compact = false }) {
   );
 }
 
-export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, saveRules, fillOrder, RulesReminder };
+export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, saveRules, fillOrder, RulesReminder };

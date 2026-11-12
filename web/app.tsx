@@ -22,6 +22,7 @@ import { MarketBoardPage } from './pages/market_board';
 import { IndustryChainPage } from './pages/industry_chain';
 import { MultiChartPage } from './pages/multi_chart';
 import { SavingsPlanPage } from './pages/savings_plan';
+import { OrderLogPage } from './pages/order_log';
 import { SettingsPage } from './pages/settings';
 import { GuideTour } from './pages/tour';
 import { GuidePage, tourAlreadyDone } from './pages/guide';
@@ -1071,6 +1072,7 @@ function App() {
             {activeTab === 'chains' && <IndustryChainPage />}
             {activeTab === 'multichart' && <MultiChartPage />}
             {activeTab === 'savings' && <SavingsPlanPage />}
+            {activeTab === 'orders' && <OrderLogPage />}
             {activeTab === 'guide' && (
               <GuidePage
                 onGo={handleSwitchTab}

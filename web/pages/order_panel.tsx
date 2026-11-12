@@ -103,7 +103,7 @@ function Stepper({ value, onChange, onStep, disabled, label }: { value: any; onC
 }
 
 function OrderPanel({ ctx }) {
-  const { rules, journal } = usePortfolio();
+  const { rules, journal, orders } = usePortfolio();
   const [checked, setChecked] = useState({});
   const [lastFill, setLastFill] = useState(null);
   const ruleList = rules?.rules || [];
@@ -187,6 +187,8 @@ function OrderPanel({ ctx }) {
       price: priceNum,
       shares: sh,
       fees: (fee || 0) + (tax || 0),
+      name: q?.name || '',
+      orderType: orderLabel(order, tw),
     });
     if (r.ok) {
       setChecked({});
@@ -227,7 +229,7 @@ function OrderPanel({ ctx }) {
         </span>
       </div>
 
-      {/* 介面流程指示：成交模擬交易 → 規則確認下單 → 交易檢討 */}
+      {/* 介面流程指示：成交模擬交易 → 規則確認下單 → 下單紀錄 → 交易檢討 */}
       <div className="flex flex-wrap items-center gap-1.5 text-[11px] bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2">
         <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-200 font-semibold">
           ① 成交模擬交易（填寫委託）
@@ -244,10 +246,18 @@ function OrderPanel({ ctx }) {
         <span className="text-slate-500">→</span>
         <button
           type="button"
+          onClick={() => bus.goTab?.('orders')}
+          className="px-2.5 py-0.5 rounded bg-slate-700/60 hover:bg-slate-700 text-slate-100 border border-slate-600 font-semibold cursor-pointer"
+        >
+          ③ 下單紀錄（{orders.length} 筆）
+        </button>
+        <span className="text-slate-500">→</span>
+        <button
+          type="button"
           onClick={() => bus.goTab?.('mod5')}
           className="px-2.5 py-0.5 rounded bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 font-semibold cursor-pointer"
         >
-          ③ 交易檢討（{journal.length} 筆）→
+          ④ 交易檢討（{journal.length} 筆）→
         </button>
       </div>
 
@@ -574,7 +584,7 @@ function OrderPanel({ ctx }) {
         </button>
       </div>
 
-      {/* 第三步：成交後引導至交易檢討 */}
+      {/* 成交後引導至下單紀錄與交易檢討 */}
       {lastFill && (
         <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-100 flex flex-wrap items-center justify-between gap-2">
           <span>
@@ -583,13 +593,22 @@ function OrderPanel({ ctx }) {
               ? '（已平倉寫入交易紀錄，可前往交易檢討分析勝率與行為偏誤）'
               : '（已加入我的持股；交易檢討的「持有中部位」會顯示帳面損益）'}
           </span>
-          <button
-            type="button"
-            onClick={() => bus.goTab?.('mod5')}
-            className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold cursor-pointer"
-          >
-            ③ 前往交易檢討（{journal.length} 筆）→
-          </button>
+          <span className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => bus.goTab?.('orders')}
+              className="px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold cursor-pointer"
+            >
+              ③ 看下單紀錄
+            </button>
+            <button
+              type="button"
+              onClick={() => bus.goTab?.('mod5')}
+              className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold cursor-pointer"
+            >
+              ④ 前往交易檢討（{journal.length} 筆）→
+            </button>
+          </span>
         </div>
       )}
 

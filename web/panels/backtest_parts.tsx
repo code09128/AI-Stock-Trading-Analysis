@@ -223,7 +223,7 @@ function TradesTable({ trades }) {
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-x-auto">
       <div className="text-xs font-semibold text-slate-300 mb-3">
         逐筆交易明細（Next Bar Open：隔日開盤價成交，已扣摩擦成本）
-        <Tip text="訊號在當天收盤後才確定，所以用「隔天開盤價」成交，避免偷看未來；停損與移動停利是盤中觸價成交。摩擦成本＝手續費＋證交稅。這些是策略的模擬成交，不是你的真實交易。" />
+        <Tip text="訊號在當天收盤後才確定，所以用「隔天開盤價」成交，避免偷看未來；停損與移動停利是盤中觸價成交。摩擦成本＝手續費＋證交稅。這些是策略的模擬成交，不是你的交易；你在個股頁模擬下單的成交在左側「下單紀錄」頁。" />
       </div>
       {!trades.length ? (
         <div className="text-xs text-slate-500">這段期間沒有完成的交易。</div>

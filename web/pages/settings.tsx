@@ -23,6 +23,7 @@ const DATA_KEYS = [
   ['tw_us_holdings_v1', '我的持股', 'portfolio-changed'],
   ['tw_us_journal_v1', '交易紀錄', 'portfolio-changed'],
   ['tw_us_rules_v1', '交易檢討產生的個人規則', 'portfolio-changed'],
+  ['tw_us_orders_v1', '下單紀錄（每筆模擬成交）', 'portfolio-changed'],
   ['tw_us_alerts_v1', '提醒', 'alerts-changed'],
   ['tw_us_cart_v1', '模擬下單暫存匣', null],
   ['tw_us_ai_v1', 'AI 連線設定（含金鑰）', 'ai-settings-changed'],

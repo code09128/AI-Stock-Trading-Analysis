@@ -134,6 +134,14 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
         cardCtl.reveal('profile');
       } else if (d.rightTab) setRightTab(d.rightTab);
       if (d.select) setSelected(d.select);
+      // 步驟條「模擬下單」：展開下單卡並捲過去
+      if (d.card) {
+        cardCtl.reveal(d.card);
+        setTimeout(
+          () => document.querySelector(`[data-tour="watch-${d.card}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+          300,
+        );
+      }
     };
     apply(bus._pendingWatch);
     bus._pendingWatch = null;
@@ -692,6 +700,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
       price: c.price,
       shares: sh,
       fees: (c.fee || 0) + (c.tax || 0),
+      name: c.name && c.name !== c.symbol ? c.name : '',
+      orderType: c.type || '',
     });
     if (r.ok) {
       setCart(cart.filter((x) => x.id !== c.id));

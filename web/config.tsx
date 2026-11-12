@@ -39,6 +39,12 @@ const ICON_PATHS = {
       <path d="M22 12A10 10 0 0 0 12 2v10z" />
     </>
   ),
+  receipt: (
+    <>
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+      <path d="M16 8h-6M16 12H8M13 16H8" />
+    </>
+  ),
   journal: (
     <>
       <path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" />
@@ -190,6 +196,14 @@ const NAV_ITEMS = [
     title: '組合風控',
     subtitle: '資產配置、曝險與多情境壓力測試',
     icon: 'allocation',
+  },
+  {
+    id: 'orders',
+    group: '風控與檢討',
+    short: '下單紀錄',
+    title: '下單紀錄',
+    subtitle: '每筆模擬成交（買進與賣出）的時間、價格、費用與損益，連到持股與交易檢討',
+    icon: 'receipt',
   },
   {
     id: 'mod5',

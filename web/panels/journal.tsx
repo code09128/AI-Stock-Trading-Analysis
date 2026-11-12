@@ -5,6 +5,7 @@ import { DEFAULT_JOURNAL } from '../config';
 import { Tip, colorOf } from '../ui';
 import { AiExplain } from '../ai_store';
 import { PCard, PageHead } from '../pages/card_box';
+import { TradeFlow } from '../pages/trade_flow';
 import { Donut, LinesChart, Scatter, VBars } from '../pages/mini_charts';
 import { nextTradeId, setJournal, usePortfolio } from '../portfolio_store';
 
@@ -100,7 +101,7 @@ function JournalSource({ m5Source, setM5Source, setM5Entries, runMod5 }) {
       </div>
       <div className="text-slate-500">
         我的交易紀錄來自：看盤頁模擬下單「賣出成交」自動寫入，或下方貼上券商對帳單 CSV。
-        買進成交會加入「我的持股」，在下方「持有中部位」看帳面損益；賣出後才算一筆完整交易。
+        買進成交會加入「我的持股」，在下方「持有中部位」看帳面損益；賣出後才算一筆完整交易。每筆模擬成交（含買進）的明細在「下單紀錄」頁。
       </div>
       <details>
         <summary className="cursor-pointer text-slate-300">貼上 CSV 匯入真實交易</summary>
@@ -433,6 +434,7 @@ function Mod5Panel({ ctx }) {
           </>
         }
       />
+      <TradeFlow current="review" />
       <JournalHelp />
       <JournalSource
         m5Source={m5Source}

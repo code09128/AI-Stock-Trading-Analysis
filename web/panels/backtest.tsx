@@ -10,6 +10,7 @@ import { CustomPanel, customStrategies } from './backtest_custom';
 import { Tip, baseCode, colorOf, currencyOf, fmt, normSym, setFeeDiscount } from '../ui';
 import { AiExplain } from '../ai_store';
 import { PCard, PageHead } from '../pages/card_box';
+import { TradeFlow } from '../pages/trade_flow';
 import { Donut, topSlices } from '../pages/mini_charts';
 import { usePortfolio } from '../portfolio_store';
 
@@ -359,7 +360,19 @@ function Mod3Panel({ ctx }) {
   
   const [catalog, setCatalog] = React.useState(bus._btCatalog || null);
   const [tab, setTab] = React.useState('perf');
-  const [view, setView] = React.useState('backtest');
+  const [view, setView] = React.useState(() => {
+    // 其他頁的步驟條要求直接打開某個模式（例如「今日訊號」）
+    const v = bus._pendingBtView;
+    bus._pendingBtView = null;
+    return MODES.some(([k]) => k === v) ? v : 'backtest';
+  });
+  React.useEffect(() => {
+    const on = (e) => {
+      if (MODES.some(([k]) => k === e.detail)) setView(e.detail);
+    };
+    window.addEventListener('bt-view', on);
+    return () => window.removeEventListener('bt-view', on);
+  }, []);
   const [advMode, setAdvMode] = React.useState(false);
   const [advTab, setAdvTab] = React.useState(false);
   // 今日訊號 →「回測這檔」：換標的、切回單檔回測，使用者確認後按執行
@@ -475,6 +488,7 @@ function Mod3Panel({ ctx }) {
           </>
         }
       />
+      <TradeFlow current={view === 'signals' ? 'signals' : 'backtest'} />
       <HelpCard />
       <div className="flex flex-wrap gap-2" data-tour="mod3-modes">
         {MODES.filter(([k]) => BASIC_MODES.includes(k) || advMode || view === k).map(([k, label]) => (

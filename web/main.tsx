@@ -34,6 +34,8 @@ import './pages/quote_cards';
 import './pages/stock_info_panel';
 import './pages/order_panel';
 import './pages/holdings_panel';
+import './pages/trade_flow';
+import './pages/order_log';
 import './pages/heatmap';
 import './pages/watch';
 import './pages/market_board';
