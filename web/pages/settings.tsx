@@ -1,7 +1,7 @@
 // 設定頁：AI 連線（雲端／本地，全系統共用）、AI 作用範圍、資料管理
 import { bus } from '../bus';
 import { afterSave, flushUserData, notifySaved, userDataStatus } from '../sync_store';
-import { Tip } from '../ui';
+import { Tip, localDate } from '../ui';
 import { LS_ACTIVITY, clearActivity } from '../activity_log';
 import { SCOPE_LABELS, saveAI, useAISettings } from '../ai_store';
 import { ActivityPanel, UsagePanel } from './settings_monitor';
@@ -366,7 +366,7 @@ function SettingsPage() {
               );
               const a = document.createElement('a');
               a.href = URL.createObjectURL(blob);
-              a.download = `我的資料備份_${new Date().toISOString().slice(0, 10)}.json`;
+              a.download = `我的資料備份_${localDate()}.json`;
               a.click();
               setTimeout(() => URL.revokeObjectURL(a.href), 1000);
               bus.toast?.(`✅ 已下載備份檔 ${a.download}（含 AI 金鑰，請妥善保存）`);

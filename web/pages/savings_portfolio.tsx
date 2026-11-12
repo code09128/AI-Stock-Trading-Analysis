@@ -2,7 +2,7 @@
 // 多檔 ETF 照比例定期定額，算組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、
 // 過去 N 年實際回測（每月照比例投入、不賣出），可存多組並排比較、一鍵帶入我的持股
 // 公式都在後端 src/portfolio/savings_plan.py（/api/savings/portfolio）
-import { colorOf, fmt, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { colorOf, fmt, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
 import { Donut, topSlices } from './mini_charts';
 import { savingsUI } from './savings_plan';
 import { postJob } from '../desktop_bridge';
@@ -354,7 +354,7 @@ function PortfolioTab() {
         setNote('持股沒有成本資料，請改用「依目前市值」');
         return;
       }
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDate();
       addPortfolio({
         id: newId(),
         name: `我的持股（依${basis === 'cost' ? '成本' : '市值'}）`,

@@ -1,5 +1,5 @@
 // 設定頁的監控區塊：AI 用量與估算費用、操作紀錄（瀏覽器與伺服器）
-import { Tip } from '../ui';
+import { Tip, localDate } from '../ui';
 import { clearActivity, useActivityLog } from '../activity_log';
 import { clearUsage, savePrices, usageCost, useAIUsage } from '../ai_store';
 
@@ -297,7 +297,7 @@ function ActivityPanel() {
     });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `操作紀錄_${new Date().toISOString().slice(0, 10)}.jsonl`;
+    a.download = `操作紀錄_${localDate()}.jsonl`;
     a.click();
   };
   return (

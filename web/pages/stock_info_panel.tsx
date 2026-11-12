@@ -1,6 +1,6 @@
 // 看盤頁：個股／ETF 基本資料與配息（右側分頁）＋ 配息月曆（左側分頁）
 import { cachedJson } from '../fetch_cache';
-import { Tip, baseCode, colorOf, fmt, signed } from '../ui';
+import { Tip, baseCode, colorOf, fmt, localDate, signed } from '../ui';
 import { AiExplain } from '../ai_store';
 import { postJob } from '../desktop_bridge';
 import { ValuationCard } from './valuation_card';
@@ -329,7 +329,7 @@ function StockInfoPanel({ symbol, hideValuation = false, tab, onAskAi }: { symbo
   const next = a.next_announced;
   const profile = Object.entries(info.profile).filter(([k]) => !k.startsWith('_'));
   const nextMonth = next ? Number(next.ex_date.slice(5, 7)) : null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const show = (t: string) => !tab || tab === t;
   if (tab === 'fin') return <FundamentalsCard symbol={symbol} showEmpty />;
   // 近 4 年每股現金股利（真實配息紀錄加總）
