@@ -27,6 +27,8 @@ INDEX_NAMES = dict(INDICES)
 
 INTRADAY_TTL = 30
 SPARK_TTL = 600
+# 走勢卡的 5 日／日 K：盤中前端每分鐘重抓（只抓正在看的那一檔），快取不能比 1 分鐘久，今天的走勢與 K 棒才會長出來
+LIVE_SERIES_TTL = 55
 _CACHE = TTLCache()
 
 
@@ -305,7 +307,7 @@ def overview(symbols: List[str]) -> List[Dict[str, Any]]:
 def five_days(symbol: str) -> Dict[str, Any]:
     """近 5 個交易日走勢（15 分鐘線），給個股頁走勢卡的「5 日」用。第一點的價當比較基準。"""
     key = f"five_days:{symbol}"
-    cached = _get(key, SPARK_TTL)
+    cached = _get(key, LIVE_SERIES_TTL)
     if cached:
         return cached
     last_err = None
@@ -334,7 +336,7 @@ def _last_bar_partial(symbol: str, rows: List[Dict[str, Any]]) -> bool:
 def candles(symbol: str, n: int = 15) -> Dict[str, Any]:
     n = max(5, min(60, n))
     key = f"candles:{symbol}:{n}"
-    cached = _get(key, SPARK_TTL)
+    cached = _get(key, LIVE_SERIES_TTL)
     if cached:
         return cached
     last_err = None

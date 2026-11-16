@@ -143,6 +143,28 @@ class FiveDaysTests(unittest.TestCase):
         self.assertEqual(out["points"], [])
         self.assertIn("斷線", out["error"])
 
+    def test_five_days_and_candles_refetch_after_a_minute(self):
+        from src.market import cache as cache_mod
+
+        now = [1_800_000_000.0]
+        # 盤中走勢卡每分鐘重抓：後端快取不能比 1 分鐘久，否則開盤前開著的 5 日／日 K 要 10 分鐘後才看得到今天
+        fake = _fake_chart()
+        q = fake["indicators"]["quote"][0]
+        q.update({k: list(q["close"]) for k in ("open", "high", "low")})  # 日 K 要有開高低
+        with patch.object(chart_data, "_chart", return_value=fake) as chart, \
+                patch.object(cache_mod.time, "time", side_effect=lambda: now[0]):
+            chart_data.five_days("FD-TTL")
+            chart_data.candles("FD-TTL", 15)
+            self.assertEqual(chart.call_count, 2)
+            now[0] += 30  # 30 秒內：走快取
+            chart_data.five_days("FD-TTL")
+            chart_data.candles("FD-TTL", 15)
+            self.assertEqual(chart.call_count, 2)
+            now[0] += 35  # 超過 1 分鐘：重抓
+            chart_data.five_days("FD-TTL")
+            chart_data.candles("FD-TTL", 15)
+            self.assertEqual(chart.call_count, 4)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,8 @@
 import { IntradayChart, useChartWidth } from '../live_widgets';
 import { SignalMark, signalColor, signalTitle } from '../charts';
 import { cachedJson } from '../fetch_cache';
-import { Tip, fmt } from '../ui';
+import { Tip, fmt, marketSessionOpen } from '../ui';
+import { pollEvery } from '../desktop_bridge';
 
 const { useState, useEffect } = React;
 
@@ -24,11 +25,17 @@ const useSeries = (url: string, symbol: string, on: boolean, n?: number) => {
     if (!on) return undefined;
     let stop = false;
     setS(null);
-    cachedJson(url, n ? { symbol, n } : { symbol }, 60000)
-      .then((d) => !stop && setS(d))
-      .catch((e) => !stop && setS({ error: e.message }));
+    const load = (refresh = false) =>
+      // 定時重抓不吃前端快取（快取 60 秒＝輪詢間隔，會剛好沒過期而跳過一輪）；後端還有 55 秒快取擋重複外抓
+      cachedJson(url, n ? { symbol, n } : { symbol }, refresh ? 0 : 60000)
+        .then((d) => !stop && (!refresh || !d?.error) && setS(d)) // 盤中重抓失敗時保留原本的圖，不要變成錯誤訊息
+        .catch((e) => !stop && !refresh && setS({ error: e.message }));
+    load();
+    // 盤中每分鐘重抓：開盤前就開著的 5 日／日 K，開盤後才會長出今天的走勢與 K 棒。每輪都重新判斷是否在交易時段，休市不抓
+    const cancel = pollEvery(() => marketSessionOpen(symbol) && load(true), 60000);
     return () => {
       stop = true;
+      cancel();
     };
   }, [url, symbol, on, n]);
   return s;

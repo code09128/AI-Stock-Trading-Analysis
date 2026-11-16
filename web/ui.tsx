@@ -98,15 +98,17 @@ const colorOf = (chg) =>
 // 只用來決定自動更新的頻率：
 // 限制：沒有排除國定假日，假日當成開盤，結果只是照原本的頻率更新，不會少抓資料。
 const SESSION_MIN: Record<string, [number, number]> = { TW: [8 * 60 + 30, 14 * 60 + 35], US: [9 * 60 + 25, 16 * 60 + 5] };
-const marketSessionOpen = (sym: string, now: Date = new Date()) => {
+// 交易時段內回傳「離時段開始幾分鐘」，不在時段內回傳 null（時段同 SESSION_MIN，一樣沒排除國定假日）
+const minutesIntoSession = (sym: string, now: Date = new Date()): number | null => {
   const m = marketOf(sym);
   const p = new Intl.DateTimeFormat('en-US', { timeZone: tzOf(sym), weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(now);
   const get = (type: string) => p.find((x) => x.type === type)?.value || '';
-  if (get('weekday') === 'Sat' || get('weekday') === 'Sun') return false;
+  if (get('weekday') === 'Sat' || get('weekday') === 'Sun') return null;
   const mins = Number(get('hour')) * 60 + Number(get('minute'));
   const [open, close] = SESSION_MIN[m] || [8 * 60, 17 * 60 + 30];
-  return mins >= open && mins <= close;
+  return mins >= open && mins <= close ? mins - open : null;
 };
+const marketSessionOpen = (sym: string, now: Date = new Date()) => minutesIntoSession(sym, now) !== null;
 
 // 台股跳動檔位（ETF 與股票不同）
 const twTick = (price, etf) => {
@@ -268,4 +270,4 @@ const SOURCE_LABELS = {
 };
 const sourceLabel = (code) => SOURCE_LABELS[code] || code || '--';
 
-export { marketSessionOpen, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, intlFee, intlFeeCfg, setIntlFeeCfg, localDate, Tip, Stat };
+export { marketSessionOpen, minutesIntoSession, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, intlFee, intlFeeCfg, setIntlFeeCfg, localDate, Tip, Stat };
