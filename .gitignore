@@ -31,3 +31,6 @@ update_old/
 Continue.md
 # 前端 sourcemap（除錯用）；web/app.bundle.js 本身要進 git（線上更新靠它，見 src/server/web_bundle.py）
 web/app.bundle.js.map
+
+# 改版設計稿與審查報告（本機參考用，Continue.md 有引用）
+demo/
