@@ -121,6 +121,39 @@ class KlineRuleTests(unittest.TestCase):
         for s in compute(bars, last_provisional=True)["signals"]:
             self.assertEqual(s["confirmed"], s["index"] != n - 1)
 
+    def test_pivot_confirmed_by_intraday_bar_is_provisional(self):
+        # 盤中最後一根還在變：靠它確認的頭底（第 n-1-PIVOT_SPAN 根）要標暫定，其他都是確定的
+        bars = _path(DOWN + [101, 102, 103])
+        hit = False
+        for k in range(8, len(bars) + 1):
+            for p in compute(bars[:k], last_provisional=True)["pivots"]:
+                provisional = p["index"] == k - 1 - kline_rules.PIVOT_SPAN
+                hit = hit or provisional
+                self.assertEqual(p["confirmed"], not provisional)
+            self.assertTrue(all(p["confirmed"] for p in compute(bars[:k])["pivots"]))  # 收盤後全部確定
+        self.assertTrue(hit)
+
+    def test_trend_label_flags_provisional_pivot(self):
+        bars = _path(DOWN + [101, 102, 103])
+        flagged = False
+        for k in range(8, len(bars) + 1):
+            res = compute(bars[:k], last_provisional=True)
+            last_pivots = kline_rules._last_two(res["pivots"], "high") + kline_rules._last_two(res["pivots"], "low")
+            expect = any(not p["confirmed"] for p in last_pivots)
+            flagged = flagged or expect
+            self.assertEqual(res["trend_provisional"], expect)
+            self.assertEqual(res["trend_label"].endswith(kline_rules.PROVISIONAL_NOTE), expect)
+            self.assertFalse(compute(bars[:k])["trend_label"].endswith(kline_rules.PROVISIONAL_NOTE))
+        self.assertTrue(flagged)
+
+    def test_intraday_big_volume_is_pending(self):
+        closes = [100.0 + (i % 3) for i in range(12)]
+        bars = _path(closes, volumes={11: 5000})
+        res = compute(bars, last_provisional=True)
+        self.assertIn(bars[-1].timestamp, res["big_volume"])
+        self.assertEqual(res["big_volume_pending"], [bars[-1].timestamp])
+        self.assertEqual(compute(bars)["big_volume_pending"], [])
+
     def test_visible_filters_by_first_date_and_reports_errors(self):
         bars = _path(UP)
         cut = bars[20].timestamp

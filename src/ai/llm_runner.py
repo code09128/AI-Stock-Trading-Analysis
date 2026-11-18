@@ -192,6 +192,8 @@ class LLMRunner:
                 f"{d['alignment_label']}、MACD {d['macd_label']}、{d['volume_label']}、距 MA5 乖離 {d['bias_ma5_pct']}%\n")
         if score["hard_rules"]:
             line += "嚴進規則已觸發（action 不得為 BUY）：" + "；".join(score["hard_rules"]) + "\n"
+        if score.get("missing_note"):
+            line += "評分資料缺口：" + score["missing_note"] + "；理由中要寫出這些面向「資料不足」，不要當成中性訊號。\n"
         if score.get("not_applicable"):
             line += "注意：" + score["not_applicable"] + " 請以 HOLD 為主。\n"
         return line
@@ -300,6 +302,8 @@ class LLMRunner:
                 f"{score['details']['alignment_label']}、MACD {score['details']['macd_label']}、"
                 f"{score['details']['volume_label']}、距 MA5 乖離 {score['details']['bias_ma5_pct']}%。"
                 + ("".join(f" 嚴進規則：{r}。" for r in score["hard_rules"]))
+                + (f" {score['missing_note']}。" if score.get("missing_note")
+                   and not any("資料不足" in r for r in score["hard_rules"]) else "")
             ] if score else []),
         }
 

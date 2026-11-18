@@ -44,7 +44,7 @@ function TrendScoreCard({ score }) {
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[11px] text-slate-400">
           趨勢評分
-          <Tip text="六個面向加總 100 分：均線排列 30、距 MA5 乖離 20、MACD 15、量能 15、RSI 10、均線支撐 10。75 分以上且多頭排列＝強烈買進；60 以上＝買進；45 以上＝持有；30 以上＝觀望；以下＝賣出。RSI ≥ 80 或乖離 > 5% 時一律不給買進。盤中量能未收齊時，量能給中性分。" />
+          <Tip text="六個面向加總 100 分：均線排列 30、距 MA5 乖離 20、MACD 15、量能 15、RSI 10、均線支撐 10。75 分以上且多頭排列＝強烈買進；60 以上＝買進；45 以上＝持有；30 以上＝觀望；以下＝賣出。RSI ≥ 80 或乖離 > 5% 時一律不給買進。盤中量能未收齊時，量能給中性分。K 棒太少算不出來的面向標「缺」並給中間分（不代表中性）；缺 2 項以上不給買進。" />
         </span>
         <span className="text-xl font-bold font-mono text-white">{score.total}</span>
         <span className="text-[11px] text-slate-500">/ 100</span>
@@ -58,7 +58,10 @@ function TrendScoreCard({ score }) {
         {SCORE_DIMS.map(([k, label, max]) => (
           <div key={k} className="text-[11px] text-slate-400">
             <div className="flex justify-between">
-              <span>{label}</span>
+              <span>
+                {label}
+                {score.missing?.includes(k) && <span className="ml-1 text-amber-300">缺</span>}
+              </span>
               <span className="font-mono text-slate-200">
                 {score.breakdown[k]}/{max}
               </span>
@@ -74,6 +77,9 @@ function TrendScoreCard({ score }) {
       </div>
       {score.not_applicable && (
         <div className="mt-2 text-[11px] text-sky-300">ℹ️ {score.not_applicable}</div>
+      )}
+      {score.missing_note && (
+        <div className="mt-2 text-[11px] text-amber-300">⚠️ {score.missing_note}</div>
       )}
       {score.hard_rules?.length > 0 && (
         <div className="mt-2 text-[11px] text-amber-300">

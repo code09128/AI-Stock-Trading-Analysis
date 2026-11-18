@@ -6,6 +6,8 @@
 - 「RSI ≥ 80」與「MA5 乖離 > 5%」兩條嚴進規則在程式端強制執行（原版只寫在提示詞裡），觸發時訊號最高為「持有」
 - 盤中最新一根日 K 的成交量尚未收齊，量能維度給中性分並標註，避免把「還沒收盤」誤判成「縮量回檔」
 - RSI 用 14 日（與模組 1 其他地方一致；原版用 RSI12）
+- K 棒太少算不出來的維度給中間分（不扣分），但會列在 missing；缺 MISSING_BUY_LIMIT 項以上不給買進，
+  避免「只有部分維度有資料」的分數被當成完整判斷
 """
 
 from typing import Any, Dict, List, Optional
@@ -46,6 +48,12 @@ SIGNALS = {
 }
 RSI_HARD_LIMIT = 80.0
 BIAS_HARD_LIMIT = 5.0
+MISSING_BUY_LIMIT = 2
+MISSING_LABELS = {
+    "trend": "均線排列（需 20 根 K 棒）", "bias": "MA5 乖離（需 5 根）", "macd": "MACD（需 35 根）",
+    "volume": "量能（需 6 根）", "rsi": "RSI（需 16 根）", "support": "均線支撐（需 10 根）",
+}
+SUPPORT_NEUTRAL = 5  # 均線算不出來時的中間分（和其他維度一樣不扣分）
 
 
 def _last(series: List[Optional[float]], back: int = 1) -> Optional[float]:
@@ -156,7 +164,7 @@ def score_trend(closes: List[float], volumes: List[float], partial_session: bool
         "macd": MACD_POINTS[macd_state],
         "volume": VOLUME_POINTS[vol["state"]],
         "rsi": RSI_POINTS[rsi_zone],
-        "support": 5 * near_ma5 + 5 * near_ma10,
+        "support": 5 * near_ma5 + 5 * near_ma10 if ma10 is not None else SUPPORT_NEUTRAL,
     }
     total = sum(breakdown.values())
 
@@ -174,11 +182,20 @@ def score_trend(closes: List[float], volumes: List[float], partial_session: bool
     else:
         signal = "SELL"
 
+    # 算不出來的維度（盤中量能未收齊不算缺，那是另外標示的中性分）
+    missing = [k for k, gone in (
+        ("trend", alignment == "insufficient_data"), ("bias", bias is None),
+        ("macd", macd_state == "insufficient_data"), ("volume", vol["state"] == "insufficient_data"),
+        ("rsi", rsi_zone == "unknown"), ("support", ma10 is None),
+    ) if gone]
+
     hard_rules = []
     if rsi14 is not None and rsi14 >= RSI_HARD_LIMIT:
         hard_rules.append(f"RSI14={round(rsi14, 2)} ≥ {RSI_HARD_LIMIT:g}（超買），不給買進訊號")
     if bias is not None and bias > BIAS_HARD_LIMIT:
         hard_rules.append(f"距 MA5 乖離 {bias}% > {BIAS_HARD_LIMIT:g}%，不追高")
+    if len(missing) >= MISSING_BUY_LIMIT:
+        hard_rules.append(f"{len(missing)} 項資料不足（{'、'.join(MISSING_LABELS[k] for k in missing)}），不給買進訊號")
     if hard_rules and signal in ("STRONG_BUY", "BUY"):
         signal = "HOLD"
 
@@ -189,6 +206,9 @@ def score_trend(closes: List[float], volumes: List[float], partial_session: bool
         "signal_label": SIGNALS[signal],
         "buy_blocked": bool(hard_rules),
         "hard_rules": hard_rules,
+        "missing": missing,
+        "missing_note": (f"{len(missing)} 項資料不足，給中間分、不代表中性：{'、'.join(MISSING_LABELS[k] for k in missing)}"
+                         if missing else ""),
         "details": {
             "alignment": alignment, "alignment_label": ALIGNMENT_LABELS[alignment],
             "macd_state": macd_state, "macd_label": LABELS[macd_state],

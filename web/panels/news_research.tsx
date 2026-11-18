@@ -70,7 +70,7 @@ const sign = (v) => (v == null ? '--' : `${v > 0 ? '+' : ''}${v}%`);
 // 已反映要「漲跌方向和消息方向相同」才成立：利多前已漲、利空前已跌；方向相反（利多卻先跌）不算已反映
 function Gauge({ label, value, limit, delay, sentiment }) {
   const v = Number(value);
-  const ok = Number.isFinite(v);
+  const ok = value != null && value !== '' && Number.isFinite(v); // Number(null) 是 0，不能把「沒資料」畫成 0%
   const ratio = ok ? Math.min(Math.abs(v) / limit, 1) : 0;
   const big = ok && Math.abs(v) >= limit;
   const over = big && ((sentiment === 'POSITIVE' && v > 0) || (sentiment === 'NEGATIVE' && v < 0));

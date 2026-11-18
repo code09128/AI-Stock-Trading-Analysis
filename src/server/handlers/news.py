@@ -110,8 +110,14 @@ class NewsHandlers:
         if price_ctx.get("available"):
             ret_5d, ret_20d = price_ctx["ret_5d_pct"], price_ctx["ret_20d_pct"]
         else:
-            ret_5d = arg_num(payload, "ret_5d_pct", snapshot["ret_5d_pct"], "事件前 5 日漲跌幅")
-            ret_20d = arg_num(payload, "ret_20d_pct", snapshot["ret_20d_pct"], "事件前 20 日漲跌幅")
+            def pct(key: str, label: str):
+                # 使用者沒填、而且 K 棒不夠算（snapshot 是 None）就維持「沒有資料」，不當成 0%
+                raw = payload.get(key)
+                if snapshot[key] is None and (raw is None or (isinstance(raw, str) and not raw.strip())):
+                    return None
+                return arg_num(payload, key, snapshot[key], label)
+            ret_5d = pct("ret_5d_pct", "事件前 5 日漲跌幅")
+            ret_20d = pct("ret_20d_pct", "事件前 20 日漲跌幅")
 
         priced_in = analyzer.evaluate_priced_in_risk(sentiment, ret_5d, ret_20d)
         atr_val = snapshot["indicators"]["ATR14"] or round(snapshot["latest_close"] * 0.02, 2)

@@ -220,6 +220,8 @@ function CandlestickChart({
   const pivotByDate = new Map<string, any>();
   if (useKline) for (const pv of klineRules.pivots || []) pivotByDate.set(pv.date, pv);
   const bigVol = new Set<string>(useKline ? klineRules.big_volume || [] : []);
+  // 盤中最後一根的大量用的是還沒收齊的累計量，收盤後才確定
+  const bigVolPending = new Set<string>(useKline ? klineRules.big_volume_pending || [] : []);
   const shownError = useKline ? klineError : signalsError;
   const activeSignal = sigByDate.get(activeBar.date);
   const isActiveUp = activeBar.close >= activeBar.open;
@@ -441,8 +443,8 @@ function CandlestickChart({
               <span style={{ color: 'var(--up)' }}>▲多頭確認／回補</span>
               <span style={{ color: 'var(--down)' }}>▼出場／空頭確認</span>
               <span className="text-amber-400">▽! 轉弱觀察</span>
-              <span className="text-slate-300">頭・底</span>
-              <span className="text-amber-300">● 大量</span>
+              <span className="text-slate-300">頭・底（頭?／底?＝盤中暫定）</span>
+              <span className="text-amber-300">● 大量（○＝盤中未收齊）</span>
               {klineRules.trend_label && <span className="text-slate-200 font-sans">目前：{klineRules.trend_label}</span>}
             </>
           )}
@@ -645,8 +647,20 @@ function CandlestickChart({
                 opacity={isHovered || bigVol.has(b.date) ? 0.95 : 0.5}
               />
               {bigVol.has(b.date) && (
-                <circle cx={cx} cy={Math.max(vY - 4, volTop - 3)} r="2.2" fill="#fcd34d" pointerEvents="none">
-                  <title>大量：成交量是前 5 根均量的 1.5 倍以上</title>
+                <circle
+                  cx={cx}
+                  cy={Math.max(vY - 4, volTop - 3)}
+                  r="2.2"
+                  fill={bigVolPending.has(b.date) ? 'none' : '#fcd34d'}
+                  stroke="#fcd34d"
+                  strokeWidth={bigVolPending.has(b.date) ? 1 : 0}
+                  pointerEvents="none"
+                >
+                  <title>
+                    {bigVolPending.has(b.date)
+                      ? '大量（盤中，成交量還沒收齊，收盤後才確定）：成交量是前 5 根均量的 1.5 倍以上'
+                      : '大量：成交量是前 5 根均量的 1.5 倍以上'}
+                  </title>
                 </circle>
               )}
               {pivotByDate.has(b.date) &&
@@ -661,9 +675,16 @@ function CandlestickChart({
                       textAnchor="middle"
                       fontSize="9"
                       fill="#cbd5e1"
+                      opacity={pv.confirmed === false ? 0.55 : 1}
                       pointerEvents="none"
                     >
                       {hi ? '頭' : '底'}
+                      {pv.confirmed === false ? '?' : ''}
+                      <title>
+                        {pv.confirmed === false
+                          ? `${hi ? '頭' : '底'}（盤中暫定：要靠今天這根確認，今天再創${hi ? '高' : '低'}就會消失或換位置）`
+                          : `${hi ? '頭' : '底'}：前後各 3 根裡${hi ? '最高' : '最低'}`}
+                      </title>
                     </text>
                   );
                 })()}

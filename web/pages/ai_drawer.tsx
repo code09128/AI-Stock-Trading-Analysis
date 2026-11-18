@@ -89,7 +89,9 @@ function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onR
     const snap = m1Data.snapshot;
     const lv = m1Data.scenarios?.levels || {};
     const techFacts: Record<string, string> = {
-      趨勢評分: snap.trend_score ? `${snap.trend_score.total}/100（${snap.trend_score.signal_label}）` : '—',
+      趨勢評分: snap.trend_score
+        ? `${snap.trend_score.total}/100（${snap.trend_score.signal_label}）${snap.trend_score.missing_note ? `；${snap.trend_score.missing_note}` : ''}`
+        : '—',
       RSI14: String(snap.indicators?.RSI14 ?? '—'),
       MA5: String(snap.indicators?.MA5 ?? '—'),
       MA20: String(snap.indicators?.MA20 ?? '—'),

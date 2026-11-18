@@ -658,8 +658,9 @@ def key_facts(module: str, data: Any) -> str:
                 out.append(f"系統決策 {dec.get('action')}｜進場 {e}｜停損 {sl}｜目標 {tp}{rr}")
             score = snap.get("trend_score") or {}
             if score:
-                out.append(f"趨勢評分 {score.get('total')}/100（{score.get('signal_label')}）")
-            sigs = [s for s in (data.get("signals") or []) if isinstance(s, dict)]
+                out.append(f"趨勢評分 {score.get('total')}/100（{score.get('signal_label')}）"
+                           + (f"；{score['missing_note']}" if score.get("missing_note") else ""))
+            sigs =[s for s in (data.get("signals") or []) if isinstance(s, dict)]
             if sigs:
                 recent = "；".join(
                     f"{s.get('date')} {'買進' if s.get('type') == 'buy' else '賣出'}標記（{s.get('reason')}"
@@ -676,6 +677,7 @@ def key_facts(module: str, data: Any) -> str:
                 )
                 pivots = "、".join(
                     f"{p.get('date')} {'頭' if p.get('kind') == 'high' else '底'} {p.get('price')}"
+                    f"{'' if p.get('confirmed', True) else '（盤中暫定）'}"
                     for p in [x for x in (kr.get("pivots") or []) if isinstance(x, dict)][-4:]
                 )
                 out.append(

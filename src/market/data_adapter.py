@@ -491,18 +491,18 @@ class DualMarketDataAdapter:
         levels = classify_levels(level_candidates, latest_close, atr14, market)
         supports, resistances = levels["supports"], levels["resistances"]
 
-        # 計算近 5 日與近 20 日漲跌幅 (供模組 2 Priced-in 判斷共用)
+        # 計算近 5 日與近 20 日漲跌幅 (供模組 2 Priced-in 判斷共用)；K 棒不夠就是 None（畫面顯示「--」），不要用 0 冒充「沒漲沒跌」
         ret_5d_pct = (
-            round(((latest_close - closes[-6]) / closes[-6]) * 100, 2) if len(closes) >= 6 else 0.0
+            round(((latest_close - closes[-6]) / closes[-6]) * 100, 2) if len(closes) >= 6 else None
         )
         ret_20d_pct = (
             round(((latest_close - closes[-21]) / closes[-21]) * 100, 2)
             if len(closes) >= 21
-            else 0.0
+            else None
         )
         vols_20 = [b.volume for b in bars[-20:]]
-        avg_vol_20 = sum(vols_20) / len(vols_20) if vols_20 else 1.0
-        volume_ratio_20d = round(bars[-1].volume / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0
+        avg_vol_20 = sum(vols_20) / len(vols_20) if vols_20 else 0.0
+        volume_ratio_20d = round(bars[-1].volume / avg_vol_20, 2) if avg_vol_20 > 0 else None
         partial = is_partial_session(market, bars[-1].timestamp)
         trend_score = score_trend(closes, [b.volume for b in bars], partial_session=partial)
 

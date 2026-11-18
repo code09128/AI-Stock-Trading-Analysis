@@ -44,6 +44,8 @@ def price_action(symbol: str) -> Dict[str, Any]:
         "52週低點": round(lo, 2),
         "距52週高點%": round((closes[-1] / hi - 1) * 100, 2),
         "距52週低點%": round((closes[-1] / lo - 1) * 100, 2),
+        # 上市不到一年時「52週」其實只涵蓋現有 K 棒，要講清楚
+        "52週高低點涵蓋": None if len(year) >= 250 else f"只有近 {len(year)} 個交易日（上市或有資料不到一年）",
         "近10日收盤": [[b.timestamp[5:], round(b.close, 2)] for b in bars[-10:]],
         "20日均量÷60日均量": round(avg20 / avg60, 2) if avg60 else None,
     }
@@ -57,6 +59,7 @@ def tech_indicators(symbol: str) -> Dict[str, Any]:
     return {
         "資料日期": snap.get("latest_date"),
         "趨勢評分": f"{score.get('total')}/100（{score.get('signal_label')}）" if score else None,
+        "評分資料缺口": score.get("missing_note") or None,
         "RSI14": ind.get("RSI14"),
         "MA5": ind.get("MA5"),
         "MA20": ind.get("MA20"),
@@ -220,11 +223,15 @@ def summary_lines(symbol: str) -> str:
     """給「AI 決策」提示詞用的精簡摘要（只在真的要呼叫 AI 時才組）。"""
     c = build(symbol)
     lines = []
+    # 抓不到的面向要明講，否則 AI 分不出「沒提到」是沒有這回事還是抓失敗
+    missing = [f"{label}（{str(c[label]['資料不足'])[:60]}）" for label in ("價格走勢", "籌碼面", "基本面與評價", "大盤環境", "近期新聞與公告")
+               if isinstance(c.get(label), dict) and "資料不足" in c[label]]
     pa = c.get("價格走勢") or {}
     if "報酬率%" in pa:
         r = pa["報酬率%"]
         lines.append(f"價格位置：5日 {r.get('5日')}%、20日 {r.get('20日')}%、60日 {r.get('60日')}%、120日 {r.get('120日')}%；"
-                     f"距52週高點 {pa.get('距52週高點%')}%、距52週低點 {pa.get('距52週低點%')}%")
+                     f"距52週高點 {pa.get('距52週高點%')}%、距52週低點 {pa.get('距52週低點%')}%"
+                     + (f"（{pa['52週高低點涵蓋']}）" if pa.get("52週高低點涵蓋") else ""))
     ch = c.get("籌碼面") or {}
     if ch.get("觀察"):
         lines.append("籌碼觀察：" + "；".join(ch["觀察"]))
@@ -243,4 +250,8 @@ def summary_lines(symbol: str) -> str:
     nw = c.get("近期新聞與公告")
     if isinstance(nw, list) and nw:
         lines.append("近期新聞標題：" + "／".join(n["標題"][:60] for n in nw[:3]))
+    elif isinstance(nw, list):
+        missing.append("近期新聞與公告（這次沒有抓到相關新聞）")
+    if missing:
+        lines.append("本次缺少的資料（理由中寫「資料不足」，不要當成沒有這回事，也不要自行補）：" + "、".join(missing))
     return ("補充資料（請一併考量，與技術面矛盾時要在理由中說明）：\n" + "\n".join(lines) + "\n") if lines else ""

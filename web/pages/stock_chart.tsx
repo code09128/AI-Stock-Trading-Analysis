@@ -142,6 +142,7 @@ function DailyK({ data }: { data: any }) {
   const sigBy = new Map<string, any>((rules?.signals || []).map((s: any) => [s.date, s]));
   const pivBy = new Map<string, any>((rules?.pivots || []).map((p: any) => [p.date, p]));
   const bigVol = new Set<string>(rules?.big_volume || []);
+  const bigVolPending = new Set<string>(rules?.big_volume_pending || []); // 盤中未收齊的大量
   const sg = sigBy.get(b.date);
   return (
     <div>
@@ -152,7 +153,7 @@ function DailyK({ data }: { data: any }) {
         <span>低 {fmt(b.low)}</span>
         <span>收 {fmt(b.close)}</span>
         {prev != null && <span className={cls(b.close - prev)}>{pctStr((b.close / prev - 1) * 100)}</span>}
-        <span>量 {fmt(b.volume, 0)}{bigVol.has(b.date) ? '（大量）' : ''}</span>
+        <span>量 {fmt(b.volume, 0)}{bigVol.has(b.date) ? (bigVolPending.has(b.date) ? '（大量，盤中量未收齊）' : '（大量）') : ''}</span>
         {sg && (
           <span className="w-full font-sans" style={{ color: signalColor(sg) }}>
             {signalTitle(sg)}
@@ -192,7 +193,9 @@ function DailyK({ data }: { data: any }) {
               <line x1={cx} x2={cx} y1={y(k.high)} y2={y(k.low)} stroke={c} />
               <rect x={cx - w * 0.32} width={w * 0.64} y={y(Math.max(k.open, k.close))} height={Math.max(1, Math.abs(y(k.open) - y(k.close)))} fill={c} />
               <rect x={cx - w * 0.32} width={w * 0.64} y={VB - vh} height={vh} fill={c} opacity={bigVol.has(k.date) ? '.95' : '.45'} />
-              {bigVol.has(k.date) && <circle cx={cx} cy={VB - vh - 4} r="2" fill="#fcd34d" />}
+              {bigVol.has(k.date) && (
+                <circle cx={cx} cy={VB - vh - 4} r="2" fill={bigVolPending.has(k.date) ? 'none' : '#fcd34d'} stroke="#fcd34d" strokeWidth={bigVolPending.has(k.date) ? 1 : 0} />
+              )}
               {pivBy.has(k.date) && !sigBy.has(k.date) && (
                 <text
                   x={cx}
@@ -200,8 +203,10 @@ function DailyK({ data }: { data: any }) {
                   textAnchor="middle"
                   fontSize="9"
                   fill="#cbd5e1"
+                  opacity={pivBy.get(k.date).confirmed === false ? 0.55 : 1}
                 >
                   {pivBy.get(k.date).kind === 'high' ? '頭' : '底'}
+                  {pivBy.get(k.date).confirmed === false ? '?' : ''}
                 </text>
               )}
               {sigBy.has(k.date) && (
@@ -219,7 +224,7 @@ function DailyK({ data }: { data: any }) {
         </text>
       </svg>
       <div className="text-[11.5px] text-slate-400 mt-1.5">近 {bars.length} 日日 K 與成交量（{data.source}）。
-        {rules ? `目前：${rules.trend_label}。▲多頭確認／回補、▼出場／空頭確認、▽! 轉弱觀察、● 大量；固定規則標記，歷史統計沒有明顯優勢，僅供參考。` : ''}
+        {rules ? `目前：${rules.trend_label}。▲多頭確認／回補、▼出場／空頭確認、▽! 轉弱觀察、● 大量（頭?／底?、○ 是盤中暫定，收盤後才確定）；固定規則標記，歷史統計沒有明顯優勢，僅供參考。` : ''}
         要看均線、20 日突破訊號與更長區間請到「技術分析」分頁。</div>
     </div>
   );

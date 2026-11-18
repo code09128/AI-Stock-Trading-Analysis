@@ -46,8 +46,8 @@ class NewsStrategyAnalyzer:
     def evaluate_priced_in_risk(
         self,
         news_sentiment: str,
-        ret_5d_pct: float,
-        ret_20d_pct: float
+        ret_5d_pct: Optional[float],
+        ret_20d_pct: Optional[float]
     ) -> Dict[str, Any]:
         """
         根據事件前 5 日／20 日累積漲跌幅，評估利多出盡 (Sell the news) 或利空鈍化風險：
@@ -59,6 +59,11 @@ class NewsStrategyAnalyzer:
 
         priced_in_risk = False
         warning_msg = "市場尚未顯著提前反映此消息。"
+
+        if ret_5d_pct is None or ret_20d_pct is None:
+            # 上市不久、K 棒不夠：無法判斷，不要用 0% 假裝「尚未反映」
+            return {"priced_in_risk": False, "ret_5d_pct": ret_5d_pct, "ret_20d_pct": ret_20d_pct,
+                    "analysis_note": "事件前 5／20 日漲跌幅資料不足（K 棒不夠），無法判斷是否已提前反映。"}
 
         if is_positive:
             if ret_20d_pct >= 10.0 or ret_5d_pct >= 6.0:

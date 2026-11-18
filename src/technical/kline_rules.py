@@ -4,7 +4,8 @@
 
 規則（常見的波段操作口訣，數字是本系統自訂的預設值，不是公開標準）：
 1. 頭與底：一根 K 棒的最高價是前後各 PIVOT_SPAN 根裡最高的＝頭；最低價是最低的＝底。
-   要等後面 PIVOT_SPAN 根走完才能確認，所以頭底的標示會晚幾根出現，但不會事後消失。
+   要等後面 PIVOT_SPAN 根走完才能確認，所以頭底的標示會晚幾根出現；收盤後不會事後消失，
+   但盤中最後一根還在變，靠它確認的頭底會標 confirmed=False（可能出現、消失或被換掉），趨勢文字也會加註。
 2. 趨勢：頭頭高、底底高＝多頭；頭頭低、底底低＝空頭；其他＝盤整。
 3. 多頭確認（買）：手上沒有部位、最近的底比前一個底高，收盤往上突破最近的頭。
 4. 出場（賣）：多頭確認之後，收盤跌破前一天的最低價。只看收盤，盤中跌破不算。
@@ -14,7 +15,8 @@
 
 限制：這是固定規則的標記，不是預測。「跌破前一天低點就出場」很敏感，強勢股常被洗出場後又創新高；
 盤整行情會反覆出現確認又出場。歷史統計見 tools/backtest_signals.py（執行結果寫在說明頁）。
-最後一根若是盤中尚未收完的 K 棒，標記會帶 confirmed=False，收盤後可能消失。
+最後一根若是盤中尚未收完的 K 棒，標記會帶 confirmed=False，收盤後可能消失；
+它的「大量」用的是盤中累計量（通常偏少），列在 big_volume_pending。
 """
 
 from typing import Any, Dict, List, Optional
@@ -26,6 +28,7 @@ BIG_VOLUME_RATIO = 1.5
 HIGH_LOOKBACK = 20
 LONG_BODY_RATIO = 2.0  # 實體是前 10 根平均實體的幾倍算長紅／長黑
 TREND_LABELS = {"bull": "多頭（頭頭高、底底高）", "bear": "空頭（頭頭低、底底低）", "range": "盤整（頭和底沒有一致方向）"}
+PROVISIONAL_NOTE = "（盤中，收盤後可能改變）"
 
 
 def _pivot_at(bars: List[Bar], j: int) -> Optional[str]:
@@ -41,10 +44,10 @@ def _pivot_at(bars: List[Bar], j: int) -> Optional[str]:
     return None
 
 
-def _add_pivot(pivots: List[Dict[str, Any]], bars: List[Bar], j: int, kind: str) -> None:
+def _add_pivot(pivots: List[Dict[str, Any]], bars: List[Bar], j: int, kind: str, confirmed: bool = True) -> None:
     """頭和底要交替出現：連續兩個頭只留比較高的，連續兩個底只留比較低的。"""
     price = bars[j].high if kind == "high" else bars[j].low
-    item = {"index": j, "date": bars[j].timestamp, "kind": kind, "price": price}
+    item = {"index": j, "date": bars[j].timestamp, "kind": kind, "price": price, "confirmed": confirmed}
     if pivots and pivots[-1]["kind"] == kind:
         better = price > pivots[-1]["price"] if kind == "high" else price < pivots[-1]["price"]
         if better:
@@ -114,7 +117,7 @@ def compute(bars: List[Bar], last_provisional: bool = False) -> Dict[str, Any]:
         j = i - PIVOT_SPAN  # 這一根收完，才能確認 j 是不是頭或底
         kind = _pivot_at(bars, j) if j >= 0 else None
         if kind:
-            _add_pivot(pivots, bars, j, kind)
+            _add_pivot(pivots, bars, j, kind, confirmed=not (last_provisional and i == n - 1))
 
         b, prev = bars[i], bars[i - 1]
         big = is_big_volume(bars, i)
@@ -150,12 +153,17 @@ def compute(bars: List[Bar], last_provisional: bool = False) -> Dict[str, Any]:
                     add(i, "warn", "轉弱觀察", f"創近 {HIGH_LOOKBACK} 根新高且成交量放大，出現{shape}；隔天收盤跌破低點 {b.low:g} 就是轉弱")
 
     trend = trend_of(pivots)
+    # 判斷趨勢用到的頭底只要有一個是盤中暫定的，趨勢就可能在收盤前改變
+    trend_provisional = any(not p["confirmed"] for p in _last_two(pivots, "high") + _last_two(pivots, "low"))
+    pending = [bars[-1].timestamp] if last_provisional and big_volume and big_volume[-1] == bars[-1].timestamp else []
     return {
         "signals": signals,
         "pivots": pivots,
         "big_volume": big_volume,
+        "big_volume_pending": pending,  # big_volume 裡盤中暫定的那一天（也還在 big_volume 內）
         "trend": trend,
-        "trend_label": TREND_LABELS[trend],
+        "trend_provisional": trend_provisional,
+        "trend_label": TREND_LABELS[trend] + (PROVISIONAL_NOTE if trend_provisional else ""),
         "position": pos,
     }
 
@@ -170,5 +178,6 @@ def visible(bars: List[Bar], first_date: str, last_provisional: bool = False):
         res["big_volume"] = [d for d in res["big_volume"] if keep(d)]
         return res, None
     except Exception as e:  # 輔助標記，不能拖垮主要分析
-        return {"signals": [], "pivots": [], "big_volume": [], "trend": "range", "trend_label": "", "position": None}, \
+        return {"signals": [], "pivots": [], "big_volume": [], "big_volume_pending": [], "trend": "range",
+                "trend_provisional": False, "trend_label": "", "position": None}, \
             f"K 線收盤規則計算失敗：{e}"
