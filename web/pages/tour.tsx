@@ -60,7 +60,7 @@ const TOUR_STEPS = [
   {
     chapter: 'watch',
     title: '自選股：市場與分類',
-    body: '先選「台股／美股・海外」，再用「股票／ETF／債券」篩選。上方輸入代號按「新增」即可加入（台股輸入 2330、美股輸入 NVDA）；按 / 快速搜尋、↑↓ 切換標的。',
+    body: '先選「全部／台股／美股」，再用「類型」下拉選單篩選股票、ETF 或債券，「持有」只看有持股的。點上方搜尋列（或按 /）打代號或台股名稱（2330、台積電、NVDA），按 ★ 加入自選、Enter 開啟該股；↑↓ 切換標的。',
     go: 'watch',
     watch: { listTab: 'watch' },
     target: 'watch-filters',

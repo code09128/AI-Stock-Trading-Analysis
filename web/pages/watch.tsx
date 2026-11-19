@@ -4,6 +4,7 @@ import { notifySaved } from '../sync_store';
 import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
 import { Row } from './watch_parts';
+import { SearchPalette } from './search_palette';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
 import { CatChip, DividendCalendar, StockInfoPanel } from './stock_info_panel';
 import { OrderPanel, orderLabel } from './order_panel';
@@ -85,7 +86,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   const [updatedAt, setUpdatedAt] = useState('--:--:--');
   const [netError, setNetError] = useState(null);
   const [polling, setPolling] = useState(true);
-  const [input, setInput] = useState('');
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [cart, setCart] = useState(() => readLS(LS_CART, []));
   const [sparks, setSparks] = useState({});
@@ -104,7 +105,6 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   const holdings = portfolio.holdings;
   const [fx, setFx] = useState({}); // 幣別 -> 兌台幣匯率
   const [fxWarn, setFxWarn] = useState(null);
-  const searchRef = useRef(null);
   const listRef = useRef(null);
   const [order, setOrder] = useState({
     side: 'BUY',
@@ -513,50 +513,18 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     }
   }, [q?.price, selected]); // eslint-disable-line
 
-  const addSymbol = async () => {
-    let s = normSym(input);
-    if (!s) return;
-    // 輸入的是名稱（含中文，例如「台積電」）：先查台股名單換成代號；找不到或有好幾檔時請使用者再確認，不亂猜
-    // 只看第一段：「2330 台積電」這種代號＋名稱的寫法仍照代號處理（跟以前一樣）
-    // 中文開頭＝名稱；英文開頭（AES-KY）可能是台股簡稱也可能是美股代號，只採用名稱完全相符的結果，其餘照代號處理
-    const head = input.trim().split(/\s+/)[0];
-    const isName = /[\u4e00-\u9fff]/.test(head);
-    if (isName || /^[A-Za-z]/.test(head)) {
-      let matches = [];
-      try {
-        const r = await fetch('/api/symbol_search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: input }),
-        });
-        if (r.status === 404) {
-          // 後端是舊版（線上更新只能更新畫面，後端要重新安裝新版安裝包）：沒有名稱查詢，英文開頭照代號處理
-          if (isName) return say('此版本的後端還不支援用名稱新增，請輸入代號，或重新安裝新版程式');
-        } else {
-          matches = (await r.json()).matches || [];
-        }
-      } catch (_) {
-        if (isName) return say('❌ 查詢名稱失敗，請稍後再試或直接輸入代號');
-      }
-      const pick = matches.find((m) => m.exact) || (isName && matches.length === 1 ? matches[0] : null);
-      if (!pick && isName) {
-        return say(
-          matches.length
-            ? `找到多檔：${matches.map((m) => `${m.name} ${m.code}`).join('、')}。請輸入更完整的名稱或代號`
-            : `找不到名稱「${input.trim()}」的台股，請確認名稱或直接輸入代號（美股輸入 ticker，例如 AAPL）`,
-        );
-      }
-      if (pick) s = pick.code;
+  const bellOf = (sym) => {
+    const mine = alerts.filter((a) => baseCode(a.symbol) === baseCode(sym));
+    return mine.length ? (mine.some((a) => !a.active) ? 'fired' : 'on') : undefined;
+  };
+  // 搜尋視窗的 ★：加入或移出自選（加入時順便選到該股）
+  const toggleFromSearch = (sym) => {
+    const hit = watch.find((x) => baseCode(x) === baseCode(sym));
+    if (hit) removeSymbol(hit);
+    else {
+      setWatch([...watch, sym]);
+      notifySaved(`已把 ${sym} 加入自選股`);
     }
-    if (watch.includes(s)) {
-      say(`ℹ️ ${s} 已在自選清單，沒有重複加入`);
-    } else {
-      setWatch([...watch, s]);
-      notifySaved(`已把 ${s} 加入自選股`);
-    }
-    setSelected(s);
-    setListTab('watch');
-    setInput('');
   };
   const removeSymbol = (s) => {
     setWatch(watch.filter((x) => x !== s));
@@ -580,15 +548,14 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     return rows.sort((a, b) => (b[key] ?? -1) - (a[key] ?? -1));
   }, [etfs, quotes, etfSort]);
 
-  // 鍵盤：/ 聚焦搜尋；↑↓ 在目前分頁的清單中切換標的，並把焦點與捲動跟到新選的那一列
+  // 鍵盤：/ 開搜尋視窗；↑↓ 在目前分頁的清單中切換標的，並把焦點與捲動跟到新選的那一列
   useEffect(() => {
     const onKey = (e) => {
       const tag = (e.target?.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-      if (e.key === '/') {
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || paletteOpen) return;
+      if (e.key === '/' && active === 'watch') {
         e.preventDefault();
-        setListTab('watch');
-        setTimeout(() => searchRef.current?.focus(), 0);
+        setPaletteOpen(true);
       } else if (active === 'watch' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
         const list =
           listTab === 'hold'
@@ -612,7 +579,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, listTab, holdings, watchRows, etfRows, selected]);
+  }, [active, listTab, holdings, watchRows, etfRows, selected, paletteOpen]);
 
   const etfMetric = (r) => {
     if (etfSort === 'hot') return `成交 ${fmt(r.turnover / 1e8, 1)} 億`;
@@ -1012,25 +979,17 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             </fieldset>
           )}
 
-          {listTab === 'watch' && (
-            <div className="flex gap-1.5 shrink-0 order-2">
-              <input
-                ref={searchRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
-                placeholder="輸入代號或台股名稱（按 / 快速聚焦）如 2330、台積電、AAPL"
-                aria-label="新增自選股代號或台股名稱"
-                className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-[9px] px-2.5 py-1.5 text-xs text-white focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={addSymbol}
-                className="px-3 rounded-[10px] border border-white/10 bg-white/5 text-xs text-slate-100 hover:bg-white/10 cursor-pointer"
-              >
-                ＋ 新增
-              </button>
-            </div>
+          {listTop === 'watch' && (
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-haspopup="dialog"
+              className="ta-key shrink-0 order-2 flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-slate-400 hover:text-slate-200 cursor-pointer text-left"
+            >
+              <span aria-hidden="true">⌕</span>
+              搜尋代號或台股名稱，加入自選
+              <kbd className="ml-auto mono text-[10px] text-slate-500 border border-white/10 rounded px-1.5 py-0.5">/</kbd>
+            </button>
           )}
 
           {(listTab === 'watch' || listTab === 'div' || listTab === 'overview') && (
@@ -1164,6 +1123,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   quote={quotes[baseCode(s)]}
                   spark={sparks[s]}
                   tag={categories[baseCode(s)]}
+                  bell={bellOf(s)}
                   active={baseCode(selected) === baseCode(s)}
                   onClick={() => setSelected(s)}
                   action={
@@ -1202,10 +1162,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                       title={watch.includes(r.symbol) ? '已在自選（再按移出）' : '加入自選'}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (watch.includes(r.symbol)) {
-                          removeSymbol(r.symbol);
-                          notifySaved(`已把 ${r.symbol} 移出自選股`);
-                        } else {
+                        if (watch.includes(r.symbol)) removeSymbol(r.symbol);
+                        else {
                           setWatch([...watch, r.symbol]);
                           notifySaved(`已把 ${r.symbol} 加入自選股`);
                         }
@@ -1311,7 +1269,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             )}
             {listTab === 'watch' && watch.length === 0 && (
               <div className="text-sm text-slate-500 text-center py-6">
-                清單是空的，上方輸入代號新增。
+                清單是空的，點上方的搜尋列（或按 /）找股票，按 ★ 加入。
               </div>
             )}
           </div>
@@ -1352,6 +1310,14 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             </button>
           )}
         </aside>
+        <SearchPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          watch={watch}
+          names={Object.fromEntries(Object.entries(quotes).map(([k, v]: [string, any]) => [k, v?.name || '']))}
+          onOpen={(sym) => setSelected(sym)}
+          onToggle={toggleFromSearch}
+        />
 
         {/* ===== 右：報價卡（內含分頁）＋ 內容 ===== */}
         <section className="min-w-0 space-y-3.5">

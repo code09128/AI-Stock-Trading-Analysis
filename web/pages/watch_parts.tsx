@@ -26,7 +26,8 @@ function MiniCandle({ quote }: { quote: any }) {
   );
 }
 
-function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any }) {
+// bell：這檔有提醒時在代號旁顯示 🔔（'fired'＝有已觸發的，多一個驚嘆號）
+function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag, bell }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any; bell?: 'on' | 'fired' }) {
   const chg = quote?.change;
   const prevPrice = useRef(quote?.price);
   const [flash, setFlash] = useState(null);
@@ -80,6 +81,16 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
                 }`}
               >
                 {tag.label}
+              </span>
+            )}
+            {bell && (
+              <span
+                className="text-[10.5px] text-amber-300 shrink-0"
+                title={bell === 'fired' ? '有已觸發的提醒' : '有監控中的提醒'}
+                role="img"
+                aria-label={bell === 'fired' ? '有已觸發的提醒' : '有監控中的提醒'}
+              >
+                🔔{bell === 'fired' ? '!' : ''}
               </span>
             )}
           </small>
