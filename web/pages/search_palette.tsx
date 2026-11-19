@@ -4,7 +4,7 @@ import { baseCode, normSym } from '../ui';
 
 const { useState, useEffect, useRef } = React;
 
-const TICKER_RE = /^[A-Za-z0-9.\-]+$/;
+const TICKER_RE = /^[A-Za-z0-9.-]+$/;
 
 type Hit = { sym: string; name: string; note?: string };
 

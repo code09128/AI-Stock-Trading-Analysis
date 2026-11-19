@@ -122,6 +122,28 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
   );
 }
 
+// ★ 一顆切換：空心＝加入自選、實心＝已在自選（再按移出）。點了不會觸發所在那一列的選股
+function StarToggle({ on, name, onToggle }: { on: boolean; name: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={`${on ? '移出' : '加入'}自選：${name}`}
+      title={on ? '已在自選（再按移出）' : '加入自選'}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className={`ta-icon w-8 h-8 rounded-lg inline-flex items-center justify-center text-[17px] cursor-pointer ${
+        on ? 'text-amber-300' : 'text-slate-400 hover:text-amber-200'
+      }`}
+    >
+      {on ? '★' : '☆'}
+    </button>
+  );
+}
+
 const Field = ({ label, tip, children }: { label: any; tip?: any; children?: any }) => (
   <div>
     <div className="text-[11px] text-slate-400 mb-1">
@@ -160,4 +182,4 @@ const Seg = ({ value, onChange, options }) => (
   </div>
 );
 
-export { Row, Field, Seg };
+export { Row, Field, Seg, StarToggle };

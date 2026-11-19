@@ -25,6 +25,7 @@ import './portfolio_store';
 import './live_widgets';
 import './pages/watch_parts';
 import './pages/search_palette';
+import './pages/explore_list';
 import './pages/overview_alerts';
 import './pages/valuation_card';
 import './pages/card_box';

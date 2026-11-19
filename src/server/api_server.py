@@ -74,6 +74,7 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "/api/heatmap": D.handle_heatmap,
     "/api/chains/detail": D.handle_chain_detail,
     "/api/chains/history": D.handle_chain_history,
+    "/api/rankings": D.handle_rankings,  # 看盤頁「探索」榜單
     "/api/trade_rules": lambda p: trade_rules.rules_for(arg_ticker(p, "symbol")),
     # 五個分析功能
     "/api/mod1/analyze": D.handle_mod1_analyze,
@@ -150,7 +151,7 @@ def refresh_routes() -> None:
 # 背景工作的 start／poll 不記，工作結束時用原本的路徑記一筆（耗時＝實際計算時間）
 QUIET_PATHS = ("/api/quotes", "/api/symbol_search", "/api/indices", "/api/sparks", "/api/heatmap", "/api/intraday", "/api/five_days", "/api/overview", "/api/fx",
                "/api/health", "/api/etf", "/api/fetchlog", "/api/log", "/api/categories", "/api/candles", "/api/jobs/",
-               "/api/chains/")
+               "/api/chains/", "/api/rankings")
 
 
 def _log_api(path: str, status: int, started: float, payload: Any = None, res: Any = None) -> None:

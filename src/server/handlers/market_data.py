@@ -5,7 +5,7 @@ import time
 
 from src.market import quote_provider
 from src.market.etf_reference import ETF_POOL
-from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets, symbol_search
+from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets, rankings, symbol_search
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
 from src.server.params import arg_num
@@ -114,6 +114,13 @@ class MarketDataHandlers:
         """產業鏈地圖：一條鏈最近 N 個交易日的日報酬（回放用）。"""
         days = int(arg_num(payload, "days", 30, "回放天數", integer=True, lo=5, hi=industry_map.HISTORY_MAX_DAYS))
         return industry_map.chain_history(str(payload.get("id") or ""), days, self._chain_market(payload))
+
+    def handle_rankings(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """看盤頁「探索」榜單：market＝TW／US，kind＝gain／lose／turn／theme（theme 另給產業鏈 id）。"""
+        market = str(payload.get("market") or "TW").upper()
+        kind = str(payload.get("kind") or "gain")
+        theme = str(payload.get("theme") or "")[:40]
+        return {**rankings.ranking(market, kind, theme), "timestamp": time.strftime("%H:%M:%S")}
 
     def handle_sparks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         syms = [str(x) for x in payload.get("symbols", [])][:40]

@@ -3,8 +3,9 @@ import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
 import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
-import { Row } from './watch_parts';
+import { Row, StarToggle } from './watch_parts';
 import { SearchPalette } from './search_palette';
+import { ExploreBar, ExploreRows, useRanking, useThemes } from './explore_list';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
 import { CatChip, DividendCalendar, StockInfoPanel } from './stock_info_panel';
 import { OrderPanel, orderLabel } from './order_panel';
@@ -70,6 +71,20 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   const [alertsOpen, setAlertsOpen] = useState(false);
   const setListTab = (id: string) => (id === 'alerts' ? setAlertsOpen(true) : setListView(id));
   const listTop = LIST_TOP[listTab] || 'watch';
+  // 探索分頁：市場、榜單種類（ETF 精選也是其中一種）、主題（產業鏈 id）
+  const [exploreMarket, setExploreMarket] = useState('TW');
+  const [exploreKind, setExploreKind] = useState('gain');
+  const [exploreTheme, setExploreTheme] = useState('');
+  const showEtf = listTab === 'etf' && exploreKind === 'etf';
+  // WatchPage 只在行情／技術分析／新聞研究三個分頁掛著，左側清單一直看得到，所以只看「是不是在探索分頁」
+  const rankState = useRanking(exploreMarket, exploreKind, exploreTheme, listTab === 'etf');
+  const exploreThemes = useThemes(exploreMarket, listTab === 'etf' && exploreKind === 'theme');
+  // 切到「主題」或換市場後，主題清單回來了就預設選第一條
+  useEffect(() => {
+    if (exploreKind === 'theme' && exploreThemes.length && !exploreThemes.some((t) => t.id === exploreTheme)) {
+      setExploreTheme(exploreThemes[0].id);
+    }
+  }, [exploreKind, exploreThemes, exploreTheme]);
   const [holdPrefill, setHoldPrefill] = useState(null); // 「加入我的持股」要預填到持股面板表單的內容
   const [etfs, setEtfs] = useState({ etfs: [], pending_yields: 0, sources: {} });
   const [etfSort, setEtfSort] = useState('hot');
@@ -270,11 +285,11 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   const allSyms = useMemo(() => {
     const set = new Set(watch);
     if (selected) set.add(selected);
-    if (listTab === 'etf') for (const e of etfs.etfs) set.add(e.symbol);
+    if (showEtf) for (const e of etfs.etfs) set.add(e.symbol);
     for (const h of holdings) set.add(h.symbol);
     for (const a of alerts) set.add(a.symbol);
     return [...set];
-  }, [watch, etfs, selected, holdings, alerts, listTab]);
+  }, [watch, etfs, selected, holdings, alerts, showEtf]);
   const symKey = allSyms.join(',');
 
   const quotesBusy = useRef(false);
@@ -517,7 +532,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     const mine = alerts.filter((a) => baseCode(a.symbol) === baseCode(sym));
     return mine.length ? (mine.some((a) => !a.active) ? 'fired' : 'on') : undefined;
   };
-  // 搜尋視窗的 ★：加入或移出自選（加入時順便選到該股）
+  const isWatched = (sym) => watch.some((x) => baseCode(x) === baseCode(sym));
+  // ★（搜尋視窗、探索榜單、ETF 精選共用）：加入或移出自選
   const toggleFromSearch = (sym) => {
     const hit = watch.find((x) => baseCode(x) === baseCode(sym));
     if (hit) removeSymbol(hit);
@@ -553,7 +569,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     const onKey = (e) => {
       const tag = (e.target?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select' || paletteOpen) return;
-      if (e.key === '/' && active === 'watch') {
+      if (e.key === '/') {
         e.preventDefault();
         setPaletteOpen(true);
       } else if (active === 'watch' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -561,7 +577,9 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           listTab === 'hold'
             ? holdings.map((h) => h.symbol)
             : listTab === 'etf'
-              ? etfRows.map((r) => r.symbol)
+              ? showEtf
+                ? etfRows.map((r) => r.symbol)
+                : (rankState.data?.rows || []).map((r) => r.symbol)
               : watchRows;
         const i = list.findIndex((x) => baseCode(x) === baseCode(selected));
         const next =
@@ -579,7 +597,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, listTab, holdings, watchRows, etfRows, selected, paletteOpen]);
+  }, [active, listTab, holdings, watchRows, etfRows, selected, paletteOpen, showEtf, rankState.data]);
 
   const etfMetric = (r) => {
     if (etfSort === 'hot') return `成交 ${fmt(r.turnover / 1e8, 1)} 億`;
@@ -1066,8 +1084,23 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           )}
 
           {listTab === 'etf' && (
+            <ExploreBar
+              market={exploreMarket}
+              setMarket={(m) => {
+                setExploreMarket(m);
+                setExploreTheme('');
+                if (m === 'US' && exploreKind === 'etf') setExploreKind('gain');
+              }}
+              kind={exploreKind}
+              setKind={setExploreKind}
+              theme={exploreTheme}
+              setTheme={setExploreTheme}
+              themes={exploreThemes}
+              timestamp={showEtf ? null : rankState.data?.timestamp}
+            />
+          )}
+          {showEtf && (
             <div className="space-y-1.5 shrink-0 order-1">
-              <div className="text-[11px] text-slate-500">ETF 精選</div>
               <div className="ta-track grid grid-cols-4 gap-1 rounded-[10px] p-1">
                 {[
                   ['hot', '今日熱門'],
@@ -1101,7 +1134,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           )}
 
           <div ref={listRef} className="flex-1 min-h-[120px] overflow-y-auto space-y-3 pr-1.5 py-1 order-4">
-            {listTab === 'etf' && etfRows.some((r) => r.yield_pct != null) && (
+            {showEtf && etfRows.some((r) => r.yield_pct != null) && (
               <div className="pb-1">
                 <div className="text-[11.5px] text-slate-400 mb-1">殖利率比較（前 8 檔）</div>
                 <HBars
@@ -1142,7 +1175,17 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   }
                 />
               ))}
-            {listTab === 'etf' &&
+            {listTab === 'etf' && !showEtf && (
+              <ExploreRows
+                state={rankState}
+                market={exploreMarket}
+                kind={exploreKind}
+                selected={baseCode(selected)}
+                onSelect={setSelected}
+                star={(sym, name) => <StarToggle on={isWatched(sym)} name={name || sym} onToggle={() => toggleFromSearch(sym)} />}
+              />
+            )}
+            {showEtf &&
               etfRows.map((r, i) => (
                 <Row
                   key={r.symbol}
@@ -1154,26 +1197,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   active={baseCode(selected) === r.symbol}
                   onClick={() => setSelected(r.symbol)}
                   action={
-                    // ★ 一顆切換：空心＝加入自選、實心＝已在自選（再按移出）
-                    <button
-                      type="button"
-                      aria-pressed={watch.includes(r.symbol)}
-                      aria-label={`${watch.includes(r.symbol) ? '移出' : '加入'}自選：${r.name || r.symbol}`}
-                      title={watch.includes(r.symbol) ? '已在自選（再按移出）' : '加入自選'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (watch.includes(r.symbol)) removeSymbol(r.symbol);
-                        else {
-                          setWatch([...watch, r.symbol]);
-                          notifySaved(`已把 ${r.symbol} 加入自選股`);
-                        }
-                      }}
-                      className={`ta-icon w-8 h-8 rounded-lg inline-flex items-center justify-center text-[17px] cursor-pointer ${
-                        watch.includes(r.symbol) ? 'text-amber-300' : 'text-slate-400 hover:text-amber-200'
-                      }`}
-                    >
-                      {watch.includes(r.symbol) ? '★' : '☆'}
-                    </button>
+                    <StarToggle on={isWatched(r.symbol)} name={r.name || r.symbol} onToggle={() => toggleFromSearch(r.symbol)} />
                   }
                 />
               ))}
