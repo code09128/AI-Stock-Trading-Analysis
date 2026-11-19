@@ -43,9 +43,32 @@ const PROFILE_TABS = [
   ['div', '配息'],
 ];
 
+// 檢視 → 所屬的頂層分頁；頂層分頁 → 點下去先顯示的檢視
+const LIST_TOP: Record<string, string> = { watch: 'watch', overview: 'watch', hold: 'hold', div: 'hold', etf: 'explore' };
+const LIST_TABS = [
+  ['watch', '自選', 'watch'],
+  ['hold', '我的持股', 'hold'],
+  ['explore', '探索', 'etf'],
+] as const;
+const LIST_VIEWS: Record<string, readonly (readonly [string, string, string])[]> = {
+  watch: [
+    ['watch', '清單', '價格、漲跌與走勢'],
+    ['overview', '技術', '技術總覽：RSI、距月線、量比、趨勢'],
+  ],
+  hold: [
+    ['hold', '持股', '持股、成本與損益'],
+    ['div', '配息', '配息月曆：持股與自選股的除息月份'],
+  ],
+};
+
 function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1Data, m2Data, m2Target, onSendToMod1, onSendToMod2, onSendHoldings, onShowTour }: any) {
   const [watch, setWatch] = useState(() => readLS(LS_WATCH, DEFAULT_WATCH));
-  const [listTab, setListTab] = useState('watch');
+  // 左側清單：頂層三個分頁（自選／持股／探索），每個分頁底下再分檢視。listTab 存的是「檢視」id，
+  // 沿用舊的六個值，導覽與其他頁面送來的 { listTab } 指令不用改；只有 'alerts' 改成打開底部的提醒抽屜
+  const [listTab, setListView] = useState('watch');
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const setListTab = (id: string) => (id === 'alerts' ? setAlertsOpen(true) : setListView(id));
+  const listTop = LIST_TOP[listTab] || 'watch';
   const [holdPrefill, setHoldPrefill] = useState(null); // 「加入我的持股」要預填到持股面板表單的內容
   const [etfs, setEtfs] = useState({ etfs: [], pending_yields: 0, sources: {} });
   const [etfSort, setEtfSort] = useState('hot');
@@ -940,38 +963,54 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] gap-4 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
         {/* ===== 左：清單 ===== */}
         <aside
-          className="ta-card xl:sticky xl:top-0 xl:max-h-[calc(100vh-130px)] flex flex-col bg-slate-900/90 border border-slate-800 rounded-2xl p-3 gap-2.5"
+          className="ta-card xl:sticky xl:top-0 xl:max-h-[calc(100vh-130px)] flex flex-col bg-slate-900/90 border border-slate-800 rounded-2xl p-4 gap-3.5"
           data-tour="watch-list"
         >
-          <div className="grid grid-cols-3 gap-1 shrink-0" role="tablist" aria-label="左側清單">
-            {[
-              ['watch', '自選股'],
-              ['etf', 'ETF 精選'],
-              ['hold', '我的持股'],
-              ['overview', '技術總覽'],
-              ['alerts', '提醒'],
-              ['div', '配息月曆'],
-            ].map(([id, label]) => (
+          <div className="ta-track grid grid-cols-3 gap-1.5 p-1.5 rounded-xl shrink-0" role="tablist" aria-label="左側清單">
+            {LIST_TABS.map(([id, label, first]) => (
               <button
                 type="button"
                 key={id}
                 role="tab"
-                aria-selected={listTab === id}
-                onClick={() => setListTab(id)}
-                className={`py-1.5 px-0.5 rounded-[9px] text-xs border cursor-pointer transition-colors ${
-                  listTab === id
-                    ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white'
-                    : 'bg-transparent border-white/10 text-slate-400 hover:text-slate-200'
+                aria-selected={listTop === id}
+                onClick={() => listTop !== id && setListTab(first)}
+                className={`ta-key py-2.5 px-1 rounded-xl text-sm cursor-pointer transition-colors ${
+                  listTop === id ? 'ta-key-on text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 {label}
-                {id === 'alerts' && alerts.some((a) => !a.active) && <span className="text-amber-300"> •</span>}
+                {id !== 'explore' && (
+                  <span className="mono text-[10px] opacity-60 ml-1">{id === 'watch' ? watch.length : holdings.length}</span>
+                )}
               </button>
             ))}
           </div>
+
+          {LIST_VIEWS[listTop] && (
+            <fieldset className="flex items-center gap-2 shrink-0 order-1 border-0 p-0 m-0 min-w-0">
+              <legend className="sr-only">檢視</legend>
+              <span className="text-[11px] text-slate-500 mr-auto">
+                {LIST_VIEWS[listTop].find(([v]) => v === listTab)?.[2]}
+              </span>
+              {LIST_VIEWS[listTop].map(([v, label, hint]) => (
+                <button
+                  type="button"
+                  key={v}
+                  aria-pressed={listTab === v}
+                  title={hint}
+                  onClick={() => setListTab(v)}
+                  className={`ta-key px-3 py-1.5 rounded-lg text-xs cursor-pointer ${
+                    listTab === v ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </fieldset>
+          )}
 
           {listTab === 'watch' && (
             <div className="flex gap-1.5 shrink-0 order-2">
@@ -995,34 +1034,52 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           )}
 
           {(listTab === 'watch' || listTab === 'div' || listTab === 'overview') && (
-            <div data-tour="watch-filters" className="flex flex-wrap items-center gap-1.5 shrink-0 order-1">
+            <div data-tour="watch-filters" className="flex flex-wrap items-center gap-2 shrink-0 order-1">
               {[
-                ['ALL', '全部', mktFilter, setMktFilter, mktCounts],
-                ['TW', '台股', mktFilter, setMktFilter, mktCounts],
-                ['INTL', '美股／海外', mktFilter, setMktFilter, mktCounts],
-                ['STOCK', '股票', catFilter, (v) => setCatFilter(catFilter === v ? 'ALL' : v), catCounts],
-                ['ETF', 'ETF', catFilter, (v) => setCatFilter(catFilter === v ? 'ALL' : v), catCounts],
-                ['BOND', '債券', catFilter, (v) => setCatFilter(catFilter === v ? 'ALL' : v), catCounts],
-              ].map(([k, label, cur, set, counts]: any) => (
+                ['ALL', '全部'],
+                ['TW', '台股'],
+                ['INTL', '美股'],
+              ].map(([k, label]) => (
                 <button
                   type="button"
                   key={k}
-                  aria-pressed={cur === k}
-                  onClick={() => set(k)}
-                  className={`px-2.5 py-[3px] rounded-full text-xs border cursor-pointer ${
-                    cur === k ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white' : 'border-white/10 text-slate-400 hover:text-white'
+                  aria-pressed={mktFilter === k}
+                  title={k === 'INTL' ? '美股與其他海外市場' : undefined}
+                  onClick={() => setMktFilter(k)}
+                  className={`ta-key px-3.5 py-1.5 rounded-full text-xs cursor-pointer ${
+                    mktFilter === k ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {label} <span className="mono text-[10px] opacity-70">{counts[k]}</span>
+                  {label} <span className="mono text-[10px] opacity-70">{mktCounts[k]}</span>
                 </button>
               ))}
+              <select
+                value={catFilter}
+                onChange={(e) => setCatFilter(e.target.value)}
+                aria-label="依類型篩選"
+                className={`ta-key rounded-full text-xs px-3 py-1.5 cursor-pointer ${
+                  catFilter !== 'ALL' ? 'ta-key-on text-white' : 'text-slate-400'
+                }`}
+              >
+                {[
+                  ['ALL', '全部類型'],
+                  ['STOCK', '股票'],
+                  ['ETF', 'ETF'],
+                  ['BOND', '債券'],
+                ].map(([k, label]) => (
+                  <option key={k} value={k} className="bg-slate-900 text-slate-100">
+                    {label}（{catCounts[k]}）
+                  </option>
+                ))}
+              </select>
               {listTab === 'watch' && (
                 <button
                   type="button"
                   aria-pressed={holdOnly}
+                  title="只看有持股的自選股"
                   onClick={() => setHoldOnly(!holdOnly)}
-                  className={`px-2.5 py-[3px] rounded-full text-xs border cursor-pointer ${
-                    holdOnly ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white' : 'border-white/10 text-slate-400 hover:text-white'
+                  className={`ta-key px-3.5 py-1.5 rounded-full text-xs cursor-pointer ${
+                    holdOnly ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   持有
@@ -1051,7 +1108,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
 
           {listTab === 'etf' && (
             <div className="space-y-1.5 shrink-0 order-1">
-              <div className="grid grid-cols-4 gap-0.5 rounded-[10px] border border-white/10 bg-white/5 p-0.5">
+              <div className="text-[11px] text-slate-500">ETF 精選</div>
+              <div className="ta-track grid grid-cols-4 gap-1 rounded-[10px] p-1">
                 {[
                   ['hot', '今日熱門'],
                   ['aum', '資產規模'],
@@ -1063,8 +1121,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                     key={id}
                     aria-pressed={etfSort === id}
                     onClick={() => setEtfSort(id)}
-                    className={`py-1 rounded-lg text-xs cursor-pointer ${
-                      etfSort === id ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                    className={`ta-key py-1 rounded-lg text-xs cursor-pointer ${
+                      etfSort === id ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     {label}
@@ -1083,7 +1141,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             </div>
           )}
 
-          <div ref={listRef} className="flex-1 min-h-[120px] overflow-y-auto space-y-1.5 pr-1 order-4">
+          <div ref={listRef} className="flex-1 min-h-[120px] overflow-y-auto space-y-3 pr-1.5 py-1 order-4">
             {listTab === 'etf' && etfRows.some((r) => r.yield_pct != null) && (
               <div className="pb-1">
                 <div className="text-[11.5px] text-slate-400 mb-1">殖利率比較（前 8 檔）</div>
@@ -1112,11 +1170,12 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                     <button
                       type="button"
                       title="從自選移除"
+                      aria-label={`從自選移除 ${s}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         removeSymbol(s);
                       }}
-                      className="text-slate-600 hover:text-rose-400 text-xs px-1 cursor-pointer"
+                      className="ta-icon w-8 h-8 rounded-lg inline-flex items-center justify-center text-[14px] text-slate-400 hover:text-rose-300 cursor-pointer"
                     >
                       ✕
                     </button>
@@ -1135,21 +1194,28 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   active={baseCode(selected) === r.symbol}
                   onClick={() => setSelected(r.symbol)}
                   action={
-                    watch.includes(r.symbol) ? (
-                      <span className="text-[10px] text-slate-500">已自選</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                    // ★ 一顆切換：空心＝加入自選、實心＝已在自選（再按移出）
+                    <button
+                      type="button"
+                      aria-pressed={watch.includes(r.symbol)}
+                      aria-label={`${watch.includes(r.symbol) ? '移出' : '加入'}自選：${r.name || r.symbol}`}
+                      title={watch.includes(r.symbol) ? '已在自選（再按移出）' : '加入自選'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (watch.includes(r.symbol)) {
+                          removeSymbol(r.symbol);
+                          notifySaved(`已把 ${r.symbol} 移出自選股`);
+                        } else {
                           setWatch([...watch, r.symbol]);
                           notifySaved(`已把 ${r.symbol} 加入自選股`);
-                        }}
-                        className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 hover:bg-slate-700 cursor-pointer"
-                      >
-                        ＋自選
-                      </button>
-                    )
+                        }
+                      }}
+                      className={`ta-icon w-8 h-8 rounded-lg inline-flex items-center justify-center text-[17px] cursor-pointer ${
+                        watch.includes(r.symbol) ? 'text-amber-300' : 'text-slate-400 hover:text-amber-200'
+                      }`}
+                    >
+                      {watch.includes(r.symbol) ? '★' : '☆'}
+                    </button>
                   }
                 />
               ))}
@@ -1178,14 +1244,6 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   cardCtl.reveal('profile');
                   goTab?.('watch');
                 }}
-              />
-            )}
-            {listTab === 'alerts' && (
-              <AlertsPanel
-                alerts={alerts}
-                setAlerts={setAlerts}
-                selected={selected}
-                log={alertLog}
               />
             )}
             {listTab === 'hold' && (
@@ -1254,6 +1312,30 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             {listTab === 'watch' && watch.length === 0 && (
               <div className="text-sm text-slate-500 text-center py-6">
                 清單是空的，上方輸入代號新增。
+              </div>
+            )}
+          </div>
+          {/* 提醒：不佔分頁，收在清單底部的抽屜；打開時清單讓出高度 */}
+          <div className="shrink-0 order-5 border-t border-white/10 pt-3" data-tour="watch-alerts">
+            <button
+              type="button"
+              aria-expanded={alertsOpen}
+              aria-controls="watch-alerts-drawer"
+              onClick={() => setAlertsOpen(!alertsOpen)}
+              className={`ta-key w-full flex items-center gap-2 rounded-lg px-3 py-2 text-xs cursor-pointer ${
+                alertsOpen ? 'ta-key-on text-white' : 'text-slate-300'
+              }`}
+            >
+              {alerts.some((a) => !a.active) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" aria-hidden="true" />}
+              提醒 {alerts.length} 則
+              {alerts.some((a) => !a.active) && (
+                <span className="text-amber-300">・{alerts.filter((a) => !a.active).length} 則已觸發</span>
+              )}
+              <span className="ml-auto text-slate-500" aria-hidden="true">{alertsOpen ? '▾' : '▴'}</span>
+            </button>
+            {alertsOpen && (
+              <div id="watch-alerts-drawer" className="mt-2 max-h-[45vh] overflow-y-auto pr-1">
+                <AlertsPanel alerts={alerts} setAlerts={setAlerts} selected={selected} log={alertLog} />
               </div>
             )}
           </div>

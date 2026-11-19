@@ -1,4 +1,4 @@
-// 看盤頁左側的「技術總覽」表格與「提醒」面板，以及全站共用的提醒判斷引擎 AlertWatcher（掛在 App 上）
+// 看盤頁左側「自選・技術」檢視的表格與底部「提醒」抽屜的面板，以及全站共用的提醒判斷引擎 AlertWatcher（掛在 App 上）
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
 import { baseCode, colorOf, fmt, normSym, readLS, signed, writeLS, marketSessionOpen } from '../ui';
@@ -76,14 +76,14 @@ const reloadAlertsFromServer = async () => {
       saveAlerts(server);
     }
     if (fired.length) {
-      bus.toast?.(`🔔 背景期間觸發了 ${fired.length} 則提醒，紀錄在看盤頁的「提醒」`);
+      bus.toast?.(`🔔 背景期間觸發了 ${fired.length} 則提醒，紀錄在看盤頁左側底部的「提醒」`);
     }
   } catch (_e) {
     /* 讀不到就維持本機版本 */
   }
 };
 
-// 看盤頁「提醒」面板用：只負責顯示與編輯，檢查交給 AlertWatcher
+// 看盤頁左側底部「提醒」抽屜用：只負責顯示與編輯，檢查交給 AlertWatcher
 function useAlerts() {
   const [alerts, setState] = useState(loadAlerts);
   const [log, setLog] = useState(alertLog);
@@ -349,7 +349,7 @@ function AlertsPanel({ alerts, setAlerts, selected, log }) {
   );
 }
 
-// ---------- 技術總覽：自選股一張表 ----------
+// ---------- 技術總覽（自選的「技術」檢視）：自選股一張表 ----------
 function OverviewPanel({ symbols, rows, quotes, selected, onSelect, loading }) {
   // 點欄位標題排序，再點一次反向；沒點過＝我的順序
   const [sort, setSort] = useState<[string, number]>(['symbol', -1]);

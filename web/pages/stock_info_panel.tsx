@@ -1,4 +1,4 @@
-// 看盤頁：個股／ETF 基本資料與配息（右側分頁）＋ 配息月曆（左側分頁）
+// 看盤頁：個股／ETF 基本資料與配息（右側分頁）＋ 配息月曆（左側「我的持股・配息」檢視）
 import { cachedJson } from '../fetch_cache';
 import { Tip, baseCode, colorOf, fmt, localDate, signed } from '../ui';
 import { AiExplain } from '../ai_store';
@@ -507,7 +507,7 @@ function StockInfoPanel({ symbol, hideValuation = false, tab, onAskAi }: { symbo
   );
 }
 
-// ---------- 配息月曆（左側清單）----------
+// ---------- 配息月曆（左側「我的持股・配息」檢視）----------
 function DividendCalendar({ symbols, quotes, categories, selected, onSelect, holdings = [], fx = {} }: any) {
   const [rows, setRows] = useState({});
   const [loading, setLoading] = useState(false);

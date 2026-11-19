@@ -278,6 +278,30 @@
     .ta-cardbody .rounded-2xl[class*="bg-slate-900"]:hover,
     .ta-cardbody .ta-card, .ta-cardbody .ta-card:hover { background: none; border: 0; box-shadow: none; padding: 0; }
 
+    /* 實體按鍵手感：凸起＝可以按（ta-key）、凹陷＝已選或按下（ta-key-on、:active）、凹槽＝一組選項的底座（ta-track）。
+       只用陰影，不用 backdrop-filter（理由同上面的 .ta-card）。目前只套在看盤頁左側清單，其他頁面之後逐步換 */
+    .ta-track { background: rgba(0, 0, 0, 0.22); box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.04); }
+    .ta-key {
+      border: 0; background-color: rgba(255, 255, 255, 0.045);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 3px 3px 8px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(140, 130, 255, 0.05);
+      transition: box-shadow .15s ease, transform .15s ease, color .15s ease, background-color .15s ease;
+    }
+    .ta-key:hover { background-color: rgba(255, 255, 255, 0.07); }
+    .ta-key:active, .ta-key-on, .ta-row-on {
+      background-color: rgba(79, 124, 255, 0.14);
+      box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.55), inset -2px -2px 6px rgba(160, 150, 255, 0.08), inset 0 0 0 1px rgba(79, 124, 255, 0.5);
+    }
+    .ta-key:active { transform: scale(0.97); }
+    .ta-key-on:hover { background-color: rgba(79, 124, 255, 0.2); }
+    /* 列上的小圖示鍵（✕、★）：平的，不搶清單的視覺；滑過才有淡底色，按下輕微凹陷 */
+    .ta-icon { border: 0; background: transparent; transition: background-color .15s ease, color .15s ease, box-shadow .15s ease; }
+    .ta-icon:hover { background-color: rgba(255, 255, 255, 0.07); }
+    .ta-icon:active { background-color: rgba(255, 255, 255, 0.05); box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.45); }
+    select.ta-key option { background: #111625; color: #e8ebf4; }
+    html[data-motion="reduce"] .ta-key, html[data-motion="reduce"] .ta-key:active { transition: none; transform: none; }
+    @media (prefers-reduced-motion: reduce) { .ta-key, .ta-key:active { transition: none; transform: none; } }
+    @media (forced-colors: active) { .ta-key-on, .ta-row-on { outline: 2px solid CanvasText; } }
+
     /* 卡片裡的長網址、長代號要能換行，不要把卡片撐破 */
     .ta-cardbody { min-width: 0; overflow-wrap: anywhere; }
     /* 頂欄行情狀態的小綠點 */

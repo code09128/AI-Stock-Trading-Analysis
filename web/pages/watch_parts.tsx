@@ -50,10 +50,8 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
       aria-current={active ? 'true' : undefined}
       onClick={onClick}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
-      className={`group rounded-xl border cursor-pointer transition-[transform,background-color,border-color] duration-200 hover:translate-x-[3px] px-2.5 py-2 ${
-        active
-          ? 'border-[#4f7cff] bg-gradient-to-r from-[#4f7cff]/20 to-[#4f7cff]/5'
-          : 'border-transparent bg-white/5 hover:bg-white/10'
+      className={`group rounded-xl border cursor-pointer transition-[transform,background-color,border-color] duration-200 hover:translate-x-[3px] px-3.5 py-3 ${
+        active ? 'ta-row-on border-transparent' : 'border-transparent bg-white/5 hover:bg-white/10'
       }`}
       style={
         flash === 'up'
@@ -63,12 +61,12 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
             : undefined
       }
     >
-      <div className="flex items-center gap-2">
-        {rank && <span className="text-[11px] text-slate-500 w-4 shrink-0">{rank}</span>}
+      <div className="flex items-center gap-3">
+        {rank && <span className="text-[11px] font-semibold text-slate-300 bg-white/5 rounded-md w-6 h-6 inline-flex items-center justify-center shrink-0">{rank}</span>}
         <MiniCandle quote={quote?.error ? null : quote} />
         <div className="min-w-0 flex-1">
-          <b className="block text-[13px] text-white truncate">{nameOverride || quote?.name || sym}</b>
-          <small className="flex items-center gap-1 text-[11.5px] text-slate-400 min-w-0">
+          <b className="block text-[13.5px] text-white truncate">{nameOverride || quote?.name || sym}</b>
+          <small className="flex items-center gap-1.5 mt-0.5 text-[11.5px] text-slate-400 min-w-0">
             <span className="mono shrink-0">{sym}</span>
             {tag && (
               <span
@@ -91,7 +89,7 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
           <span className="text-[11px] text-rose-400 shrink-0">抓取失敗</span>
         ) : quote ? (
           <div className={`text-right mono shrink-0 ${colorOf(chg)}`}>
-            <div className="text-[13px]">
+            <div className="text-[13.5px] font-semibold">
               {/* key 隨價格變動：重新掛載才會重播跳動動畫 */}
               <span key={quote.price} className={flash ? `ta-tick-${flash}` : ''}>
                 {fmt(quote.price)}
@@ -106,7 +104,7 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
           <span className="text-[11px] text-slate-500 shrink-0">載入中…</span>
         )}
         {spark && <span className="shrink-0"><Sparkline values={spark} w={56} /></span>}
-        {!actionBelow && action}
+        {!actionBelow && action && <span className="shrink-0 flex items-center gap-1.5 pl-1">{action}</span>}
       </div>
       {actionBelow && action && <div className="mt-1.5">{action}</div>}
     </div>
