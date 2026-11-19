@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.market import chip_data, markets
 
-from src.company import fundamentals as fin, stock_info, valuation
+from src.company import analyst, fundamentals as fin, stock_info, valuation
 
 from src.news import news_feed
 from src.market.data_adapter import DualMarketDataAdapter
@@ -244,6 +244,9 @@ def summary_lines(symbol: str) -> str:
     vb = valuation.brief(symbol)
     if vb:
         lines.append(vb)
+    ab = analyst.brief(symbol)
+    if ab:
+        lines.append(ab)
     mk = c.get("大盤環境") or {}
     if "趨勢" in mk:
         lines.append(f"大盤（{mk.get('指數')}）：{mk.get('趨勢')}，相對MA20 {mk.get('相對MA20%')}%、20日報酬 {mk.get('20日報酬%')}%")

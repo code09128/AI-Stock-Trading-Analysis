@@ -1,6 +1,8 @@
 // 估值參考卡：近四季 EPS × 同產業本益比，直接標示「便宜／偏便宜／合理／偏貴／貴」（後端 src/company/valuation.py）
+// 下方接「分析師共識」（analyst_panel.tsx，另外一支 API，取不到不影響估值）
 import { cachedJson } from '../fetch_cache';
 import { Tip } from '../ui';
+import { AnalystPanel } from './analyst_panel';
 import { CardBox } from './card_box';
 
 const { useState, useEffect } = React;
@@ -129,6 +131,7 @@ export function ValuationCard({ symbol, ctl }: { symbol: string; ctl?: any }) {
       <div className="text-[10px] text-slate-500">
         依固定規則計算的相對比較，不是預測，也不是買賣建議。來源：{(v.sources || []).join('、') || '—'}
       </div>
+      <AnalystPanel symbol={symbol} />
     </>
   );
   if (ctl)

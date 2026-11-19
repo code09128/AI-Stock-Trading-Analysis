@@ -27,6 +27,7 @@ import './pages/watch_parts';
 import './pages/search_palette';
 import './pages/explore_list';
 import './pages/overview_alerts';
+import './pages/analyst_panel';
 import './pages/valuation_card';
 import './pages/card_box';
 import './pages/mini_charts';
