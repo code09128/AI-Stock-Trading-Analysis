@@ -533,12 +533,20 @@ def test(profile: Dict[str, Any]) -> Dict[str, Any]:
 
 
 MAX_DATA_CHARS = 24000
+ARTICLE_MAX_CHARS = 8000  # 貼文章分析的文章上限（前端輸入框同一個數字）
 
 
 def _build_explain_prompt(profile: Dict[str, Any], module: str, data: Any, question: str = "",
                           context: Dict[str, Any] | None = None):
     if not is_enabled(profile):
         raise AIError("尚未設定 AI 連線，請先到「設定」頁新增")
+    if module == "article" and isinstance(data, dict):
+        text = str(data.get("文章") or "").strip()
+        if not text:
+            raise AIError("請先貼上文章內容")
+        if len(text) > ARTICLE_MAX_CHARS:  # 前端已限制；這裡再擋一次，避免超長文章把後面的系統資料擠到被截斷
+            text = text[:ARTICLE_MAX_CHARS] + "（文章過長，以下已截斷）"
+        data = {**data, "文章": text}
     page = json.dumps(_clean(data), ensure_ascii=False, separators=(",", ":"))
     extra = json.dumps(_clean(context), ensure_ascii=False, separators=(",", ":")) if context else ""
     data_text = f"【本頁資料】{page}" + (f"\n【補充資料（系統另外整理的同一檔標的多面向資料）】{extra}" if extra else "")
@@ -730,6 +738,9 @@ def key_facts(module: str, data: Any) -> str:
                            "調整建議請依集中度、相關性與壓力測試自己判斷，不要建議「調到平均權重」。")
         elif module == "stock":
             out.append(f"標的 {data.get('symbol')} {data.get('name')}｜類別 {data.get('label')}｜現價 {data.get('price')} {data.get('currency')}")
+        elif module == "article":
+            out.append(f"標的 {data.get('symbol')} {data.get('name')}｜現價 {data.get('price')}｜今日漲跌 {data.get('change_pct')}%"
+                       f"｜文章 {len(str(data.get('文章') or ''))} 字（文章裡的數字是文章宣稱，不是系統資料）")
     except (KeyError, TypeError):
         return ""
     return "\n".join(x for x in out if x)

@@ -176,7 +176,7 @@ def symbol_of(module: str, data: Any) -> Optional[str]:
         return None
     if module == "mod1":
         return (data.get("snapshot") or {}).get("symbol")
-    if module in ("stock", "mod2"):
+    if module in ("stock", "mod2", "article"):
         return data.get("symbol")
     return None
 
@@ -185,6 +185,8 @@ SECTIONS_BY_MODULE = {
     "mod1": ("price", "tech", "chips", "fundamentals", "earnings", "street", "news", "market"),
     "stock": ("price", "tech", "chips", "fundamentals", "earnings", "street", "news", "market"),
     "mod2": ("price", "tech", "news", "market"),
+    # 貼文章：只要判斷「文章講的事股價反映了沒、是不是舊聞、大環境如何」，不抓籌碼與財報細節，送出的資料比較少
+    "article": ("price", "news", "market"),
 }
 
 

@@ -53,7 +53,22 @@ const TASKS: Record<string, { module: string; tab: string; title: string; sub: s
       { label: '消息出來後怎麼處理？', needs: ['news', 'tech'] },
     ],
   },
+  article: {
+    module: 'article',
+    tab: '貼文章',
+    title: '文章解讀',
+    sub: '貼上新聞、研究摘要或社群文章：重點、對這檔的影響、反映了沒、可信度',
+    questions: [
+      { label: '這篇對這檔是利多還是利空？', needs: [] },
+      { label: '文章講的事，股價已經反映了嗎？', needs: ['price'] },
+      { label: '文章裡的說法可信嗎？有哪些疑點？', needs: [] },
+      { label: '我該因為這篇文章調整部位嗎？', needs: [] },
+    ],
+  },
 };
+// 跟後端 ai_client.ARTICLE_MAX_CHARS 同一個數字；太短的文字不值得花一次 AI 費用
+const ARTICLE_MAX = 8000;
+const ARTICLE_MIN = 20;
 
 function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onRunTech }: { q: any; open: boolean; task: string; setTask: (t: string) => void; onClose: () => void; m1Data: any; m2Data: any; digest: any; onRunTech: () => void }) {
   const T = TASKS[task] || TASKS.stock;
@@ -61,6 +76,8 @@ function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onR
   const { holdings } = usePortfolio();
   const [ctx, setCtx] = useState<any>(null);
   const [off, setOff] = useState<Record<string, boolean>>({});
+  // 換股票時保留文章：同一篇文章可以拿去看對另一檔的影響；答案依股票分開記
+  const [article, setArticle] = useState('');
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -166,7 +183,11 @@ function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onR
               reaction_pct: n.reaction?.pct ?? null,
             })),
           }
-        : base;
+        : task === 'article'
+          ? article.trim().length >= ARTICLE_MIN
+            ? { ...base, 文章: article.trim() }
+            : null
+          : base;
   const key = data ? explainKey(T.module, data, true) : '';
 
   // 掛到 body：內容區有換頁動畫與圖層，放在裡面會被頂欄蓋住、遮罩也蓋不滿
@@ -208,6 +229,35 @@ function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onR
             </button>
           ))}
         </div>
+
+        {task === 'article' && (
+          <div>
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <label htmlFor="ai-article" className="text-[12.5px] font-semibold text-slate-200">
+                貼上文章
+              </label>
+              <span className="text-[11px] text-slate-500 mono">
+                {article.length}/{ARTICLE_MAX}
+                {article && (
+                  <button type="button" onClick={() => setArticle('')} className="ml-2 text-slate-400 hover:text-white cursor-pointer">
+                    清除
+                  </button>
+                )}
+              </span>
+            </div>
+            <textarea
+              id="ai-article"
+              value={article}
+              maxLength={ARTICLE_MAX}
+              onChange={(e) => setArticle(e.target.value)}
+              rows={7}
+              placeholder={`把新聞、研究摘要或社群文章貼在這裡（建議連標題、來源與日期一起貼）。AI 會判斷它對 ${q.name || baseCode(symbol)} 的影響。`}
+              className="w-full resize-y rounded-[10px] border border-white/10 bg-white/5 px-2.5 py-2 text-[13px] leading-relaxed text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+            />
+            {article.trim().length > 0 && article.trim().length < ARTICLE_MIN && <div className="text-[11.5px] text-amber-300 mt-1">內容太短，至少貼 {ARTICLE_MIN} 個字。</div>}
+            <div className="text-[11.5px] text-slate-500 mt-1">文章只在你按下送出時傳給 AI，不會存起來；文章裡的數字 AI 會標「文章稱」，並盡量和系統資料對照。</div>
+          </div>
+        )}
 
         <div>
           <div className="text-[12.5px] font-semibold text-slate-200 mb-1">傳給 AI 的資料面向（不含金鑰與其他私人資料）</div>

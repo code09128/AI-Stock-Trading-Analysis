@@ -15,6 +15,7 @@ const SCOPE_LABELS = {
   mod4: '組合風控（AI 解讀）',
   mod5: '交易檢討（AI 解讀）',
   stock: '個股／ETF 資訊（AI 解讀）',
+  article: '貼文章給 AI 分析（個股 AI 抽屜）',
 };
 const EMPTY = {
   profiles: [],
@@ -142,6 +143,7 @@ const MODULE_NAMES = {
   mod4: '組合風控',
   mod5: '交易檢討',
   stock: '基本資料',
+  article: '文章解讀',
 };
 const aiTasks = {}; // key -> { busy, status, out, question, doneAt }
 const mounted = {}; // key -> 目前顯示中的元件數
@@ -236,13 +238,13 @@ const useAiTask = (key) => {
 const pageSymbol = (module, d) =>
   module === 'mod1'
     ? d?.snapshot?.symbol
-    : module === 'stock' || module === 'mod2'
+    : module === 'stock' || module === 'mod2' || module === 'article'
       ? d?.symbol
       : null;
 const pagePrice = (module, d) =>
   module === 'mod1'
     ? d?.snapshot?.latest_close
-    : module === 'stock'
+    : module === 'stock' || module === 'article'
       ? d?.price
       : module === 'mod2'
         ? d?.volatility_bounds?.current_price
