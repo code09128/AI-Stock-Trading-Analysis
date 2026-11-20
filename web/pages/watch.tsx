@@ -7,6 +7,7 @@ import { Row, StarToggle } from './watch_parts';
 import { SearchPalette } from './search_palette';
 import { ExploreBar, ExploreRows, useRanking, useThemes } from './explore_list';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
+import { GreetingBar } from './watch_kpis';
 import { CatChip, DividendCalendar, StockInfoPanel } from './stock_info_panel';
 import { OrderPanel, orderLabel } from './order_panel';
 import { HoldingsPanel } from './holdings_panel';
@@ -1173,7 +1174,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                         e.stopPropagation();
                         removeSymbol(s);
                       }}
-                      className="ta-icon w-8 h-8 rounded-lg inline-flex items-center justify-center text-[14px] text-slate-400 hover:text-rose-300 cursor-pointer"
+                      className="ta-icon ta-reveal w-8 h-8 rounded-lg inline-flex items-center justify-center text-[14px] text-slate-400 hover:text-rose-300 cursor-pointer"
                     >
                       ✕
                     </button>
@@ -1350,6 +1351,15 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
 
         {/* ===== 右：報價卡（內含分頁）＋ 內容 ===== */}
         <section className="min-w-0 space-y-3.5">
+          <GreetingBar
+            watch={watch}
+            quotes={quotes}
+            holdings={holdings}
+            fx={fx}
+            alerts={alerts}
+            onOpenHold={() => setListTab('hold')}
+            onOpenAlerts={() => setAlertsOpen(true)}
+          />
           <div className="ta-card bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3.5" data-tour="watch-quote">
             {q ? (
               // 股價固定在右上角、左邊文字單行：換標的時（來源說明長短不同）數字位置不會跳

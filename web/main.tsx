@@ -24,6 +24,7 @@ import './ai_store';
 import './portfolio_store';
 import './live_widgets';
 import './pages/watch_parts';
+import './pages/watch_kpis';
 import './pages/search_palette';
 import './pages/explore_list';
 import './pages/overview_alerts';

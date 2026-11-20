@@ -77,7 +77,11 @@ function HoldingsPanel({
     const ok = holdRows.filter((r) => r.valueTwd != null);
     const v = ok.reduce((a, r) => a + r.valueTwd, 0);
     const c = ok.reduce((a, r) => a + r.costTwd, 0);
+    // 今日損益：(現價−昨收)×股數；休市時是最近一個交易日；盤前沒有成交價時算 0
+    const t = ok.reduce((a, r) => (r.quote?.price != null && r.quote?.prev_close != null ? a + (r.quote.price - r.quote.prev_close) * r.shares * (r.valueTwd / r.value || 0) : a), 0);
     return {
+      today: t,
+      todayPct: v - t ? (t / (v - t)) * 100 : 0,
       value: v,
       cost: c,
       pnl: v - c,
@@ -255,6 +259,41 @@ function HoldingsPanel({
 
   return (
     <div className="space-y-2">
+      {holdRows.length > 0 && (
+        // 持股摘要卡：最常看的三個數字放最上面；成本、現金、含息報酬等對帳細節在圓餅下方
+        <div className="grid grid-cols-3 gap-2 mono mb-1" data-tour="hold-summary">
+          <div className="rounded-xl px-3 py-2.5 bg-gradient-to-br from-[#4f7cff] to-[#6d4fd8] min-w-0">
+            <div className="text-[10.5px] text-white/80 font-sans">總市值（台幣）</div>
+            <div className="text-white font-bold text-sm truncate">{fmt(holdTotals.value, 0)}</div>
+            {holdTotals.missing > 0 && <div className="text-[10px] text-white/75 font-sans">{holdTotals.missing} 筆缺報價或匯率</div>}
+          </div>
+          <div className="rounded-xl px-3 py-2.5 bg-slate-950/70 border border-slate-700 min-w-0">
+            <div className="text-[10.5px] text-slate-400 font-sans">
+              今日損益
+              <Tip text="(現價−昨收)×股數，換算台幣。休市時是最近一個交易日的漲跌；盤前沒有成交價時算 0。" />
+            </div>
+            <div className={`font-bold text-sm truncate ${colorOf(holdTotals.today)}`}>
+              {holdTotals.today > 0 ? '+' : ''}
+              {fmt(holdTotals.today, 0)}
+            </div>
+            <div className={`text-[10.5px] ${colorOf(holdTotals.today)}`}>
+              {holdTotals.todayPct > 0 ? '+' : ''}
+              {fmt(holdTotals.todayPct)}%
+            </div>
+          </div>
+          <div className="rounded-xl px-3 py-2.5 bg-slate-950/70 border border-slate-700 min-w-0">
+            <div className="text-[10.5px] text-slate-400 font-sans">未實現損益</div>
+            <div className={`font-bold text-sm truncate ${colorOf(holdTotals.pnl)}`}>
+              {holdTotals.pnl > 0 ? '+' : ''}
+              {fmt(holdTotals.pnl, 0)}
+            </div>
+            <div className={`text-[10.5px] ${colorOf(holdTotals.pnl)}`}>
+              {holdTotals.pct > 0 ? '+' : ''}
+              {fmt(holdTotals.pct)}%
+            </div>
+          </div>
+        </div>
+      )}
       {allocSlices.length > 0 && (
         <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3" data-tour="hold-alloc">
           <div className="text-[11px] text-slate-400 mb-2">
@@ -267,22 +306,11 @@ function HoldingsPanel({
       {holdRows.length > 0 && (
         <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs mono space-y-0.5">
           <div className="flex justify-between">
-            <span className="text-slate-400">總市值（台幣）</span>
-            <span className="text-white font-bold">{fmt(holdTotals.value, 0)}</span>
-          </div>
-          <div className="flex justify-between">
             <span className="text-slate-400">
               總成本
               <Tip text="各檔「成本價 × 股數」加總。銀行／券商的「投資金額」常是扣款金額加總、不含手續費，若你的成本價含手續費會略高。要完全一致可把成本價改成「投資金額 ÷ 股數」。" />
             </span>
             <span className="text-slate-200">{fmt(holdTotals.cost, 0)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">未實現損益</span>
-            <span className={`font-bold ${colorOf(holdTotals.pnl)}`}>
-              {holdTotals.pnl > 0 ? '+' : ''}
-              {fmt(holdTotals.pnl, 0)}（{fmt(holdTotals.pct)}%）
-            </span>
           </div>
           {[
             [

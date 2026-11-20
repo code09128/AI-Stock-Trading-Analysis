@@ -10,14 +10,43 @@ export const STOCK_TABS = [
 
 export const STOCK_TAB_IDS: string[] = ['watch', 'mod1', 'mod2'];
 
+const { useLayoutEffect, useRef } = React;
+
 export function StockTabs({ active, onGo }: { active: string; onGo: (id: string) => void }) {
+  // 滑動指示：量出選中分頁的位置與寬度，讓同一塊底色（.ta-thumb）滑過去；視窗或字型改變寬度時重量
+  const box = useRef<HTMLDivElement>(null);
+  const thumb = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    const t = thumb.current;
+    if (!el || !t) return undefined;
+    const place = () => {
+      const b = el.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!b) {
+        t.style.opacity = '0';
+        return;
+      }
+      t.style.opacity = '1';
+      t.style.width = `${b.offsetWidth}px`;
+      t.style.height = `${b.offsetHeight}px`;
+      t.style.top = `${b.offsetTop}px`;
+      t.style.bottom = 'auto';
+      t.style.transform = `translateX(${b.offsetLeft}px)`;
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active]);
   return (
     <div
+      ref={box}
       data-tour="stock-tabs"
       role="tablist"
       aria-label="個股功能"
-      className="flex flex-wrap gap-1 rounded-xl bg-black/20 p-[3px]"
+      className="relative flex flex-wrap gap-1 rounded-xl bg-black/20 p-[3px]"
     >
+      <span ref={thumb} className="ta-thumb" aria-hidden="true" />
       {STOCK_TABS.map((t) => (
         <button
           type="button"
@@ -26,10 +55,8 @@ export function StockTabs({ active, onGo }: { active: string; onGo: (id: string)
           aria-selected={active === t.id}
           title={t.hint}
           onClick={() => onGo(t.id)}
-          className={`flex-1 min-w-[72px] px-2.5 py-[7px] text-[13px] rounded-[9px] cursor-pointer transition-colors ${
-            active === t.id
-              ? 'bg-gradient-to-br from-[#4f7cff]/35 to-[#8b5cf6]/25 text-white font-semibold'
-              : 'text-slate-400 hover:text-white'
+          className={`ta-flat relative flex-1 min-w-[72px] px-2.5 py-[7px] text-[13px] rounded-[9px] cursor-pointer transition-colors ${
+            active === t.id ? 'text-white font-semibold' : 'text-slate-400 hover:text-white'
           }`}
         >
           {t.label}

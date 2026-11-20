@@ -211,6 +211,11 @@
     html[data-density="compact"] main .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.7rem; }
     html[data-density="compact"] main .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
     html[data-density="compact"] main .gap-4 { gap: 0.65rem; }
+    html[data-density="compact"] .ta-nav.py-2 { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+    html[data-density="compact"] [data-tour="index-bar"] { margin-top: 0.3rem; padding-top: 0.3rem; }
+    html[data-density="compact"] [data-sym].py-3 { padding-top: 0.45rem; padding-bottom: 0.45rem; }
+    html[data-density="compact"] main .gap-3\.5 { gap: 0.6rem; }
+    html[data-density="compact"] main .space-y-3\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.6rem; }
     /* 減少動態效果：作業系統設定，或設定頁選「減少」 */
     @media (prefers-reduced-motion: reduce) {
       html:not([data-motion="reduce"]) .ta-page, html:not([data-motion="reduce"]) .ta-tick-up,
@@ -247,6 +252,14 @@
 
     /* ===== 個股工作區配色（與設計稿一致）：深藍黑底、藍紫漸層強調色 ===== */
     :root { --up: #ff4d6d; --down: #22d3a0; --up-bg: color-mix(in srgb, var(--up) 16%, transparent); --down-bg: color-mix(in srgb, var(--down) 16%, transparent); }
+    /* 浮雕陰影：凸起（可以按）、凹陷（已選／按下）、凹槽（一組選項的底座）。主題切換時只換這幾個變數 */
+    :root {
+      --raise: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 3px 3px 8px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(140, 130, 255, 0.05);
+      --press: inset 3px 3px 7px rgba(0, 0, 0, 0.55), inset -2px -2px 6px rgba(160, 150, 255, 0.08);
+      --track: inset 2px 2px 6px rgba(0, 0, 0, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.04);
+      --ring: inset 0 0 0 1px rgba(79, 124, 255, 0.5);
+      --on-bg: rgba(79, 124, 255, 0.14);
+    }
     html[data-color="us"] { --up: #22d3a0; --down: #ff4d6d; --up-bg: color-mix(in srgb, var(--up) 16%, transparent); --down-bg: color-mix(in srgb, var(--down) 16%, transparent); }
     body {
       background:
@@ -258,7 +271,12 @@
     #root aside, #root header.shrink-0 { background-color: rgba(7, 10, 19, 0.72); border-color: rgba(255, 255, 255, 0.08); }
     /* 側欄項目：目前頁面用藍紫漸層底，取代原本的左側細線 */
     .ta-nav { border: 0; background: transparent; }
-    .ta-nav-active { background: linear-gradient(135deg, rgba(79, 124, 255, 0.28), rgba(139, 92, 246, 0.2)) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+    .ta-nav-active { background: var(--on-bg) !important; box-shadow: var(--press), var(--ring); }
+    .ta-nav:not(.ta-nav-active):active { box-shadow: var(--press); }
+    /* 側欄、頂部列微微浮起，和內容區分層 */
+    #root aside { box-shadow: 4px 0 16px rgba(0, 0, 0, 0.35), inset -1px 0 0 rgba(255, 255, 255, 0.03); }
+    #root header.shrink-0 { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+    html[data-density="compact"] #root header.shrink-0 { padding-top: 0.3rem; padding-bottom: 0.3rem; }
     button.bg-sky-600, button.bg-blue-600 { background-image: linear-gradient(135deg, #4f7cff, #8b5cf6); box-shadow: 0 6px 20px -8px rgba(79, 124, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
 
     /* V4 卡片：半透明底、白色細框。刻意不用 backdrop-filter：它會讓卡片內 position: fixed 的東西（K 線放大、提示框）
@@ -279,17 +297,17 @@
     .ta-cardbody .ta-card, .ta-cardbody .ta-card:hover { background: none; border: 0; box-shadow: none; padding: 0; }
 
     /* 實體按鍵手感：凸起＝可以按（ta-key）、凹陷＝已選或按下（ta-key-on、:active）、凹槽＝一組選項的底座（ta-track）。
-       只用陰影，不用 backdrop-filter（理由同上面的 .ta-card）。目前只套在看盤頁左側清單，其他頁面之後逐步換 */
-    .ta-track { background: rgba(0, 0, 0, 0.22); box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.04); }
+       只用陰影，不用 backdrop-filter（理由同上面的 .ta-card）。其他頁面的按鈕由下面「全站按鈕浮雕」依底色自動套用 */
+    .ta-track { background: rgba(0, 0, 0, 0.22); box-shadow: var(--track); }
     .ta-key {
       border: 0; background-color: rgba(255, 255, 255, 0.045);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 3px 3px 8px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(140, 130, 255, 0.05);
+      box-shadow: var(--raise);
       transition: box-shadow .15s ease, transform .15s ease, color .15s ease, background-color .15s ease;
     }
     .ta-key:hover { background-color: rgba(255, 255, 255, 0.07); }
     .ta-key:active, .ta-key-on, .ta-row-on {
-      background-color: rgba(79, 124, 255, 0.14);
-      box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.55), inset -2px -2px 6px rgba(160, 150, 255, 0.08), inset 0 0 0 1px rgba(79, 124, 255, 0.5);
+      background-color: var(--on-bg);
+      box-shadow: var(--press), var(--ring);
     }
     .ta-key:active { transform: scale(0.97); }
     .ta-key-on:hover { background-color: rgba(79, 124, 255, 0.2); }
@@ -297,10 +315,49 @@
     .ta-icon { border: 0; background: transparent; transition: background-color .15s ease, color .15s ease, box-shadow .15s ease; }
     .ta-icon:hover { background-color: rgba(255, 255, 255, 0.07); }
     .ta-icon:active { background-color: rgba(255, 255, 255, 0.05); box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.45); }
+    /* 全站按鈕浮雕：沿用各頁既有的 Tailwind 底色來判斷（不逐一改 281 個按鈕）。
+       凸起＝一般按鈕（bg-slate-800／950、bg-white/5、10、bg-slate-700、bg-rose-950、只有 border-slate-700 外框）與主要動作（hover:bg-sky-500／600、漸層）；
+       凹陷＝目前選中（bg-sky-500/20、bg-sky-600/20、30、bg-[#4f7cff]/20、25、bg-sky-600，且沒有 hover:bg-*；或 aria-pressed／aria-selected）。
+       有 hover:bg-* 的同色按鈕是「動作」（例如說明頁的「導覽」），維持凸起。
+       限制：只認這些寫法，新按鈕用別的底色不會浮起（直接加 ta-key／ta-key-on）；不想浮起的加 ta-flat；沒有 px-* 內距的不套 */
+    button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):is(
+      [class~="bg-slate-800"], [class~="bg-slate-950"], [class~="bg-white/5"], [class~="bg-white/10"], [class~="bg-slate-700"],
+      [class~="bg-rose-950/50"], [class~="bg-rose-950/60"],
+      [class~="bg-gradient-to-r"], [class~="bg-gradient-to-br"], [class~="hover:bg-sky-500"], [class~="hover:bg-sky-600"], [class~="border-slate-700"],
+      [class~="bg-sky-600/20"], [class~="bg-sky-600/30"], [class~="bg-sky-500/20"]) {
+      border-color: transparent; box-shadow: var(--raise);
+      transition: box-shadow .15s ease, transform .15s ease, color .15s ease, background-color .15s ease;
+    }
+    button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):is(
+      [class~="bg-sky-500/20"], [class~="bg-sky-600/20"], [class~="bg-sky-600/30"], [class~="bg-[#4f7cff]/20"], [class~="bg-[#4f7cff]/25"],
+      [class~="bg-sky-600"]):not([class*="hover:bg-"]),
+    button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):is([aria-pressed="true"], [role="tab"][aria-selected="true"]) {
+      border-color: transparent; box-shadow: var(--press), var(--ring);
+    }
+    button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):active { box-shadow: var(--press); transform: scale(0.97); }
+    /* 分頁列（role=tablist）的底座：凹槽 */
+    [role="tablist"][class~="bg-black/20"] { box-shadow: var(--track); }
+    html[data-motion="reduce"] button:active { transform: none !important; }
+    @media (prefers-reduced-motion: reduce) { button:active { transform: none !important; } }
+    /* 列上的動作（✕）：平常隱藏，滑過、鍵盤選到或是目前選中的那列才出現；位置保留，出現時版面不會跳。觸控螢幕沒有滑過，一直顯示 */
+    .ta-reveal { opacity: 0; transition: opacity .15s ease; }
+    .group:hover .ta-reveal, .group:focus-within .ta-reveal, .group[aria-current] .ta-reveal, .ta-reveal:focus-visible { opacity: 1; }
+    @media (hover: none) { .ta-reveal { opacity: 1; } }
+    /* 分頁列的滑動指示：選中的底色滑到新分頁（StockTabs 量位置後設 transform／width） */
+    .ta-thumb {
+      position: absolute; top: 3px; bottom: 3px; left: 0; border-radius: 9px; pointer-events: none;
+      background: var(--on-bg); box-shadow: var(--press), var(--ring);
+      transition: transform .32s cubic-bezier(.3, 1.25, .5, 1), width .32s cubic-bezier(.3, 1.25, .5, 1);
+    }
+    html[data-motion="reduce"] .ta-thumb { transition: none; }
+    @media (prefers-reduced-motion: reduce) { .ta-thumb { transition: none; } }
     select.ta-key option { background: #111625; color: #e8ebf4; }
     html[data-motion="reduce"] .ta-key, html[data-motion="reduce"] .ta-key:active { transition: none; transform: none; }
     @media (prefers-reduced-motion: reduce) { .ta-key, .ta-key:active { transition: none; transform: none; } }
-    @media (forced-colors: active) { .ta-key-on, .ta-row-on { outline: 2px solid CanvasText; } }
+    @media (prefers-reduced-transparency: reduce) {
+      .ta-card, #root aside, #root header.shrink-0 { background-color: #111625 !important; background-image: none !important; }
+    }
+    @media (forced-colors: active) { .ta-key-on, .ta-row-on, .ta-nav-active, button[aria-pressed="true"], [role="tab"][aria-selected="true"] { outline: 2px solid CanvasText; } }
 
     /* 卡片裡的長網址、長代號要能換行，不要把卡片撐破 */
     .ta-cardbody { min-width: 0; overflow-wrap: anywhere; }

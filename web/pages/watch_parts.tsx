@@ -157,7 +157,7 @@ const Field = ({ label, tip, children }: { label: any; tip?: any; children?: any
 );
 
 const Seg = ({ value, onChange, options }) => (
-  <div className="flex rounded-lg overflow-hidden border border-slate-700">
+  <div className="ta-track flex gap-1 p-1 rounded-lg">
     {options.map(([v, label, on]) => {
       const active = value === v;
       const isUpDown = on === 'up' || on === 'down';
@@ -165,13 +165,14 @@ const Seg = ({ value, onChange, options }) => (
         <button
           type="button"
           key={v}
+          aria-pressed={active}
           onClick={() => onChange(v)}
           style={
             active && isUpDown
               ? { background: on === 'up' ? 'var(--up)' : 'var(--down)' }
               : undefined
           }
-          className={`flex-1 py-1.5 text-xs font-semibold cursor-pointer ${
+          className={`flex-1 px-1 py-1 rounded-md text-xs font-semibold cursor-pointer ${
             active
               ? `${isUpDown ? '' : on || 'bg-sky-600'} text-white`
               : 'bg-slate-950 text-slate-400'
