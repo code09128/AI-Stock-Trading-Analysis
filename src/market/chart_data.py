@@ -6,6 +6,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import time
 import urllib.parse
 
 from src.market import quote_provider as qp
@@ -88,6 +89,10 @@ def _extract_intraday_points(res: Dict[str, Any]):
     return pts, meta, gmt
 
 
+def _now() -> float:
+    return time.time()
+
+
 def intraday(symbol: str) -> Optional[Dict[str, Any]]:
     """當日 5 分鐘走勢 + 昨收 + 日內/52 週高低 + 交易時段；若當日無資料則自動回退取最後成交日。"""
     key = f"intraday:{symbol}"
@@ -114,7 +119,11 @@ def intraday(symbol: str) -> Optional[Dict[str, Any]]:
         session_start = reg.get("start")
         session_end = reg.get("end")
 
-        if len(pts) < 2:
+        # 剛開盤今天只有 1 根 5 分鐘線：仍用今天的點（不要退回上一交易日），前端會把每 5 秒的成交價接在線尾，
+        # 開盤一有成交走勢就出現。要確認這根線落在「現在進行中」的交易時段，避免把舊資料當今天。
+        opening_now = bool(pts and session_start and session_end and session_start <= _now() <= session_end
+                           and pts[-1]["ts"] >= session_start)
+        if len(pts) < 2 and not opening_now:
             try:
                 res_5d = _chart(ysym, "5m", "5d")
                 res = res or res_5d

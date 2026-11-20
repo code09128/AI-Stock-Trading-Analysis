@@ -194,6 +194,34 @@ class ChartDataTests(unittest.TestCase):
         self.assertEqual(d["prev_close"], 51.0)
 
 
+    def test_just_opened_keeps_today_single_bar(self):
+        """剛開盤只有 1 根 5 分鐘線：用今天的點、不退回上一交易日（前端會接上即時成交價）；不在交易時段內才退回。"""
+        from src.market import chart_data
+        mon_open, mon_close = 1793021400, 1793044800   # 2026-10-26 09:30／16:00 美東
+        fake = {
+            "meta": {"chartPreviousClose": 212.21, "gmtoffset": -14400,
+                     "currentTradingPeriod": {"regular": {"start": mon_open, "end": mon_close}}},
+            "timestamp": [mon_open],
+            "indicators": {"quote": [{"close": [213.0], "volume": [100]}]},
+        }
+        calls = []
+
+        def mock_chart(ysym, interval, rng):
+            calls.append(rng)
+            return fake
+        chart_data._CACHE.clear()
+        with patch.object(chart_data, "_chart", side_effect=mock_chart),                 patch.object(chart_data, "_now", return_value=mon_open + 60):
+            d = chart_data.intraday("NVDA")
+        self.assertFalse(d["is_fallback"])
+        self.assertEqual(len(d["points"]), 1)
+        self.assertEqual((d["session_start"], d["session_end"]), (mon_open, mon_close))
+        self.assertEqual(calls, ["1d"])  # 不用再抓 5 天資料
+        chart_data._CACHE.clear()
+        calls.clear()
+        with patch.object(chart_data, "_chart", side_effect=mock_chart),                 patch.object(chart_data, "_now", return_value=mon_close + 3600):
+            chart_data.intraday("NVDA")
+        self.assertIn("5d", calls)  # 收盤後只有 1 根：照舊去找最近一個有完整走勢的交易日
+
     def test_premarket_points_from_previous_session_align_with_session(self):
         """美股開盤前：1 天資料是上週五的點、交易時段卻是今天（週一）→ 時段要移回週五，標成上一個交易日。"""
         from src.market import chart_data

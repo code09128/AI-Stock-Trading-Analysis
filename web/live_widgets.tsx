@@ -155,17 +155,18 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
     }
   }
   const noTradeNotice = isClosedOrNoTrade || staleNote ? `最後成交：${lastText}${staleNote}` : null;
-  // 剛開盤（含台股 8:30 起的盤前）今天的 5 分鐘線還不到 2 根，後端先給上一交易日；講清楚是「資料累積中」，不是程式沒更新。
+  // 開盤後今天的第一根 5 分鐘線一出現，後端就改給今天的點，前端再把每 5 秒的成交價接在線尾（見上方 isLive）。
+  // 還沒有任何一根（開盤第一分鐘、台股盤前 8:30 起、台股分 K 延遲約 20 分鐘）時後端先給上一交易日，講清楚是「資料累積中」。
   // 分時每 30 秒重抓，今天的線一出來就會自動換掉。
   // 限制：交易時段沒排除國定假日，所以只在時段開始後 45 分鐘內這樣說；之後還是上一交易日就照舊顯示「最後成交」（多半是休市）
   const sinceOpen = data?.is_fallback && data?.symbol ? minutesIntoSession(String(data.symbol)) : null;
   const warmingUp = sinceOpen !== null && sinceOpen <= 45;
-  const notice = warmingUp ? `今天的分時資料還在累積（開盤後約 5～10 分鐘出現），先顯示上一交易日（${lastText}）` : noTradeNotice;
+  const notice = warmingUp ? `今天的分時資料還在累積（${data?.delay_note ? '台股分時資料約延遲 20 分鐘，開盤後約 20 分鐘出現' : '開盤後約 1～2 分鐘出現'}），先顯示上一交易日（${lastText}）` : noTradeNotice;
 
   if (pts.length < 2) {
     const msg = data?.error
       ? `分時資料取得失敗：${data.error}`
-      : notice || '目前沒有分時資料（尚未開盤）';
+      : notice || (inSession && basePts.length ? '剛開盤，等待下一筆成交價…' : '目前沒有分時資料（尚未開盤）');
     return (
       <div className="h-40 flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-700 rounded-xl px-4 text-center">
         {msg}
