@@ -84,6 +84,17 @@ const fmt = (n, d = 2) =>
     ? '--'
     : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+// 報價卡、清單顯示用的價格：有成交價照常；台股盤前沒有成交時，8:30～9:00 顯示試撮價（標「試撮」），
+// 更早只有昨收（標「昨收」，漲跌留空）。只給畫面用：提醒、持股損益、技術分析仍然只看 q.price（真正的成交價）。
+const TRIAL_TIP = '盤前 8:30～9:00 與收盤前 13:25～13:30 的模擬撮合價（試撮），可以一直掛單撤單，不是成交價；開盤後會換成真正的成交價。';
+const shownQuote = (q) => {
+  if (!q || q.error || q.price != null) return { ...q, tag: '' };
+  if (q.trial_price != null)
+    return { ...q, price: q.trial_price, change: q.trial_change, change_pct: q.trial_change_pct, tag: '試撮' };
+  if (q.prev_close != null) return { ...q, price: q.prev_close, change: null, change_pct: null, tag: '昨收' };
+  return { ...q, tag: '' };
+};
+
 // 帶正負號的數字（+1.23、-0.50）；沒有值顯示 --。unit 例如 '%'
 const signed = (v, d = 2, unit = '') => {
   const s = fmt(v, d);
@@ -270,4 +281,4 @@ const SOURCE_LABELS = {
 };
 const sourceLabel = (code) => SOURCE_LABELS[code] || code || '--';
 
-export { marketSessionOpen, minutesIntoSession, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, intlFee, intlFeeCfg, setIntlFeeCfg, localDate, Tip, Stat };
+export { shownQuote, TRIAL_TIP, marketSessionOpen, minutesIntoSession, sourceLabel, DEFAULT_WATCH, LS_WATCH, LS_CART, LS_TOUR, readLS, writeLS, isTW, MARKET_INFO, marketOf, tzOf, marketName, currencyOf, twSellTaxRate, normSym, baseCode, uniqueSymbols, fmt, signed, colorOf, twTick, isOnTick, twFee, feeDiscount, setFeeDiscount, intlFee, intlFeeCfg, setIntlFeeCfg, localDate, Tip, Stat };

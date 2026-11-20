@@ -192,7 +192,7 @@ cd AI-Stock-Trading-Analysis
 
 全部是公開資料介面（JSON／RSS），不是爬網頁畫面；抓不到時直接顯示錯誤，不會用假資料補位。
 
-- **台股報價**：證交所 MIS（約延遲 5 秒）；公司與基金基本資料、本益比、ETF 發行單位數：TWSE OpenAPI
+- **台股報價**：證交所 MIS（約延遲 5 秒；盤前 8:30～9:00 與收盤前 13:25～13:30 的試撮價只在報價卡與清單顯示並標「試撮」，不當成交價，不會觸發提醒或算進持股損益；8:30 前還沒有試撮時顯示昨收）；公司與基金基本資料、本益比、ETF 發行單位數：TWSE OpenAPI
 - **美股與海外報價、日 K、指數、匯率**：Yahoo Finance
 - **台股備援日 K、籌碼、配息、月營收、財報**：FinMind
 - **新聞**：Google News RSS、鉅亨網、Yahoo 奇摩股市 RSS、MoneyDJ／玩股網／財報狗／TradingView／ETFdb（經 Google News 限定站台）、證交所重大訊息、SEC EDGAR 8-K

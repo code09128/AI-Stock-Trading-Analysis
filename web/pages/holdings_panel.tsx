@@ -50,7 +50,8 @@ function HoldingsPanel({
     () =>
       holdings.map((h, idx) => {
         const hq = quotes[baseCode(h.symbol)];
-        const price = holdBasis === 'prev' ? (hq?.prev_close ?? hq?.price) : hq?.price;
+        // 即時價模式：盤前還沒有成交價（試撮價只是模擬，不算）時先用昨收，市值才不會整列空白
+        const price = holdBasis === 'prev' ? (hq?.prev_close ?? hq?.price) : (hq?.price ?? hq?.prev_close);
         const currency = hq?.currency || currencyOf(h.symbol);
         // 每 1 單位計價幣別＝幾台幣；匯率還沒拿到時為 null（不計入台幣合計，避免算出 0 元）
         const mult = currency === 'TWD' ? 1 : (fx?.[currency] ?? null);

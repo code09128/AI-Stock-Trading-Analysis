@@ -4,6 +4,10 @@
 - 台股 (含 ETF)：TWSE MIS 即時行情 https://mis.twse.com.tw/stock/api/getStockInfo.jsp
   - 上市 tse_、上櫃 otc_ 兩種前綴都會查詢；提供成交價、昨收、開高低、累計量、漲跌停、委買委賣五檔
   - 資料約延遲 5 秒（官方 userDelay）
+  - 盤前 8:30～9:00、收盤前 13:25～13:30 是「試撮」（模擬撮合，ts="1"）：pz 是試撮價、ps 是試撮量，都不是成交。
+    試撮時 price 只放真正的成交價（z，盤前通常沒有），試撮價另外放 trial_price／trial_change／trial_change_pct／trial_volume，
+    所以提醒、技術分析、持股損益、排行這些只看 price 的地方不會被試撮價誤觸；畫面上顯示時另外標「試撮」。（2026-11-20 08:31 實測）
+  - 每天約 7:50 證交所清掉前一天的資料，之後幾分鐘某些代號會整筆空白：盤前這段時間不當成「查無此代號」，只提示還沒有資料。
 - 美股：Yahoo Finance v8 Chart API（meta 欄位）。2026-10-21 美股盤中實測報價時間只落後 0–5 秒；無五檔
 任何失敗都會回傳 is_live=False 與 error 訊息，不會偷偷用假資料補上 (Fail loud)。
 每一次對外請求都會寫入 FETCH_LOG（網址、狀態、耗時、位元組），供前端「資料來源透明面板」顯示。
@@ -18,6 +22,7 @@ import urllib.error
 import urllib.parse
 
 from src.market.data_adapter import DualMarketDataAdapter
+from src.market.tz import zone
 from src.market.net import FETCH_LOG, LOG_LOCK, http_json
 from src.market.util import to_num
 
@@ -43,6 +48,12 @@ def _split_levels(prices: str, vols: str) -> List[Dict[str, float]]:
         if pv:
             out.append({"price": pv, "vol": (_num(vs[i]) or 0) if i < len(vs) else 0})
     return out
+
+
+def tw_pre_open(now: Any = None) -> bool:
+    """台灣時間週一～週五 9:00 以前（證交所還沒開盤）。限制：不含國定假日，假日時只是錯誤訊息比較客氣。"""
+    t = now or datetime.now(zone("Asia/Taipei"))
+    return t.weekday() < 5 and t.hour < 9
 
 
 def _base(norm: Dict[str, str], names: Dict[str, str]) -> Dict[str, Any]:
@@ -98,24 +109,36 @@ def fetch_tw_quotes(
             continue
         r = rows.get(n["raw_code"].upper())
         if not r:
-            q["error"] = "TWSE MIS 查無此代號（上市/上櫃皆無資料）"
+            if tw_pre_open():
+                q["notice"] = "盤前證交所尚未提供今日資料（約 8:00 後才有，8:30 開始試撮）"
+            else:
+                q["error"] = "TWSE MIS 查無此代號（上市/上櫃皆無資料）"
             result[n["symbol"]] = q
             continue
         if q["name"] == n["raw_code"] and r.get("n"):
             q["name"] = r["n"]  # 名單裡沒有的代號，用證交所回傳的簡稱
         prev = _num(r.get("y"))
-        price = _num(r.get("z")) or _num(r.get("pz"))
+        trial = str(r.get("ts") or "") == "1"
+        # 試撮中的 pz 是試撮價，不能拿來當成交價；平常 z 偶爾是「-」時 pz 才是最近一筆成交
+        price = _num(r.get("z")) if trial else (_num(r.get("z")) or _num(r.get("pz")))
+        trial_price = _num(r.get("pz")) if trial else None
         asks = _split_levels(r.get("a"), r.get("f"))
         bids = _split_levels(r.get("b"), r.get("g"))
-        price_is_mid = price is None and bool(bids and asks)
+        price_is_mid = price is None and not trial and bool(bids and asks)
         if price_is_mid:
             price = (bids[0]["price"] + asks[0]["price"]) / 2  # 尚未成交時取中間價（畫面會標示，不當成成交價）
         change = round(price - prev, 4) if price and prev else None
         bid_vol, ask_vol = sum(b["vol"] for b in bids), sum(a["vol"] for a in asks)
+        trial_change = round(trial_price - prev, 4) if trial_price and prev else None
         q.update(
             is_live=price is not None,
             price=price,
             price_is_mid=price_is_mid,
+            price_is_trial=trial,
+            trial_price=trial_price,
+            trial_change=trial_change,
+            trial_change_pct=round(trial_change / prev * 100, 2) if trial_change is not None and prev else None,
+            trial_volume=_num(r.get("ps")) if trial else None,
             prev_close=prev,
             change=change,
             change_pct=round(change / prev * 100, 2) if change is not None and prev else None,

@@ -1,7 +1,7 @@
 // 看盤頁：左側清單（自選股/ETF/持股）＋右側報價、分時圖、五檔、模擬下單
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
+import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, shownQuote, TRIAL_TIP, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
 import { Row, StarToggle } from './watch_parts';
 import { SearchPalette } from './search_palette';
@@ -516,6 +516,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   }, [watch, quotes, sortKey, catFilter, categories, mktFilter, holdOnly, holdings, listQuery]); // eslint-disable-line
 
   const q = quotes[baseCode(selected)];
+  // 報價卡顯示用：盤前沒有成交價時改顯示試撮價／昨收並加標記（提醒、下單等仍用 q）
+  const dq = q ? shownQuote(q) : q;
   const tw = isTW(selected);
   const etfFlag = /^00/.test(baseCode(selected));
 
@@ -1361,29 +1363,43 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                       <span className="text-xs text-rose-300 truncate" title={`抓取失敗：${q.error}（為避免誤導，不顯示任何替代數字）`}>
                         抓取失敗：{q.error}（為避免誤導，不顯示任何替代數字）
                       </span>
+                    ) : q.notice && q.price == null && !dq.tag ? (
+                      <span className="text-xs text-amber-200/90 truncate" title={q.notice}>
+                        {q.notice}
+                      </span>
                     ) : (
-                      <span className="text-xs text-slate-400 truncate" title={`真實資料・${q.source}・最後成交 ${q.quote_time || '--'}`}>
-                        真實資料・{String(q.source || '').split('（')[0]}・最後成交 {q.quote_time || '--'}
+                      <span className="text-xs text-slate-400 truncate" title={`真實資料・${q.source}・${dq.tag === '試撮' ? '試撮時間' : '最後成交'} ${q.quote_time || '--'}`}>
+                        真實資料・{String(q.source || '').split('（')[0]}・{dq.tag === '試撮' ? '試撮時間' : '最後成交'} {q.quote_time || '--'}
                       </span>
                     )}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className={`mono text-[28px] sm:text-[38px] leading-tight font-extrabold ${colorOf(q.change)}`}>{fmt(q.price)}</div>
+                  <div className={`mono text-[28px] sm:text-[38px] leading-tight font-extrabold ${colorOf(dq.change)} ${dq.tag ? 'opacity-80' : ''}`}>{fmt(dq.price)}</div>
+                  {dq.tag === '試撮' && (
+                    <div className="text-[11px] text-amber-300" title={TRIAL_TIP}>
+                      試撮價（尚未開盤成交{q.trial_volume != null ? `・試撮量 ${fmt(q.trial_volume, 0)} 張` : ''}）
+                    </div>
+                  )}
+                  {dq.tag === '昨收' && (
+                    <div className="text-[11px] text-slate-400" title="今天還沒有成交，也還沒開始試撮（8:30 開始），先顯示昨天收盤價。">
+                      昨收（今日尚未成交）
+                    </div>
+                  )}
                   {q.price_is_mid && (
                     <div className="text-[11px] text-amber-300" title="證交所這一刻沒有回傳成交價，這裡顯示的是最佳買價與最佳賣價的平均，不是實際成交價；有成交後會自動換成成交價。">
                       買賣中間價（尚未成交）
                     </div>
                   )}
                   <span
-                    className={`mono inline-block mt-1 px-2.5 py-0.5 rounded-full text-[13px] font-semibold whitespace-nowrap ${colorOf(q.change)}`}
+                    className={`mono inline-block mt-1 px-2.5 py-0.5 rounded-full text-[13px] font-semibold whitespace-nowrap ${colorOf(dq.change)}`}
                     style={{
-                      background: `color-mix(in srgb,${q.change > 0 ? 'var(--up)' : q.change < 0 ? 'var(--down)' : '#8a93a8'} 16%,transparent)`,
-                      boxShadow: q.change ? `0 0 18px color-mix(in srgb,${q.change > 0 ? 'var(--up)' : 'var(--down)'} 30%,transparent)` : undefined,
+                      background: `color-mix(in srgb,${dq.change > 0 ? 'var(--up)' : dq.change < 0 ? 'var(--down)' : '#8a93a8'} 16%,transparent)`,
+                      boxShadow: dq.change && !dq.tag ? `0 0 18px color-mix(in srgb,${dq.change > 0 ? 'var(--up)' : 'var(--down)'} 30%,transparent)` : undefined,
                     }}
                   >
-                    {q.change > 0 ? '▲' : q.change < 0 ? '▼' : ''} {fmt(Math.abs(q.change))}（{q.change_pct > 0 ? '+' : ''}
-                    {fmt(q.change_pct)}%）
+                    {dq.change > 0 ? '▲' : dq.change < 0 ? '▼' : ''} {fmt(Math.abs(dq.change))}（{dq.change_pct > 0 ? '+' : ''}
+                    {fmt(dq.change_pct)}%）
                   </span>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 // 看盤頁用的零件：自選股列、表單欄位、分段按鈕
-import { Tip, baseCode, colorOf, fmt } from '../ui';
+import { TRIAL_TIP, Tip, baseCode, colorOf, fmt, shownQuote } from '../ui';
 import { Sparkline } from '../live_widgets';
 
 const { useState, useEffect, useRef } = React;
@@ -27,7 +27,9 @@ function MiniCandle({ quote }: { quote: any }) {
 }
 
 // bell：這檔有提醒時在代號旁顯示 🔔（'fired'＝有已觸發的，多一個驚嘆號）
-function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag, bell }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any; bell?: 'on' | 'fired' }) {
+function Row({ sym, quote: rawQuote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag, bell }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any; bell?: 'on' | 'fired' }) {
+  // 盤前沒有成交價時顯示試撮價或昨收（見 ui.shownQuote，只影響畫面）
+  const quote = rawQuote ? shownQuote(rawQuote) : rawQuote;
   const chg = quote?.change;
   const prevPrice = useRef(quote?.price);
   const [flash, setFlash] = useState(null);
@@ -106,9 +108,9 @@ function Row({ sym, quote, active, onClick, action, actionBelow, rank, nameOverr
                 {fmt(quote.price)}
               </span>
             </div>
-            <div className="text-[11.5px]">
-              {quote.change_pct > 0 ? '+' : ''}
-              {fmt(quote.change_pct)}%
+            <div className="text-[11.5px]" title={quote.tag === '試撮' ? TRIAL_TIP : quote.notice || undefined}>
+              {quote.tag && <span className="mr-1 text-[10px] px-1 rounded border border-amber-400/40 text-amber-200">{quote.tag}</span>}
+              {quote.tag === '昨收' ? '' : quote.notice && quote.price == null ? '盤前' : `${quote.change_pct > 0 ? '+' : ''}${fmt(quote.change_pct)}%`}
             </div>
           </div>
         ) : (
