@@ -269,4 +269,46 @@ function RulesReminder({ compact = false }) {
   );
 }
 
-export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, logHoldingBuys, saveRules, fillOrder, RulesReminder };
+// 下單紀錄頁要列的全部紀錄：存下來的下單紀錄，加上兩種補顯示的列（下單紀錄頁和步驟條的筆數共用，兩邊數字才一致）
+// - 舊紀錄：交易紀錄裡由模擬下單寫入、但下單紀錄沒有對應那筆的賣出（下單紀錄是後來才開始記）
+// - 期初持股：目前持有、但下單紀錄沒有任何一筆買進的股票（下單紀錄出現以前加入、之後都沒動過的持股），用目前股數與成本顯示。
+//   第一次對這檔成交或新增時，withInitial 會把它存成一筆 source＝期初持股 的紀錄，之後就不靠這裡
+const orderLogRows = (orders: any[], journal: any[], holdings: any[]) => {
+  const key = (s) => baseCode(normSym(String(s || '')));
+  const logged = new Set(orders.map((o) => o.trade_id).filter(Boolean));
+  const legacy = journal
+    .filter((e) => e.source === '模擬下單成交' && !logged.has(e.trade_id))
+    .map((e) => ({
+      id: `legacy_${e.trade_id}`,
+      legacy: true,
+      time: String(e.exit_time || ''),
+      symbol: e.symbol,
+      name: '',
+      side: 'SELL',
+      price: Number(e.exit_price),
+      shares: Number(e.shares),
+      fees: Number(e.fees) || 0,
+      trade_id: e.trade_id,
+      net_pnl: Number(e.net_pnl),
+      return_pct: Number(e.return_pct),
+    }));
+  const bought = new Set(orders.filter((o) => o.side === 'BUY').map((o) => key(o.symbol)));
+  const initial = holdings
+    .filter((h) => !bought.has(key(h.symbol)))
+    .map((h, i) => ({
+      id: `init_${h.id || i}`,
+      legacy: true,
+      initial: true,
+      time: String(h.opened || ''),
+      symbol: h.symbol,
+      name: '',
+      side: 'BUY',
+      price: Number(h.cost),
+      shares: Number(h.shares),
+      fees: 0,
+      order_type: h.broker ? `券商 ${h.broker}` : '',
+    }));
+  return [...orders, ...legacy, ...initial].sort((a, b) => String(b.time).localeCompare(String(a.time)));
+};
+
+export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, logHoldingBuys, saveRules, fillOrder, orderLogRows, RulesReminder };

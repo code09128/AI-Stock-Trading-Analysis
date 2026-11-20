@@ -2,6 +2,7 @@
 // 版面用 Squarified Treemap 自己算（不引入圖表套件）：先排族群，再在族群裡排個股。
 import { Tip, baseCode, readLS, uniqueSymbols, writeLS } from '../ui';
 import { pollEvery } from '../desktop_bridge';
+import { RefreshButton } from '../refresh_button';
 
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
@@ -213,12 +214,14 @@ function HeatmapPanel({
         body: JSON.stringify({ pool, symbols: mine, holdings: holdMap }),
       });
       const d = await res.json();
-      if (id !== reqId.current) return;
+      if (id !== reqId.current) return true; // 已經有更新的請求，這一輪的結果不用
       if (d.error) throw new Error(d.error);
       setData(d);
       setErr(null);
+      return true;
     } catch (e) {
       if (id === reqId.current) setErr(e.message);
+      return false;
     } finally {
       if (id === reqId.current) {
         setLoading(false);
@@ -323,14 +326,12 @@ function HeatmapPanel({
         <Tip
           text={`面積（方塊大小）＝${sizeInfo?.[2] || ''} 顏色＝今天的漲跌幅（紅漲綠跌，越深越多）。族群標題後面的 % 是依方塊大小加權的平均漲跌。黃框＝漲停或跌停。單擊方塊＝選這檔，雙擊＝直接看行情與下單。每 20 秒自動更新。`}
         />
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="ml-auto px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 cursor-pointer"
-        >
-          {loading ? '更新中…' : `↻ 更新${data?.timestamp ? `（${data.timestamp}）` : ''}`}
-        </button>
+        <RefreshButton
+          onRefresh={load}
+          idleLabel={loading ? '更新中…' : `↻ 更新${data?.timestamp ? `（${data.timestamp}）` : ''}`}
+          title="馬上重新抓熱力圖（每 10 秒最多一次；平常每 20 秒自動更新）"
+          className="ml-auto px-2.5 py-1 rounded-lg"
+        />
       </div>
 
       {err && <div className="text-xs text-rose-300">⚠️ 熱力圖資料抓取失敗：{err}</div>}

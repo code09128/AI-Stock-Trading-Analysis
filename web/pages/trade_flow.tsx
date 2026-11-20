@@ -1,7 +1,8 @@
 // 「策略 → 下單 → 檢討」步驟條：放在策略回測、下單紀錄、交易檢討頁上方，標出目前在哪一步，點了就跳過去。
 // 說明頁的「功能怎麼串在一起」也有同一條流程（tour.tsx 的 FLOWS）。
 import { bus } from '../bus';
-import { usePortfolio } from '../portfolio_store';
+import { baseCode, normSym } from '../ui';
+import { orderLogRows, usePortfolio } from '../portfolio_store';
 
 type StepId = 'backtest' | 'signals' | 'order' | 'orders' | 'review' | 'rules';
 
@@ -29,12 +30,14 @@ const goStep = (id: StepId) => {
 };
 
 function TradeFlow({ current }: { current: StepId }) {
-  const { orders, journal, rules } = usePortfolio();
+  const { orders, journal, holdings, rules } = usePortfolio();
   const ruleCount = rules?.rules?.length || 0;
+  const orderCount = orderLogRows(orders, journal, holdings).length; // 和下單紀錄頁列出的筆數相同（含期初持股、舊紀錄）
+  const heldCount = new Set(holdings.map((h) => baseCode(normSym(String(h.symbol))))).size;
   // 每一步右上角的小字：有資料就顯示數量
   const badge: Partial<Record<StepId, string>> = {
-    orders: orders.length ? `${orders.length} 筆` : '',
-    review: journal.length ? `已平倉 ${journal.length} 筆` : '',
+    orders: orderCount ? `${orderCount} 筆` : '',
+    review: [journal.length ? `已平倉 ${journal.length} 筆` : '', heldCount ? `持有 ${heldCount} 檔` : ''].filter(Boolean).join('・'),
     rules: ruleCount ? `${ruleCount} 條` : '',
   };
   const idx = STEPS.findIndex((s) => s.id === current);

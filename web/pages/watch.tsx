@@ -3,7 +3,8 @@ import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
 import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, shownQuote, TRIAL_TIP, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
-import { Row, StarToggle } from './watch_parts';
+import { RefreshButton } from '../refresh_button';
+import { Row, StarToggle, usePriceFlash } from './watch_parts';
 import { SearchPalette } from './search_palette';
 import { ExploreBar, ExploreRows, useRanking, useThemes } from './explore_list';
 import { AlertsPanel, OverviewPanel, useAlerts } from './overview_alerts';
@@ -61,7 +62,7 @@ const LIST_VIEWS: Record<string, readonly (readonly [string, string, string])[]>
   ],
   hold: [
     ['hold', '持股', '持股、成本與損益'],
-    ['div', '配息', '配息月曆：持股與自選股的除息月份'],
+    ['div', '配息', '配息月曆：持股的除息月份與預估入帳'],
   ],
 };
 
@@ -155,10 +156,12 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   useEffect(() => writeLS('tw_us_mkt_filter_v1', mktFilter), [mktFilter]);
   // 市場區分：台股（含上櫃、ETF、債券 ETF）／美股與其他海外市場
   const inMkt = (x) => mktFilter === 'ALL' || (mktFilter === 'TW' ? isTW(x) : !isTW(x));
+  // 篩選鈕上的數量：「我的持股・配息」數持股（同一檔只算一次），其他檢視數自選股
+  const filterScope: string[] = listTab === 'div' ? Array.from(new Set(holdings.map((h) => h.symbol))) : watch;
   const mktCounts = {
-    ALL: watch.length,
-    TW: watch.filter(isTW).length,
-    INTL: watch.filter((x) => !isTW(x)).length,
+    ALL: filterScope.length,
+    TW: filterScope.filter(isTW).length,
+    INTL: filterScope.filter((x) => !isTW(x)).length,
   };
   const [rightTab, setRightTab] = useState('quote');
   const cardCtl = useCardLayout(CARD_DEFS);
@@ -296,12 +299,19 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   }, [watch, etfs, selected, holdings, alerts, showEtf]);
   const symKey = allSyms.join(',');
 
-  const quotesBusy = useRef(false);
+  const quotesRun = useRef<Promise<boolean> | null>(null);
   const quotesDone = useRef<Record<string, { at: number; key: string }>>({});
-  const loadQuotes = useCallback(async (mode?: unknown) => {
-    // 上一輪還沒回來（網路或資料來源卡住）就跳過這一輪，請求不會越疊越多
-    if (quotesBusy.current) return;
-    quotesBusy.current = true;
+  const loadQuotes = useCallback((mode?: unknown): Promise<boolean> => {
+    // 上一輪還沒回來（網路或資料來源卡住）就不另發請求，直接回傳那一輪（按「立即更新」時會等它跑完），請求不會越疊越多
+    if (quotesRun.current) return quotesRun.current;
+    quotesRun.current = runQuotes(mode).finally(() => {
+      quotesRun.current = null;
+    });
+    return quotesRun.current;
+  }, [symKey]); // eslint-disable-line
+  // 回傳 true＝每一組都抓成功（或休市略過）；false＝至少一組失敗（錯誤訊息另外顯示在頁面上）
+  const runQuotes = async (mode?: unknown): Promise<boolean> => {
+    let ok = true;
     // 台股與美股分開請求：台股很快就能先顯示，美股（Yahoo 較慢）晚點補上
     const syms = symKey.split(',').filter(Boolean);
     // 自動更新時，整組都在休市就 30 秒才抓一次（清單有變或按「立即更新」不受限）
@@ -314,38 +324,36 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
       ['tw', syms.filter(isTW)] as [string, string[]],
       ['intl', syms.filter((x) => !isTW(x))] as [string, string[]],
     ].filter(([name, g]) => g.length && !closedSkip(g, name));
-    try {
-      await Promise.all(
-        groups.map(async ([name, group]) => {
-          try {
-            const res = await fetch('/api/quotes', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ symbols: group }),
-            });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-            bus.quoteMemo = bus.quoteMemo || {};
-            for (const qq of data.quotes) bus.quoteMemo[baseCode(qq.symbol)] = { q: qq, at: Date.now() }; // 提醒檢查共用
-            quotesDone.current[name] = { at: Date.now(), key: group.join(',') };
-            setQuotes((prev) => {
-              const next = { ...prev };
-              for (const qq of data.quotes) next[baseCode(qq.symbol)] = qq;
-              return next;
-            });
-            setUpdatedAt(data.timestamp);
-            setNetError(null);
-          } catch (e) {
-            setNetError(
-              `無法連到本機伺服器 (${e.message})。請確認 python -m src.api_server 正在執行。`,
-            );
-          }
-        }),
-      );
-    } finally {
-      quotesBusy.current = false;
-    }
-  }, [symKey]);
+    await Promise.all(
+      groups.map(async ([name, group]) => {
+        try {
+          const res = await fetch('/api/quotes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbols: group }),
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          bus.quoteMemo = bus.quoteMemo || {};
+          for (const qq of data.quotes) bus.quoteMemo[baseCode(qq.symbol)] = { q: qq, at: Date.now() }; // 提醒檢查共用
+          quotesDone.current[name] = { at: Date.now(), key: group.join(',') };
+          setQuotes((prev) => {
+            const next = { ...prev };
+            for (const qq of data.quotes) next[baseCode(qq.symbol)] = qq;
+            return next;
+          });
+          setUpdatedAt(data.timestamp);
+          setNetError(null);
+        } catch (e) {
+          ok = false;
+          setNetError(
+            `無法連到本機伺服器 (${e.message})。請確認 python -m src.api_server 正在執行。`,
+          );
+        }
+      }),
+    );
+    return ok;
+  };
 
   useEffect(() => {
     loadQuotes();
@@ -404,23 +412,36 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     let stop = false;
     let busy = false; // 上一輪還沒回來就跳過
     setIntraday(null);
-    const load = () => {
-      if (busy) return;
+    const load = (force = false): Promise<boolean> => {
+      if (busy) return Promise.resolve(true);
       busy = true;
-      cachedJson('/api/intraday', { symbol: selected }, 25000) // 切頁回來不用重抓；30 秒輪詢照常更新
-        .then((d) => !stop && setIntraday(d))
-        .catch(() => {})
+      // 切頁回來不用重抓；30 秒輪詢照常更新；按「立即更新」時 force 不用前端快取
+      return cachedJson('/api/intraday', { symbol: selected }, force ? 0 : 25000)
+        .then((d) => {
+          if (!stop) setIntraday(d);
+          return !d?.error;
+        })
+        .catch(() => false)
         .finally(() => {
           busy = false;
         });
     };
     load();
-    const cancel = pollEvery(load, 30000);
+    intradayLoad.current = load;
+    const cancel = pollEvery(() => load(), 30000);
     return () => {
       stop = true;
+      intradayLoad.current = null;
       cancel();
     };
   }, [selected]);
+
+  // 「立即更新」（RefreshButton）：報價與分時圖一起重抓，分時圖不用前端快取；兩個都成功才算成功
+  const intradayLoad = useRef<((force?: boolean) => Promise<boolean>) | null>(null);
+  const manualRefresh = async () => {
+    const [okQ, okI] = await Promise.all([loadQuotes('manual'), intradayLoad.current?.(true) ?? Promise.resolve(true)]);
+    return okQ && okI;
+  };
 
   // 台美股以外：每手股數與法定稅費（港股每檔不同，後端查港交所清單）
   const [tradeRules, setTradeRules] = useState(null);
@@ -492,14 +513,14 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   }, [catKey]);
 
   const catCounts = useMemo(() => {
-    const inScope = watch.filter(inMkt);
+    const inScope = filterScope.filter(inMkt);
     const c = { ALL: inScope.length, STOCK: 0, ETF: 0, BOND: 0 };
     for (const s2 of inScope) {
       const k = categories[baseCode(s2)]?.category;
       if (k) c[k] += 1;
     }
     return c;
-  }, [watch, categories, mktFilter]); // eslint-disable-line
+  }, [filterScope.join(','), categories, mktFilter]); // eslint-disable-line
 
   const watchRows = useMemo(() => {
     const val = (s) => quotes[baseCode(s)];
@@ -519,9 +540,20 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     return keyFn ? [...base].sort((a, b) => keyFn(b) - keyFn(a)) : base;
   }, [watch, quotes, sortKey, catFilter, categories, mktFilter, holdOnly, holdings, listQuery]); // eslint-disable-line
 
+  // 「我的持股・配息」只列持股（同一檔分批買只列一次），套用上方的台股／美股與類型篩選；
+  // 以前配息是獨立分頁、列的是自選股，搬到持股底下後要改成持股，否則會把自選股帶進來
+  const holdRows = useMemo(
+    () =>
+      Array.from(new Set(holdings.map((h) => h.symbol)))
+        .filter(inMkt)
+        .filter((x) => catFilter === 'ALL' || categories[baseCode(x)]?.category === catFilter),
+    [holdings, catFilter, categories, mktFilter], // eslint-disable-line
+  );
+
   const q = quotes[baseCode(selected)];
   // 報價卡顯示用：盤前沒有成交價時改顯示試撮價／昨收並加標記（提醒、下單等仍用 q）
   const dq = q ? shownQuote(q) : q;
+  const priceFlash = usePriceFlash(dq?.price, selected);
   const tw = isTW(selected);
   const etfFlag = /^00/.test(baseCode(selected));
 
@@ -582,7 +614,9 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
         const list =
           listTab === 'hold'
             ? holdings.map((h) => h.symbol)
-            : listTab === 'etf'
+            : listTab === 'div'
+              ? holdRows
+              : listTab === 'etf'
               ? showEtf
                 ? etfRows.map((r) => r.symbol)
                 : (rankState.data?.rows || []).map((r) => r.symbol)
@@ -603,7 +637,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, listTab, holdings, watchRows, etfRows, selected, paletteOpen, showEtf, rankState.data]);
+  }, [active, listTab, holdings, holdRows, watchRows, etfRows, selected, paletteOpen, showEtf, rankState.data]);
 
   const etfMetric = (r) => {
     if (etfSort === 'hot') return `成交 ${fmt(r.turnover / 1e8, 1)} 億`;
@@ -800,7 +834,18 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     switch (id) {
       case 'chart':
         return (
-          <CardBox key={id} id={id} title="分時走勢" sub={`${fmt(q.price)}  ${q.change_pct > 0 ? '+' : ''}${fmt(q.change_pct)}%`} ctl={cardCtl}>
+          <CardBox
+            key={id}
+            id={id}
+            title="分時走勢"
+            sub={
+              <span key={q.price} className={`${colorOf(q.change)} ${priceFlash ? `ta-tick-${priceFlash}` : ''}`}>
+                {fmt(q.price)}  {q.change_pct > 0 ? '+' : ''}
+                {fmt(q.change_pct)}%
+              </span>
+            }
+            ctl={cardCtl}
+          >
             <StockChart
               symbol={selected}
               quoteTime={q?.quote_time}
@@ -929,13 +974,11 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
               {polling ? '即時行情・每 5 秒更新（休市 30 秒）' : '已暫停自動更新'}
               <span className="mono">{updatedAt}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => loadQuotes()}
-              className="px-2.5 py-1 rounded-[10px] border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 cursor-pointer"
-            >
-              ↻ 立即更新
-            </button>
+            <RefreshButton
+              onRefresh={manualRefresh}
+              title="馬上重新抓報價與分時走勢（每 10 秒最多一次）"
+              className="min-w-[104px] px-2.5 py-1 rounded-[10px]"
+            />
             <button
               type="button"
               onClick={onShowTour}
@@ -1219,7 +1262,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             )}
             {listTab === 'div' && (
               <DividendCalendar
-                symbols={watchRows}
+                symbols={holdRows}
                 quotes={quotes}
                 categories={categories}
                 selected={selected}
@@ -1388,7 +1431,16 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className={`mono text-[28px] sm:text-[38px] leading-tight font-extrabold ${colorOf(dq.change)} ${dq.tag ? 'opacity-80' : ''}`}>{fmt(dq.price)}</div>
+                  <div className={`mono text-[28px] sm:text-[38px] leading-tight font-extrabold ${colorOf(dq.change)} ${dq.tag ? 'opacity-80' : ''}`}>
+                    {/* 價格變動時底色短暫閃紅／綠、數字上浮／下沉，和左側清單同一筆報價一起跳；key 隨價格變動才會重播動畫 */}
+                    <span
+                      key={dq.price}
+                      className={`inline-block rounded-lg px-1.5 -mx-1.5 transition-colors duration-700 ${priceFlash ? `ta-tick-${priceFlash}` : ''}`}
+                      style={{ background: priceFlash === 'up' ? 'var(--up-bg)' : priceFlash === 'down' ? 'var(--down-bg)' : 'transparent' }}
+                    >
+                      {fmt(dq.price)}
+                    </span>
+                  </div>
                   {dq.tag === '試撮' && (
                     <div className="text-[11px] text-amber-300" title={TRIAL_TIP}>
                       試撮價（尚未開盤成交{q.trial_volume != null ? `・試撮量 ${fmt(q.trial_volume, 0)} 張` : ''}）

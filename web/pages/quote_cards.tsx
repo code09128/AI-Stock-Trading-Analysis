@@ -221,12 +221,19 @@ function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; lo
       <div className="grid gap-2 max-h-[440px] overflow-y-auto pr-1">
         {shown.map((n: any) => {
           const [label, tone] = SENT[n.sentiment] || SENT.NEUTRAL;
+          // 行情回顧（AI 判斷只描述已發生的漲跌）：照樣標方向，但用虛線框、淡一點，表示不算新消息、不計入整體語氣
+          const recap = n.timing === 'retrospective' && n.sentiment !== 'NEUTRAL';
           const px = n.reaction && !n.reaction.pending ? n.reaction.pct : null;
           return (
             <div key={`${n.link}${n.title}`} className="bg-white/5 rounded-xl px-3 py-[9px] grid gap-[3px]">
               <div className="text-[13px] leading-snug">
-                <span className="inline-block px-2 py-px rounded-full text-[11px] mr-1" style={{ color: tone, background: `color-mix(in srgb,${tone} 18%,transparent)` }}>
+                <span
+                  className={`inline-block px-2 py-px rounded-full text-[11px] mr-1 ${recap ? 'border border-dashed' : ''}`}
+                  style={{ color: tone, background: `color-mix(in srgb,${tone} ${recap ? 8 : 18}%,transparent)`, borderColor: recap ? tone : undefined }}
+                  title={recap ? '行情回顧：只描述已經發生的漲跌，不是新消息，不計入整體利多／利空判斷' : undefined}
+                >
                   {label}
+                  {recap ? '・回顧' : ''}
                 </span>
                 <span className="inline-block px-2 py-px rounded-full text-[11px] mr-1 bg-sky-500/20 text-sky-300">{n.kind || '新聞'}</span>
                 {/^https?:\/\//i.test(n.link || '') ? (

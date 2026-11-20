@@ -35,6 +35,32 @@ class RuleSentimentTests(unittest.TestCase):
         self.assertIn("買超", hits)
 
 
+    def test_common_unfavorable_titles_are_negative(self):
+        """2026-11-20 真實標題：原本都落到中性，其實是不利消息。"""
+        for t in ("台股繼續崩，何時回穩?關鍵訊號告訴你", "外資再提款94億元續砍0050",
+                  "台股流動性危機！收跌2393點史上第三慘 聯發科、台達電跌停", "亞洲晶片股拋售演變為恐慌性踩踏 台韓股市成重災區",
+                  "00850除息首日苦陷貼息", "Nvidia stock falls for sixth day as Anthropic debut fails to lift shares",
+                  "AMD dives on short seller report of alleged China exposure", "AMD shares slide as report says China links could invite US scrutiny",
+                  "Cameron County Rejects SpaceX Data Center Tax Break", "TSLL 2X Tesla ETF Is Down 50% in 2026"):
+            self.assertEqual(nd.rule_sentiment(t)[0], "NEGATIVE", t)
+
+    def test_common_favorable_titles_are_positive(self):
+        for t in ("SPCX Stock Climbs After Starship Catch", "Why Is Advanced Micro Devices Stock Rising Today?",
+                  "FAA revises SpaceX Starship license, authorizes single Flight 15 launch", "台積、0050低檔反彈可期",
+                  "00878緩步填息中", "台股狂飆3,186點"):
+            self.assertEqual(nd.rule_sentiment(t)[0], "POSITIVE", t)
+
+    def test_negated_bullish_words_and_false_friends(self):
+        self.assertEqual(nd.rule_sentiment("法人不看好下半年")[0], "NEGATIVE")  # 不看好：不再算成利多
+        self.assertEqual(nd.rule_sentiment("營收不如預期")[0], "NEGATIVE")
+        self.assertEqual(nd.rule_sentiment("Rivian's R2 offers a first look at its lower-cost bet")[0], "NEUTRAL")  # lower-cost 不是下跌
+        self.assertEqual(nd.rule_sentiment("高股息ETF抗跌力差這麼多")[0], "NEUTRAL")  # 抗跌不算跌
+        self.assertEqual(nd.rule_sentiment("外資加碼並未砍單")[0], "NEUTRAL")  # 已知限制：否定句仍會多空各算一次
+        self.assertEqual(nd.rule_sentiment("Yields, Orbital Deployment Raise Concerns")[0], "NEUTRAL")  # raise concerns 不是上調
+        self.assertEqual(nd.rule_sentiment("11/20上市自營商賣超排行前20名")[0], "NEUTRAL")  # 排行榜不算消息
+        self.assertEqual(nd.rule_sentiment("【零股排行榜】 盤中零股成交量TOP 20｜0050 元大台灣50")[0], "NEUTRAL")
+
+
 class SummaryTests(unittest.TestCase):
     def mk(self, *rows):
         items = []
@@ -53,6 +79,32 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(s["tone"], "偏多")
         self.assertEqual(s["counts"]["positive"], 2)
         self.assertEqual(s["counts"]["negative"], 1)
+
+    def test_recap_keeps_direction_but_does_not_vote(self):
+        """行情回顧（AI 標 retrospective）照樣標利空，但不拿來算整體語氣，並在資料缺口說明。"""
+        items = self.mk(
+            {"kw": {"title": "a"}, "s": "POSITIVE"}, {"kw": {"title": "b"}, "s": "POSITIVE"},
+            {"kw": {"title": "c"}, "s": "NEGATIVE"}, {"kw": {"title": "d"}, "s": "NEGATIVE"},
+            {"kw": {"title": "e"}, "s": "NEGATIVE"},
+        )
+        for x in items[2:]:
+            x["timing"] = "retrospective"  # 三則都是「股價重挫 5%」這類回顧
+        s = nd.summarize(items, [], "AI")
+        self.assertEqual(s["tone"], "偏多")  # 只有兩則新消息（都是利多）在投票
+        self.assertEqual((s["counts"]["recap"], s["counts"]["negative"], s["counts"]["positive"]), (3, 0, 2))
+        self.assertTrue(any("行情回顧" in g for g in s["gaps"]))
+        self.assertEqual([x["sentiment"] for x in items[2:]], ["NEGATIVE"] * 3)  # 畫面上的方向不變
+
+    def test_prompt_asks_direction_for_recaps(self):
+        sent = {}
+
+        def fake(profile, prompt, timeout=0):
+            sent["p"] = prompt
+            return {"items": [{"no": 1, "sentiment": "NEGATIVE"}], "reaction_changers": []}
+        with patch.object(nd.ai_client, "_json_call", side_effect=fake):
+            nd._ai_fields({"model": "m"}, "0050.TW", "0050", [item("t")])
+        self.assertIn("retrospective 依對持有者的實際影響判斷", sent["p"])
+        self.assertNotIn("一律 NEUTRAL；catalyst", sent["p"])  # 不再把回顧一律當中性
 
     def test_official_announcement_weighs_more(self):
         items = self.mk(
@@ -158,7 +210,7 @@ class SummaryTests(unittest.TestCase):
     def _build_with_ai(self, ai_by_no):
         bars = [Bar(f"2026-10-{d:02d}", 100, 101, 99, 100 + d % 3, 1000) for d in range(1, 29)]
         news = {"items": [
-            {"title": "0050買在112元套牢逾500萬 憂台股難創新高 勸別急著砍", "source": "S", "link": "https://x/1", "kind": "新聞",
+            {"title": "0050買在112元套牢逾500萬 憂台股難創新高", "source": "S", "link": "https://x/1", "kind": "新聞",
              "local_iso": "2026-10-20T09:00", "detail": ""},
         ], "sources": ["S"], "errors": []}
         res = {"by_no": ai_by_no, "reaction_changers": [], "unverified_numbers": []}

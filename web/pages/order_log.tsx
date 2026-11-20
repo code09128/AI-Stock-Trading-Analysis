@@ -2,7 +2,7 @@
 // 資料：tw_us_orders_v1（portfolio_store 的 fillOrder、我的持股新增／匯入時寫入）；
 // 這版以前的模擬賣出從交易紀錄（source＝模擬下單成交）補顯示，沒有任何買進紀錄的持股顯示成「期初持股」。
 import { bus } from '../bus';
-import { setOrders, usePortfolio } from '../portfolio_store';
+import { orderLogRows, setOrders, usePortfolio } from '../portfolio_store';
 import { notifySaved } from '../sync_store';
 import { baseCode, colorOf, currencyOf, fmt, normSym, signed } from '../ui';
 import { PCard, PageHead } from './card_box';
@@ -18,45 +18,8 @@ function OrderLogPage() {
   const [side, setSide] = useState('ALL');
   const [q, setQ] = useState('');
 
-  // 舊紀錄：交易紀錄裡由模擬下單寫入、但下單紀錄沒有對應那筆的賣出（下單紀錄是這版才開始記）
-  const rows = useMemo(() => {
-    const logged = new Set(orders.map((o) => o.trade_id).filter(Boolean));
-    const legacy = journal
-      .filter((e) => e.source === '模擬下單成交' && !logged.has(e.trade_id))
-      .map((e) => ({
-        id: `legacy_${e.trade_id}`,
-        legacy: true,
-        time: String(e.exit_time || ''),
-        symbol: e.symbol,
-        name: '',
-        side: 'SELL',
-        price: Number(e.exit_price),
-        shares: Number(e.shares),
-        fees: Number(e.fees) || 0,
-        trade_id: e.trade_id,
-        net_pnl: Number(e.net_pnl),
-        return_pct: Number(e.return_pct),
-      }));
-    // 期初持股：目前持有、但下單紀錄沒有任何一筆買進的股票（這版以前加入、之後都沒動過的持股），用目前股數與成本顯示。
-    // 第一次對這檔成交或新增時，portfolio_store 的 withInitial 會把它存成一筆 source＝期初持股 的紀錄，之後就不靠這裡
-    const bought = new Set(orders.filter((o) => o.side === 'BUY').map((o) => key(o.symbol)));
-    const initial = holdings
-      .filter((h) => !bought.has(key(h.symbol)))
-      .map((h, i) => ({
-        id: `init_${h.id || i}`,
-        legacy: true,
-        initial: true,
-        time: String(h.opened || ''),
-        symbol: h.symbol,
-        name: '',
-        side: 'BUY',
-        price: Number(h.cost),
-        shares: Number(h.shares),
-        fees: 0,
-        order_type: h.broker ? `券商 ${h.broker}` : '',
-      }));
-    return [...orders, ...legacy, ...initial].sort((a, b) => String(b.time).localeCompare(String(a.time)));
-  }, [orders, journal, holdings]);
+  // 存下來的下單紀錄＋補顯示的舊紀錄與期初持股（見 portfolio_store 的 orderLogRows；步驟條的筆數用同一份）
+  const rows = useMemo(() => orderLogRows(orders, journal, holdings), [orders, journal, holdings]);
 
   const tradeIds = new Set(journal.map((e) => e.trade_id));
   const heldShares = (sym) =>

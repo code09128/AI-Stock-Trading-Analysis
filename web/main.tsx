@@ -23,6 +23,7 @@ import './markdown';
 import './ai_store';
 import './portfolio_store';
 import './live_widgets';
+import './refresh_button';
 import './pages/watch_parts';
 import './pages/watch_kpis';
 import './pages/search_palette';

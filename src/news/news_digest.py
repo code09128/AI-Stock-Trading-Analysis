@@ -77,10 +77,25 @@ def _rule_fields(title: str, kind: str, detail: str = "") -> Dict[str, Any]:
     return {"metrics": metrics, "horizon": horizon, "official": any(k in kind for k in OFFICIAL_KINDS)}
 
 
-POS_RE = re.compile(r"上修|調升|調高|創高|新高|買超|轉盈|優於預期|超預期|大漲|飆|看好|受惠|擴產|接單|得標|"
-                    r"beat|upgrade|raises?|record|surge|rally|strong", re.I)
-NEG_RE = re.compile(r"下修|調降|調低|創低|新低|賣超|虧損|轉虧|衰退|低於預期|大跌|重挫|暴跌|示警|減產|裁員|罰款|調查|下滑|砍單|"
-                    r"miss|downgrade|cuts?|plunge|slump|probe|lawsuit|warning|weak", re.I)
+# 2026-11-20 擴充：原本只認得少數字眼，「台股崩跌」「外資連 5 砍」「跌停」「Nvidia stock falls」「AMD dives on short seller report」
+# 這類明顯不利的標題都落到中性。補上行情動詞（中英）、資金流向、ETF 貼息／填息、空頭報告等說法。
+# 「不看好」「不如預期」先算利空、且不再被「看好」重複算成利多（(?<!不) 排除）。
+# 限制：仍是數關鍵字，看不懂反話與整句語意（例如「跌深反彈」會多空各算一次而成中性）；有 AI 時以 AI 為準。
+POS_RE = re.compile(r"上修|調升|調高|創高|新高|買超|轉盈|優於預期|超預期|大漲|飆|(?<!不)看好|(?<!未)受惠|擴產|接單|得標|"
+                    r"上漲|收漲|漲逾|漲停|續漲|走揚|反彈|回升|攻上|站上|填息|力挺|敲進|加碼|獲青睞|"
+                    r"\bbeats?\b|upgrade|\braise[sd]?\b(?!\s+(?:concerns?|questions?|doubts?|fears?|alarm))|\bbullish\b|\brecover\w*|\brecord\b|\bsurg\w*|\brall\w*|\bstrong\w*|"
+                    r"\bris(?:e|es|ing)\b|\brose\b|\bclimb\w*|\bjump\w*|\bsoar\w*|\bgain(?:s|ed)?\b|\bpops?\b|\bpopped\b|"
+                    r"\bhigher\b|\bapprov\w*|\bauthoriz\w*|\bupside\b|\boutperform\w*|\brebound\w*|\bup \d+(?:\.\d+)?%", re.I)
+NEG_RE = re.compile(r"下修|調降|調低|創低|新低|賣超|虧損|轉虧|衰退|低於預期|不如預期|不及預期|不看好|大跌|重挫|暴跌|示警|減產|裁員|罰款|調查|下滑|砍單|"
+                    r"下跌|收跌|跌逾|續跌|跌破|跌停|崩|慘跌|重摔|狂瀉|狂殺|急殺|殺低|失守|破底|拋售|賣壓|恐慌|踩踏|重災|慘綠|"
+                    r"提款|出走|(?<!加)砍|停損|貼息|跌幅|利空|"
+                    r"\bmiss(?:es|ed)?\b|downgrade|\bcuts?\b|\bplung\w*|\bslump\w*|\bprobe\w*|\blawsuits?\b|\bsued\b|\bwarn\w*|\bweak\w*|"
+                    r"\bfalls?\b|\bfell\b|\bfalling\b|\bdrop\w*|\bslid(?:e|es|ing)?\b|\bsink\w*|\bsank\b|\btumbl\w*|\bdiv(?:e|es|ed|ing)\b|"
+                    r"\bcrash\w*|\bsell-?off\b|losing streak|\blosses\b|\blower\b(?!-)|short[- ]seller|\bscrutiny\b|\breject\w*|"
+                    r"\bfears?\b|\bbearish\b|\bworr(?:y|ies)\b|\berase[sd]?\b|\buglier\b|\bdown \d+(?:\.\d+)?%", re.I)
+
+
+RANKING_RE = re.compile(r"排行|排名|日榜|榜單|TOP ?\d+", re.I)
 
 
 # 近期樣本對照（tools/backtest_news_tone.py，2026-11-07，9 檔台美股 55 則標題）：偏多標題發布後首個收盤方向相符 32%（平均 -0.63%），
@@ -91,6 +106,8 @@ def rule_sentiment(text: str):
     限制（要升級就改用 AI 判斷）：只數關鍵字，看不懂否定（例如「不看好」會被算成利多）、反話與整句語意；
     正負數量相同一律算 NEUTRAL。只當沒有 AI 時的粗略參考，不是結論。
     """
+    if RANKING_RE.search(text or ""):
+        return "NEUTRAL", []  # 排行榜、成交量統計是盤後流水帳，不是這檔的消息（與 AI 的判斷規則一致）
     pos = [m.group(0) for m in POS_RE.finditer(text or "")]
     neg = [m.group(0) for m in NEG_RE.finditer(text or "")]
     hits = [*dict.fromkeys(pos), *dict.fromkeys(neg)]
@@ -116,7 +133,7 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
     # 標題沒提到這檔（也不是官方公告）的新聞常是同一來源順帶列出的無關報導，不計入語氣、重點與時間軸
     events = [x for x in non_column if x.get("mentions", True)]
     counts = {"official": 0, "news": 0, "column": len(items) - len(non_column), "unrelated": len(non_column) - len(events),
-              "positive": 0, "negative": 0, "neutral": 0, "conflict": 0}
+              "positive": 0, "negative": 0, "neutral": 0, "conflict": 0, "recap": 0}
     w_pos = w_neg = 0
     for x in events:
         counts["official" if x.get("official") else "news"] += 1
@@ -126,6 +143,9 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
             # AI 和關鍵字規則一個說利多、一個說利空：至少一個錯，不拿來投票，數量歸在中性
             counts["conflict"] += 1
             counts["neutral"] += 1
+        elif x.get("timing") == "retrospective" and sent in ("POSITIVE", "NEGATIVE"):
+            # 行情回顧（只描述已發生的漲跌）：畫面照樣標方向，但不拿來投票，否則一段急跌的多篇報導會把整體語氣帶偏
+            counts["recap"] += 1
         elif sent == "POSITIVE":
             counts["positive"] += 1
             w_pos += w
@@ -167,6 +187,8 @@ def summarize(items: List[Dict[str, Any]], errors: List[str], mode: str) -> Dict
         gaps.append(f"新聞與公告只有 {len(events)} 則（少於 {MIN_EVIDENCE} 則），結論代表性不足")
     if counts["unrelated"]:
         gaps.append(f"{counts['unrelated']} 則新聞標題沒有提到這檔，已不計入語氣與時間軸")
+    if counts["recap"]:
+        gaps.append(f"{counts['recap']} 則是行情回顧（只描述已發生的漲跌），已標出利多／利空方向，但不計入整體語氣")
     if events and counts["positive"] + counts["negative"] < DECISIVE_MIN:
         gaps.append(f"有明確利多或利空方向的新聞只有 {counts['positive'] + counts['negative']} 則"
                     f"（少於 {DECISIVE_MIN} 則），語氣僅供參考")
@@ -233,9 +255,12 @@ def _ai_fields(profile: Dict[str, Any], symbol: str, name: str, items: List[Dict
         "NEGATIVE（實質利空）、NEUTRAL（無明確方向）。要看語意而不是字眼。先判斷 timing：retrospective＝事後行情回顧"
         "（例如收盤後的「收跌多少」「昨日重挫」）、catalyst＝帶有新資訊的消息（財測、法說、政策、總經數據、供應鏈、評等調整、資金流向變化）、"
         "real_time＝盤中或開盤前正在發展的市場事件（例如盤中跌破整數關卡、賣壓湧現、避險升溫）。"
-        "再給方向：retrospective 除非內文提出新的前瞻原因，一律 NEUTRAL；catalyst 依資訊本身判斷方向，即使標題同時描述已發生的漲跌；"
+        "再給方向：retrospective 依對持有者的實際影響判斷，明確描述這檔（或這檔 ETF 追蹤的大盤／產業）下跌、失守關卡、資金流出就給 NEGATIVE，"
+        "明確上漲、站上關卡、資金流入就給 POSITIVE，漲跌互見或幅度很小才 NEUTRAL（系統會把 retrospective 標成「行情回顧」、不計入整體語氣，"
+        "所以照實給方向即可）；catalyst 依資訊本身判斷方向，即使標題同時描述已發生的漲跌；"
         "real_time 可以判 NEGATIVE／POSITIVE（代表風險或動能升高，是市場反應而不是基本面）。"
-        "「價格已經大跌」和「造成大跌的新資訊」要分開看。投資人套牢或虧損心得、盤勢流水帳、排行榜與成交量統計、與這檔無關的新聞一律 NEUTRAL。\n"
+        "「價格已經大跌」和「造成大跌的新資訊」要分開看：前者是 retrospective，後者是 catalyst。"
+        "投資人套牢或虧損心得、排行榜與成交量統計、與這檔無關的新聞一律 NEUTRAL。\n"
         f"【新聞】{data}\n"
         '回傳 JSON：{"items": [{"no": 編號, "what": "實際發生什麼事（一句話）", "why": "投資人為何需要關注", '
         '"horizon": "短期"|"長期"|"短期與長期", "metrics": ["可能受影響的財務指標，如營收、毛利率、EPS、資本支出"], '

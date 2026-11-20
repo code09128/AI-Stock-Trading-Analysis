@@ -308,17 +308,20 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
         ))}
         {newsDots.map((d, i) => {
           const href = safeHttp(d.n.link);
+          const tone = d.n.sentiment === 'POSITIVE' ? 'var(--up)' : d.n.sentiment === 'NEGATIVE' ? 'var(--down)' : 'rgb(var(--slate-400))';
+          // 行情回顧（只描述已發生的漲跌）畫成空心點：看得出方向，又和帶新資訊的消息分開
+          const recap = d.n.timing === 'retrospective' && d.n.sentiment !== 'NEUTRAL';
           const dot = (
             <circle
               cx={d.cx}
               cy={d.cy}
-              r="5"
-              fill={d.n.sentiment === 'POSITIVE' ? 'var(--up)' : d.n.sentiment === 'NEGATIVE' ? 'var(--down)' : 'rgb(var(--slate-400))'}
-              stroke="rgb(var(--slate-950))"
+              r={recap ? 4 : 5}
+              fill={recap ? 'rgb(var(--slate-950))' : tone}
+              stroke={recap ? tone : 'rgb(var(--slate-950))'}
               strokeWidth="2"
               className={href ? 'cursor-pointer' : ''}
             >
-              <title>{`${d.t}　${d.n.source || ''}：${d.n.title || ''}`}</title>
+              <title>{`${d.t}　${recap ? '（行情回顧）' : ''}${d.n.source || ''}：${d.n.title || ''}`}</title>
             </circle>
           );
           return href ? (
@@ -361,11 +364,15 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
             <circle cx={x(act.ts)} cy={y(act.close)} r="3.5" fill={col} />
           </g>
         )}
+        {hover == null && last.live && (
+          // 即時成交價的線尾：每次價格更新冒出一圈光暈（key 隨價格變動才會重播），和右上報價、左側清單一起跳
+          <circle key={last.close} cx={x(last.ts)} cy={y(last.close)} r="3.5" fill={col} className="ta-live-ring" />
+        )}
         {hover == null && <circle cx={x(last.ts)} cy={y(last.close)} r="3.5" fill={col} />}
       </svg>
       {news && (
         <div className="mt-1 text-[11px] text-slate-400" aria-live="polite">
-          彩色圓點＝新聞發布時間（紅利多、綠利空、灰中性，關鍵字規則粗估；滑鼠停在點上看標題，點一下另開分頁看原文）。
+          彩色圓點＝新聞發布時間（紅利多、綠利空、灰中性，關鍵字規則粗估；空心點＝AI 判斷為行情回顧；滑鼠停在點上看標題，點一下另開分頁看原文）。
           {newsDots.length
             ? `這段走勢內有 ${newsDots.length} 則`
             : '這段走勢內沒有新聞'}

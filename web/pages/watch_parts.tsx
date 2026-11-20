@@ -26,24 +26,37 @@ function MiniCandle({ quote }: { quote: any }) {
   );
 }
 
+// 價格跳動：價格變了就回傳 'up'／'down'，0.9 秒後回到 null。清單列、看盤頁右上報價與分時走勢標題共用，同一筆報價三處一起閃
+// key：換了標的（例如看盤頁右上換一檔）就重新起算，不把「換股票造成的價差」當成跳動
+function usePriceFlash(price: number | null | undefined, key?: string): 'up' | 'down' | null {
+  const prev = useRef(price);
+  const prevKey = useRef(key);
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null);
+  useEffect(() => {
+    if (key !== prevKey.current) {
+      prevKey.current = key;
+      prev.current = price;
+      setFlash(null);
+      return undefined;
+    }
+    if (price != null && prev.current != null && price !== prev.current) {
+      setFlash(price > prev.current ? 'up' : 'down');
+      const t = setTimeout(() => setFlash(null), 900);
+      prev.current = price;
+      return () => clearTimeout(t);
+    }
+    prev.current = price;
+    return undefined;
+  }, [price, key]);
+  return flash;
+}
+
 // bell：這檔有提醒時在代號旁顯示 🔔（'fired'＝有已觸發的，多一個驚嘆號）
 function Row({ sym, quote: rawQuote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag, bell }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any; bell?: 'on' | 'fired' }) {
   // 盤前沒有成交價時顯示試撮價或昨收（見 ui.shownQuote，只影響畫面）
   const quote = rawQuote ? shownQuote(rawQuote) : rawQuote;
   const chg = quote?.change;
-  const prevPrice = useRef(quote?.price);
-  const [flash, setFlash] = useState(null);
-  useEffect(() => {
-    const p = quote?.price;
-    if (p != null && prevPrice.current != null && p !== prevPrice.current) {
-      setFlash(p > prevPrice.current ? 'up' : 'down');
-      const t = setTimeout(() => setFlash(null), 900);
-      prevPrice.current = p;
-      return () => clearTimeout(t);
-    }
-    prevPrice.current = p;
-    return undefined;
-  }, [quote?.price]);
+  const flash = usePriceFlash(quote?.price);
   return (
     // biome-ignore lint/a11y/useSemanticElements: 列內含按鈕，不能用 button 巢狀
     <div
@@ -185,4 +198,4 @@ const Seg = ({ value, onChange, options }) => (
   </div>
 );
 
-export { Row, Field, Seg, StarToggle };
+export { Row, Field, Seg, StarToggle, usePriceFlash };

@@ -8,6 +8,7 @@ import { openInWatch } from './watch';
 import { pollEvery } from '../desktop_bridge';
 import { cachedJson } from '../fetch_cache';
 import { Sparkline } from '../live_widgets';
+import { RefreshButton } from '../refresh_button';
 
 const { useState, useEffect, useCallback, useRef } = React;
 
@@ -16,23 +17,28 @@ function usePoll(url: string, ms: number) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
-  const busy = useRef(false);
-  const load = useCallback((force?: boolean) => {
-    if (busy.current) return;
-    busy.current = true;
+  const busy = useRef<Promise<boolean> | null>(null);
+  // 回傳 false＝失敗。上一輪還沒回來就回傳那一輪（按 ↻ 時等它跑完，不會被安靜地略過）
+  const load = useCallback((force?: boolean): Promise<boolean> => {
+    if (busy.current) return busy.current;
     setLoading(true);
     // 離開再回來不用全部重抓：快取時間比輪詢短一點，輪詢照常更新；按 ↻ 一定重抓
-    cachedJson(url, undefined, force === true ? 0 : ms - 2000)
+    busy.current = cachedJson(url, undefined, force === true ? 0 : ms - 2000)
       .then((d) => {
-        if (d.error && !(d.rows || d.days || d.groups || []).length) setErr(d.error);
-        else setErr('');
+        const failed = d.error && !(d.rows || d.days || d.groups || []).length;
+        setErr(failed ? d.error : '');
         setData(d);
+        return !failed;
       })
-      .catch((e) => setErr(e.message || String(e)))
+      .catch((e) => {
+        setErr(e.message || String(e));
+        return false;
+      })
       .finally(() => {
-        busy.current = false;
+        busy.current = null;
         setLoading(false);
       });
+    return busy.current;
   }, [url, ms]);
   useEffect(() => {
     load();
@@ -43,15 +49,13 @@ function usePoll(url: string, ms: number) {
 
 const Arrow = ({ v }: { v: number }) => (v > 0 ? '▲' : v < 0 ? '▼' : '');
 
+// 按 ↻ 一定重抓（不用前端快取）；更新中／已更新／冷卻 10 秒見 RefreshButton
 const Refresh = ({ poll }: { poll: any }) => (
-  <button
-    type="button"
-    onClick={() => poll.load(true)}
-    disabled={poll.loading}
-    className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 cursor-pointer text-[11px]"
-  >
-    {poll.loading ? '更新中…' : `↻ ${poll.data?.timestamp || '更新'}`}
-  </button>
+  <RefreshButton
+    onRefresh={() => poll.load(true)}
+    idleLabel={`↻ ${poll.data?.timestamp || '更新'}`}
+    className="px-2 py-0.5 rounded-lg text-[11px]"
+  />
 );
 
 const Err = ({ text }: { text: string }) => (text ? <div className="text-xs text-rose-300">⚠️ {text}</div> : null);

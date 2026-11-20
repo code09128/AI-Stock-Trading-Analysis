@@ -610,6 +610,20 @@ function Mod5Panel({ ctx }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
+                {m5Entries.length === 0 && (
+                  <tr>
+                    <td colSpan={12} className="py-4 px-2 text-center text-slate-400 whitespace-normal font-sans">
+                      這裡只列已賣出（平倉）的交易，目前還沒有。
+                      {(m5Data?.open_positions || []).length > 0 &&
+                        `你的 ${m5Data.open_positions.length} 檔持股列在下方「持有中部位」；`}
+                      每一筆買進（含我的持股新增、匯入）的明細在
+                      <button type="button" onClick={() => bus.goTab?.('orders')} className="mx-1 text-sky-300 underline cursor-pointer">
+                        下單紀錄
+                      </button>
+                      頁。
+                    </td>
+                  </tr>
+                )}
                 {m5Entries.map((en, idx) => (
                   <tr key={en.trade_id}>
                     <td className="py-1.5 px-1.5 font-bold text-amber-300">

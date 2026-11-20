@@ -557,6 +557,12 @@ function DividendCalendar({ symbols, quotes, categories, selected, onSelect, hol
     for (const m of months) est[m - 1] += ((r.ttm_cash * h.shares) / months.length) * mult;
   }
   const estTotal = est.reduce((a, b) => a + b, 0);
+  if (!symbols.length)
+    return (
+      <div className="text-xs text-slate-400 py-3">
+        {holdings.length ? '目前的篩選條件下沒有持股。' : '還沒有持股。到「持股」新增後，這裡會列出每檔的除息月份與預估入帳。'}
+      </div>
+    );
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-1.5">
