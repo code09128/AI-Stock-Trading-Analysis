@@ -1,7 +1,7 @@
 // 大盤籌碼頁：開盤前先看國際指數、台指期、資金流向、產業強弱與台灣 50，再決定今天怎麼操作。
 // 資料：/api/board/world（國際指數＋台指期，30 秒）、/api/board/tw50（30 秒）、
-//       /api/board/sectors、/api/board/flow（證交所盤後資料，10 分鐘）
-import { Tip, colorOf, fmt, signed } from '../ui';
+//       /api/board/sectors、/api/board/flow（證交所盤後資料，10 分鐘）、/api/board/calendar（經濟日曆，30 分鐘）
+import { Tip, colorOf, fmt, readLS, signed, writeLS } from '../ui';
 import { PCard, PageHead } from './card_box';
 import { Donut, HBars, VBars, topSlices } from './mini_charts';
 import { openInWatch } from './watch';
@@ -597,11 +597,151 @@ function Tw50Card({ poll }: { poll: any }) {
   );
 }
 
+// ---------- 經濟日曆（國際） ----------
+const COUNTRY_ORDER = ['USD', 'CNY', 'EUR', 'JPY', 'GBP'];
+const IMPACT_RANK: Record<string, number> = { 高: 3, 中: 2, 低: 1, 假日: 0 };
+const IMPACT_TONE: Record<string, string> = { 高: 'bg-rose-400', 中: 'bg-amber-300', 低: 'bg-slate-500', 假日: 'bg-sky-400' };
+const LEVEL_OPTS = [
+  ['high', '只看高'],
+  ['mid', '中以上'],
+  ['all', '全部'],
+] as const;
+
+function EconCalendarCard({ poll }: { poll: any }) {
+  const [level, setLevel] = useState<string>(() => readLS('tw_us_econ_level_v1', 'mid'));
+  const [country, setCountry] = useState('ALL');
+  const evs: any[] = poll.data?.events || [];
+  const now = new Date().toISOString();
+  const min = level === 'high' ? 3 : level === 'mid' ? 2 : 0;
+  const ord = (c: string) => (COUNTRY_ORDER.includes(c) ? COUNTRY_ORDER.indexOf(c) : 99);
+  const countries = [...new Map(evs.map((e) => [e.country, e.country_zh])).entries()].sort((a, b) => ord(a[0]) - ord(b[0]));
+  const shown = evs.filter((e) => (IMPACT_RANK[e.impact] ?? 1) >= min && (country === 'ALL' || e.country === country));
+  // 「已公布」用瀏覽器的現在時間判斷（後端快取最久 1 小時，不能用後端算的 past）
+  const isPast = (e: any) => new Date(e.at).toISOString() < now;
+  const next = shown.find((e) => !isPast(e));
+  // 打開或換篩選時，清單捲到下一個還沒公布的事件（已公布的在上面，往上捲還看得到）
+  const listRef = useRef<HTMLDivElement>(null);
+  const nextKey = next ? `${next.at}-${next.country}-${next.title}` : '';
+  useEffect(() => {
+    const box = listRef.current;
+    if (!box) return undefined;
+    // 清單是 relative，所以 offsetTop 就是相對清單頂端；減掉日期標題的高度
+    const go = () => {
+      const el = box.querySelector('[data-next="1"]') as HTMLElement | null;
+      if (!el || !box.clientHeight) return false;
+      box.scrollTop = el.offsetTop - 28;
+      return true;
+    };
+    if (go()) return undefined;
+    // 頁面在背景先掛上（還沒顯示、高度 0）時捲不動：等清單真的出現再捲一次
+    const ro = new ResizeObserver(() => go() && ro.disconnect());
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [nextKey, level, country]);
+  const days: Record<string, any[]> = {};
+  for (const e of shown) {
+    if (!days[e.date]) days[e.date] = [];
+    days[e.date].push(e);
+  }
+  const pill = (on: boolean) =>
+    `ta-key px-2.5 py-1 rounded-full text-[11px] cursor-pointer ${on ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'}`;
+  return (
+    <PCard
+      id="board-calendar"
+      span={12}
+      title="經濟日曆（本週・國際）"
+      sub={next ? `下一個：${next.date.slice(5)} ${next.time} ${next.country_zh} ${next.title_zh || next.title}` : '本週重要事件都已公布'}
+      tip={
+        <Tip text="本週美、歐、英、日、中等主要經濟數據與央行事件（台灣時間）。影響程度是資料來源的分級，「高」通常會讓股市、匯率明顯波動。資料每小時更新一次；沒有公布值，公布後的數字請看新聞。" />
+      }
+      right={<Refresh poll={poll} />}
+    >
+      <Err text={poll.err} />
+      <Wait poll={poll} />
+      {evs.length > 0 && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <fieldset className="flex items-center gap-1.5 border-0 p-0 m-0">
+              <legend className="sr-only">影響程度</legend>
+              {LEVEL_OPTS.map(([k, label]) => (
+                <button
+                  type="button"
+                  key={k}
+                  aria-pressed={level === k}
+                  onClick={() => {
+                    setLevel(k);
+                    writeLS('tw_us_econ_level_v1', k);
+                  }}
+                  className={pill(level === k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </fieldset>
+            <span className="w-px h-4 bg-white/10" />
+            <fieldset className="flex flex-wrap items-center gap-1.5 border-0 p-0 m-0">
+              <legend className="sr-only">國家</legend>
+              {[['ALL', '全部'], ...countries].map(([k, label]) => (
+                <button type="button" key={k} aria-pressed={country === k} onClick={() => setCountry(k)} className={pill(country === k)}>
+                  {label}
+                </button>
+              ))}
+            </fieldset>
+          </div>
+          {shown.length === 0 && <div className="text-xs text-slate-500">這個條件下本週沒有事件。</div>}
+          <div ref={listRef} className="relative max-h-[26rem] overflow-y-auto space-y-3 pr-1">
+            {Object.entries(days).map(([date, list]) => (
+              <div key={date}>
+                <div className="sticky top-0 z-[1] bg-slate-900/95 text-[11.5px] font-bold text-slate-300 py-1">
+                  {date.slice(5)}（{list[0].weekday}）
+                </div>
+                <ul className="space-y-1">
+                  {list.map((e) => (
+                    <li
+                      key={`${e.at}-${e.country}-${e.title}`}
+                      data-next={e === next ? '1' : undefined}
+                      className={`grid grid-cols-[3rem_4.5rem_1fr_auto] items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${
+                        isPast(e) ? 'opacity-45' : e === next ? 'ta-row-on' : 'bg-white/[0.025]'
+                      }`}
+                    >
+                      <span className="mono text-slate-300">{e.time}</span>
+                      <span className="flex items-center gap-1.5 text-slate-300 truncate">
+                        <i className={`inline-block w-2 h-2 rounded-full shrink-0 ${IMPACT_TONE[e.impact] || 'bg-slate-500'}`} title={`影響程度：${e.impact}`} />
+                        {e.country_zh}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="text-slate-100">{e.title_zh || e.title}</span>
+                        {e.title_zh && <span className="ml-1.5 text-[10.5px] text-slate-500">{e.title}</span>}
+                      </span>
+                      <span className="mono text-[11px] text-slate-400 text-right whitespace-nowrap">
+                        {e.forecast && <>預測 <b className="text-slate-200">{e.forecast}</b></>}
+                        {e.forecast && e.previous && '・'}
+                        {e.previous && <>前值 {e.previous}</>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <div className="text-[10px] text-slate-500">
+        <i className="inline-block w-2 h-2 rounded-full bg-rose-400" /> 高　<i className="inline-block w-2 h-2 rounded-full bg-amber-300" /> 中　
+        <i className="inline-block w-2 h-2 rounded-full bg-slate-500" /> 低・{poll.data?.note || ''}來源：{poll.data?.source || 'Forex Factory'}
+        {poll.data?.fetched_at && `（${poll.data.fetched_at} 取得${poll.data.stale ? '，來源暫時連不上，先顯示上次的資料' : ''}）`}
+      </div>
+    </PCard>
+  );
+}
+
 function MarketBoardPage() {
   // 產業排行與資金流向共用類股資料；三大法人與外資 10 日共用 flow；產業權重與台灣 50 共用 tw50
   const sectors = usePoll('/api/board/sectors', 600000);
   const flow = usePoll('/api/board/flow', 600000);
   const tw50 = usePoll('/api/board/tw50', 30000);
+  // 經濟日曆：後端最多 1 小時對外抓一次，這裡 30 分鐘問一次後端就夠
+  const cal = usePoll('/api/board/calendar', 1800000);
   return (
     <div className="space-y-3.5" data-tour="board-root">
       <PageHead
@@ -611,6 +751,7 @@ function MarketBoardPage() {
       <BoardHelp />
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
         <WorldCard />
+        <EconCalendarCard poll={cal} />
         <InstFlowCard poll={flow} />
         <Foreign10dCard poll={flow} />
         <Tw50IndustryWeightCard poll={tw50} />

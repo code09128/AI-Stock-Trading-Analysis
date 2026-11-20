@@ -55,7 +55,8 @@ class SummaryMissingTests(unittest.TestCase):
         }
         with patch.object(ai_context, "build", return_value=built), \
                 patch.object(ai_context.valuation, "brief", return_value=""), \
-                patch.object(ai_context.analyst, "brief", return_value=""):
+                patch.object(ai_context.analyst, "brief", return_value=""), \
+                patch.object(ai_context.econ_calendar, "brief", return_value=""):
             text = ai_context.summary_lines("2330")
         self.assertIn("本次缺少的資料", text)
         self.assertIn("基本面與評價（連線逾時）", text)
@@ -68,7 +69,8 @@ class SummaryMissingTests(unittest.TestCase):
                  "近期新聞與公告": [{"標題": "某公司公告"}]}
         with patch.object(ai_context, "build", return_value=built), \
                 patch.object(ai_context.valuation, "brief", return_value=""), \
-                patch.object(ai_context.analyst, "brief", return_value=""):
+                patch.object(ai_context.analyst, "brief", return_value=""), \
+                patch.object(ai_context.econ_calendar, "brief", return_value=""):
             self.assertNotIn("本次缺少的資料", ai_context.summary_lines("2330"))
 
 

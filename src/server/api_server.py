@@ -49,6 +49,7 @@ GET_ROUTES: Dict[str, Callable[[], Any]] = {
     "/api/board/sectors": lambda: D.handle_board("sectors"),
     "/api/board/flow": lambda: D.handle_board("flow"),
     "/api/board/tw50": lambda: D.handle_board("tw50"),
+    "/api/board/calendar": lambda: D.handle_board("calendar"),
     "/api/chains/map": D.handle_chain_map,
     "/api/chains/map_us": D.handle_chain_map_us,
     "/api/update/status": updater.current_version,

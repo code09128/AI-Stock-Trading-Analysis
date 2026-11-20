@@ -44,6 +44,7 @@ const DATA_KEYS = [
   ['tw_us_div_received_v1', '我的持股：已領現金配息', null],
   ['tw_us_hold_basis_v1', '介面偏好：持股市值計算（即時價／昨收）', null],
   ['tw_us_heatmap_pool_v1', '介面偏好：熱力圖股票池', null],
+  ['tw_us_econ_level_v1', '介面偏好：經濟日曆影響程度篩選', null],
   ['tw_us_heatmap_size_v1', '介面偏好：熱力圖方塊大小', null],
   ['tw_us_fee_discount_v1', '模擬下單：手續費折數', null],
   ['tw_us_intl_fee_v1', '模擬下單：海外券商手續費率與每筆最低', 'intl-fee-changed'],

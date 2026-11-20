@@ -10,7 +10,7 @@
 | 頁面 | 做什麼 |
 |---|---|
 | **個股（行情）** | 左側清單分三頁：自選（清單／技術檢視）、我的持股（含碎股、帳戶現金、已領配息對帳；配息月曆檢視）、探索（ETF 精選），提醒收在清單底部；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費，海外可設券商手續費率與每筆最低）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
-| **大盤籌碼** | 開盤前先看大環境：國際指數（美股、亞洲、美元指數、匯率）、美股期貨、**台指期日盤＋夜盤**與期現貨價差；三大法人近 10 日買賣超、類股成交比重；**產業漲跌排行**（證交所各類股，附成交金額、比重、量比）；**台灣 50**（上市市值前 50 大，盤中即時、量比、市值）。全部公開資料，不需金鑰 |
+| **大盤籌碼** | 開盤前先看大環境：國際指數（美股、亞洲、美元指數、匯率）、美股期貨、**本週經濟日曆**（美歐英日中等主要經濟數據與央行事件，台灣時間；來源每小時更新、最多 1 小時抓一次並存檔，沒有台灣、沒有公布值）、**台指期日盤＋夜盤**與期現貨價差；三大法人近 10 日買賣超、類股成交比重；**產業漲跌排行**（證交所各類股，附成交金額、比重、量比）；**台灣 50**（上市市值前 50 大，盤中即時、量比、市值）。全部公開資料，不需金鑰 |
 | **產業鏈地圖** | 把證交所全部類股（約 32 個）攤成一張可拖曳縮放的互動地圖，漲跌用**即時類股指數**上色（盤中隨成交更新，少數沒有即時指數的類股用盤後資料），圓的大小是成交比重；有整理產業鏈的類股（半導體、AI 伺服器、通信網路、面板顯示、電腦與週邊、印刷電路板、被動元件、電動車、重電與綠能、石化塑膠、航運、金融保險、鋼鐵、水泥營建、紡織與鞋業、食品民生、自動化機械、生技醫療、電子通路、資訊與雲端服務、零售與貿易、觀光餐旅與休閒、能源與環保、玻璃陶瓷與衛浴、化學與橡膠、遊戲與數位娛樂、五金與金屬製品，共 27 條；相關類股合併成一條，點合併進來的類股也進得到那條鏈）點進去展開**上中下游環節與個股**，環節漲跌是個股即時報價以成交值加權，光纖上的光點代表資金流向；可**回放近 30 日**看漲跌怎麼由上游傳到下游。切到「美股」有 12 條鏈，涵蓋 11 檔 SPDR 類股 ETF 代表的全部類股；環節分類是自行整理的示意（不是官方資料），更新方式見 `src/market/chain_data.py` 開頭 |
 | **多圖走勢** | 一次看 2×2／3×3／4×4 或自訂幾列幾欄（每邊 1～6）的分時走勢，每格自己輸入代號；版面可自行新增（最多 20 組）、改名、刪除，各自儲存（可一鍵帶入自選股或持股） |
 | **個股（技術分析）** | 還權日 K（可切 5／15／60 分 K，可疊**布林通道**、K 線**買賣訊號標記**：固定規則，2019 起 10 檔台美股實測相對隨機進場優勢很小，只當找突破位置的輔助，統計與限制見 `src/technical/signals.py`、`tools/backtest_signals.py`；另有「K 線收盤規則」可切換：標出頭和底、多頭確認、收盤跌破前一天低點出場、高檔大量轉弱，實測同樣沒有優勢，見 `src/technical/kline_rules.py`、`tools/backtest_kline_rules.py`）、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
@@ -290,7 +290,7 @@ src/
 ├── market/      行情與市場規則：quote_provider（TWSE MIS／Yahoo 即時報價）、data_adapter（日 K）、bar_store（日 K 本機快取）、bar、
 │                net（對外連線數量控管、Mac 根憑證）、cache（記憶體快取）、
 │                trade_rules（海外手續費/每手股數）、finmind、finmind_store（FinMind 歷史本機快取）、chip_data（籌碼）、etf_data、etf_reference、
-│                chart_data、heatmap（股市熱力圖）、market_board（大盤籌碼頁：國際指數、台指期、法人、產業、台灣 50）、industry_map＋chain_data（產業鏈地圖的資料與自行整理的產業鏈定義）、fx、markets、market_calendar、market_rules、tz
+│                chart_data、heatmap（股市熱力圖）、market_board（大盤籌碼頁：國際指數、台指期、法人、產業、台灣 50）、econ_calendar（經濟日曆）、industry_map＋chain_data（產業鏈地圖的資料與自行整理的產業鏈定義）、fx、markets、market_calendar、market_rules、tz
 ├── technical/   技術分析：indicators、trend_score（100 分趨勢評分）、scenarios（多空三情境）、weekly（週 K）
 ├── news/        新聞：news_feed（多來源抓取與去重）、announcement_store（重大訊息每日存檔與歷史）、
 │                news_strategy（Priced-in／波動區間）、news_digest（近期新聞彙整）
@@ -299,7 +299,7 @@ src/
 │                live_signals（今日訊號）、pine_export（匯出 Pine v5）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）；savings_plan（存股計畫公式）
 ├── journal/     交易檢討：journal_coach
-├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）、valuation（估值參考）
+├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）、valuation（估值參考）、analyst（分析師共識）
 ├── ai/          AI：ai_client（各家連線與串流）、ai_prompts（提示詞）、ai_text（數字核對、簡轉繁）、ai_context、
 │                llm_runner、anti_hallucination（防幻覺稽核）
 └── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、jobs（慢分析的背景工作）、config、params、

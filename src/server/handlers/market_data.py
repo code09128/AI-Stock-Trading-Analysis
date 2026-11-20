@@ -5,7 +5,7 @@ import time
 
 from src.market import quote_provider
 from src.market.etf_reference import ETF_POOL
-from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets, rankings, symbol_search
+from src.market import etf_data, chart_data, chip_data, finmind, fx, heatmap, industry_map, market_board, markets, rankings, symbol_search, econ_calendar
 from src.company import stock_info
 from src.server.config import WATCHLIST_NAMES
 from src.server.params import arg_num
@@ -86,9 +86,9 @@ class MarketDataHandlers:
         return out
 
     def handle_board(self, part: str) -> Dict[str, Any]:
-        """大盤籌碼頁：world（國際指數＋台指期）／sectors（產業排行）／flow（三大法人）／tw50。"""
+        """大盤籌碼頁：world（國際指數＋台指期）／sectors（產業排行）／flow（三大法人）／tw50／calendar（經濟日曆）。"""
         fn = {"world": market_board.world_indices, "sectors": market_board.sectors,
-              "flow": market_board.fund_flow, "tw50": market_board.tw50}[part]
+              "flow": market_board.fund_flow, "tw50": market_board.tw50, "calendar": econ_calendar.events}[part]
         return {**fn(), "timestamp": time.strftime("%H:%M:%S")}
 
     def handle_chain_map(self) -> Dict[str, Any]:

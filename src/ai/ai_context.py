@@ -14,7 +14,7 @@ AI 補充資料包 (ai_context.py)
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
-from src.market import chip_data, markets
+from src.market import chip_data, econ_calendar, markets
 
 from src.company import analyst, fundamentals as fin, stock_info, valuation
 
@@ -247,6 +247,9 @@ def summary_lines(symbol: str) -> str:
     ab = analyst.brief(symbol)
     if ab:
         lines.append(ab)
+    eb = econ_calendar.brief()
+    if eb:
+        lines.append(eb)
     mk = c.get("大盤環境") or {}
     if "趨勢" in mk:
         lines.append(f"大盤（{mk.get('指數')}）：{mk.get('趨勢')}，相對MA20 {mk.get('相對MA20%')}%、20日報酬 {mk.get('20日報酬%')}%")
