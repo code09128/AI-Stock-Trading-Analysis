@@ -43,6 +43,7 @@ const PROFILE_TABS = [
   ['basic', '基本資料'],
   ['fin', '財報'],
   ['div', '配息'],
+  ['own', '持股結構'], // 只有美股顯示
 ];
 
 // 檢視 → 所屬的頂層分頁；頂層分頁 → 點下去先顯示的檢視
@@ -110,6 +111,8 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   const [showNews, setShowNews] = useState(() => readLS('tw_us_chart_news_v2', true) !== false);
   const [digest, setDigest] = useState<{ symbol: string; data: any; error: string; loading: boolean } | null>(null);
   const [profileTab, setProfileTab] = useState('basic');
+  // 「持股結構」只有美股：切到台股時先顯示基本資料（不改掉使用者選的分頁，切回美股會回來）
+  const pTab = profileTab === 'own' && marketOf(selected) !== 'US' ? 'basic' : profileTab;
   const [holdOnly, setHoldOnly] = useState(false);
   const [listQuery, setListQuery] = useState('');
   const [selOverview, setSelOverview] = useState<any>(null);
@@ -869,21 +872,21 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
         return (
           <CardBox key={id} id={id} title="基本資料・配息" ctl={cardCtl}>
             <div className="flex gap-1" role="tablist" aria-label="基本資料分類">
-              {PROFILE_TABS.map(([k, label]) => (
+              {PROFILE_TABS.filter(([k]) => k !== 'own' || marketOf(selected) === 'US').map(([k, label]) => (
                 <button
                   type="button"
                   role="tab"
                   key={k}
-                  aria-selected={profileTab === k}
+                  aria-selected={pTab === k}
                   onClick={() => setProfileTab(k)}
-                  className={`flex-1 rounded-lg px-1 py-[5px] text-xs cursor-pointer ${profileTab === k ? 'bg-[#4f7cff]/25 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                  className={`flex-1 rounded-lg px-1 py-[5px] text-xs cursor-pointer ${pTab === k ? 'bg-[#4f7cff]/25 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
                 >
                   {label}
                 </button>
               ))}
             </div>
             <div data-tour="stock-info" className="max-h-[440px] overflow-y-auto pr-1">
-              <StockInfoPanel symbol={selected} hideValuation tab={profileTab} onAskAi={() => openAi('stock')} />
+              <StockInfoPanel symbol={selected} hideValuation tab={pTab} onAskAi={() => openAi('stock')} />
             </div>
           </CardBox>
         );

@@ -7,6 +7,7 @@
 """
 
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -19,7 +20,10 @@ FIELDS: List[Dict[str, Any]] = [
      "help": "台股日 K 備援、籌碼、配息、月營收、季財報的資料額度。不填每小時 300 次；到 finmindtrade.com 免費註冊後填入可提高到 600 次。程式只用到上限的 80%（保留餘量），各功能也都有快取。",
      "link": "https://finmindtrade.com/"},
     {"key": "SEC_USER_AGENT", "label": "SEC 識別字串", "secret": False, "group": "data",
-     "help": "抓美股 SEC 8-K 公告時，SEC 要求附上聯絡方式，例如「王小明 you@example.com」。不填用預設值。"},
+     "help": "選填，不用申請帳號。美國證管會（SEC）要求程式抓公開申報時自報身分，格式是「名字 email」，例如「Wang you@example.com」。"
+             "用在美股新聞裡的 SEC 8-K 重大事件公告：不填也能用，但 SEC 可能偶爾拒絕。只存在本機的 .env，只會放在送給 sec.gov 的請求標頭裡，不會送到其他地方。"
+             "美股的持股結構與內部人交易來自 Yahoo 整理好的資料，不需要這個設定。",
+     "link": "https://www.sec.gov/os/accessing-edgar-data", "link_label": "SEC 說明"},
 ]
 ALLOWED = {f["key"] for f in FIELDS}
 _LOCK = threading.Lock()
@@ -74,6 +78,8 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
         v = str(v if v is not None else "").strip()
         if any(c in v for c in "\r\n\0"):
             raise ValueError(f"{k} 不能包含換行")
+        if k == "SEC_USER_AGENT" and v and not re.search(r"\S+\s+\S+@\S+\.\S+", v):
+            raise ValueError("SEC 識別字串格式是「名字 email」，例如「Wang you@example.com」（中間要有空格）")
         updates[k] = v
     if not updates:
         return status()

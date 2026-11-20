@@ -135,6 +135,7 @@ cd AI-Stock-Trading-Analysis
 - 資料是整份檔案（上市／上櫃本益比、上市／上櫃產業分類，共 4 個請求、24 小時快取），同業分布在本機算，不逐檔查詢；股價用日 K 收盤，不打即時報價。
 - 限制：產業分類很粗（例如電子零組件什麼都有）；虧損公司、同業不足 8 家的產業不給結論；EPS 大增大減時會提示「基期效應」。只是相對比較，不是預測，也不是買賣建議。
 - 美股個股：本益比相對所屬 SPDR 類股 ETF 本益比的溢價判斷五級，合理價＝EPS × ETF 本益比 ±10%（ETF 本益比是市值加權，不是同業中位數）。
+- 美股個股的「基本資料・配息」卡多一個「持股結構」分頁：機構／內部人持股比例、前 10 大機構（13F 季報，約落後 45 天）、內部人近 180 天交易（Form 4，市場買賣優先列出，股票獎酬與贈與另標）。資料是 Yahoo 整理好的 SEC 申報（一次請求、12 小時快取），不需要填 SEC 識別字串；附 SEC EDGAR 原始申報連結。AI 解讀也會拿到一行摘要。
 - 卡片下方是「分析師共識」（台股、美股個股）：12 個月目標價區間（標出平均目標價與現價）、近 4 個月評等分布、券商最近 90 天的調升／調降。
   資料來自 Yahoo Finance 彙整（以外資券商為主），只在打開該股時抓一次、12 小時快取；台股只有彙整數字、沒有個別券商紀錄，中小型股常常沒有資料。AI 解讀也會拿到一行摘要。
 
@@ -299,7 +300,7 @@ src/
 │                live_signals（今日訊號）、pine_export（匯出 Pine v5）
 ├── portfolio/   組合風控：portfolio_risk、portfolio_scenarios（多情境）、stress（歷史回落）；savings_plan（存股計畫公式）
 ├── journal/     交易檢討：journal_coach
-├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）、valuation（估值參考）、analyst（分析師共識）
+├── company/     公司與基金：stock_info（基本資料、配息）、fundamentals（財報與市場預期）、valuation（估值參考）、analyst（分析師共識）、ownership（美股持股結構與內部人交易）
 ├── ai/          AI：ai_client（各家連線與串流）、ai_prompts（提示詞）、ai_text（數字核對、簡轉繁）、ai_context、
 │                llm_runner、anti_hallucination（防幻覺稽核）
 └── server/      api_server（HTTP 路由表）、dispatcher、handlers/（各功能 API）、jobs（慢分析的背景工作）、config、params、

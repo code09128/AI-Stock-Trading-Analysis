@@ -3,6 +3,7 @@ import { cachedJson } from '../fetch_cache';
 import { Tip, baseCode, colorOf, fmt, localDate, signed } from '../ui';
 import { AiExplain } from '../ai_store';
 import { postJob } from '../desktop_bridge';
+import { OwnershipCard } from './ownership_panel';
 import { ValuationCard } from './valuation_card';
 import { HBars, MiniBars } from './mini_charts';
 
@@ -332,6 +333,7 @@ function StockInfoPanel({ symbol, hideValuation = false, tab, onAskAi }: { symbo
   const today = localDate();
   const show = (t: string) => !tab || tab === t;
   if (tab === 'fin') return <FundamentalsCard symbol={symbol} showEmpty />;
+  if (tab === 'own') return <OwnershipCard symbol={symbol} />;
   // 近 4 年每股現金股利（真實配息紀錄加總）
   const divByYear: Record<string, number> = {};
   for (const e of info.dividends.events) {

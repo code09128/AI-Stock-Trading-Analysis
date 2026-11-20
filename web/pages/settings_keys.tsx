@@ -221,7 +221,7 @@ function FieldCard({ f, st, draft, setDraft, busy, send, onTestFinmind, testBusy
             rel="noreferrer"
             className="ml-1 text-sky-300 hover:underline"
           >
-            前往註冊
+            {f.link_label || '前往註冊'}
           </a>
         )}
       </div>

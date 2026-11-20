@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.market import chip_data, econ_calendar, markets
 
-from src.company import analyst, fundamentals as fin, stock_info, valuation
+from src.company import analyst, fundamentals as fin, ownership, stock_info, valuation
 
 from src.news import news_feed
 from src.market.data_adapter import DualMarketDataAdapter
@@ -247,6 +247,9 @@ def summary_lines(symbol: str) -> str:
     ab = analyst.brief(symbol)
     if ab:
         lines.append(ab)
+    ob = ownership.brief(symbol)
+    if ob:
+        lines.append(ob)
     eb = econ_calendar.brief()
     if eb:
         lines.append(eb)
