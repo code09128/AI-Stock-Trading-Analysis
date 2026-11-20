@@ -19,6 +19,8 @@ const TASKS: Record<string, { module: string; tab: string; title: string; sub: s
     questions: [
       { label: '現在適合進場／加碼嗎？', needs: ['price', 'tech'] },
       { label: '估值貴不貴？', needs: ['fundamentals'] },
+      { label: '分析師目標價與評等怎麼看？', needs: ['street'] },
+      { label: '內部人與機構最近在買還是賣？', needs: ['street'] },
       { label: '法人最近在買還是賣？', needs: ['chips'] },
       { label: '停損放哪裡？', needs: ['price', 'tech'] },
       { label: '下次財報前，市場最在意哪個數字？', needs: ['earnings'] },
@@ -37,6 +39,7 @@ const TASKS: Record<string, { module: string; tab: string; title: string; sub: s
       { label: 'RSI 與量能有沒有警訊？', needs: ['tech'] },
       { label: '停損放哪裡？', needs: ['price', 'tech'] },
       { label: '已持有／空手各該怎麼做？', needs: ['price', 'tech'] },
+      { label: '這幾天有哪些經濟數據要注意？', needs: ['market'] },
     ],
   },
   event: {

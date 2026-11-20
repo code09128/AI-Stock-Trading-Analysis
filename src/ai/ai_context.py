@@ -6,8 +6,9 @@ AI 補充資料包 (ai_context.py)
 - 籌碼面（台股）：三大法人 5／20 日買賣超、融資融券變化、外資持股比、白話觀察
 - 基本面／評價：本益比、淨值比、殖利率、產業、配息節奏
 - 財報與市場預期：月營收、季 EPS／毛利率、分析師預估與上下修、預期差（見 fundamentals.py）
+- 分析師與持股結構：分析師目標價／評等變化（analyst.py）、美股機構與內部人持股與買賣（ownership.py），各一行摘要
 - 消息面：最近新聞與重大訊息標題（依相關度排序）
-- 大盤環境：該市場指數相對 MA20／MA60 的位置與 20 日報酬
+- 大盤環境：該市場指數相對 MA20／MA60 的位置與 20 日報酬，加上未來 3 天美中重要經濟事件（econ_calendar.py）
 任何一塊抓不到就標示「資料不足」與原因，不補假資料。
 """
 
@@ -126,7 +127,15 @@ def market_backdrop(symbol: str) -> Dict[str, Any]:
     return {"指數": index, "市場": markets.info(market)["name"], "收盤": round(c, 2),
             "相對MA20%": round((c / ma20 - 1) * 100, 2) if ma20 else None,
             "相對MA60%": round((c / ma60 - 1) * 100, 2) if ma60 else None,
-            "20日報酬%": _ret(closes, 20), "趨勢": trend}
+            "20日報酬%": _ret(closes, 20), "趨勢": trend,
+            "近期重要經濟事件": econ_calendar.brief() or None}
+
+
+def street(symbol: str) -> Dict[str, Any]:
+    """分析師共識（台美股）＋持股結構（只有美股）；都沒有就標資料不足。用一行摘要而不是整包資料，省 token。"""
+    out = {"分析師共識": analyst.brief(symbol) or None, "持股結構與內部人": ownership.brief(symbol) or None}
+    out = {k: v for k, v in out.items() if v}
+    return out or {"資料不足": "這檔沒有分析師目標價，也沒有機構／內部人持股資料（中小型股與台股常見）"}
 
 
 def build(symbol: str, sections=("price", "chips", "fundamentals", "news", "market")) -> Dict[str, Any]:
@@ -142,11 +151,11 @@ def build(symbol: str, sections=("price", "chips", "fundamentals", "news", "mark
         "chips": lambda: chips(symbol),
         "fundamentals": lambda: fundamentals(symbol),
         "earnings": lambda: fin.compact(symbol),
+        "street": lambda: street(symbol),
         "news": lambda: news(symbol, name),
         "market": lambda: market_backdrop(symbol),
     }
-    labels = {"price": "價格走勢", "tech": "技術指標", "chips": "籌碼面", "fundamentals": "基本面與評價",
-              "earnings": "財報與市場預期", "news": "近期新聞與公告", "market": "大盤環境"}
+    labels = SECTION_LABELS
     out: Dict[str, Any] = {"標的": symbol, "名稱": name}
 
     def run(key: str):
@@ -173,14 +182,14 @@ def symbol_of(module: str, data: Any) -> Optional[str]:
 
 
 SECTIONS_BY_MODULE = {
-    "mod1": ("price", "tech", "chips", "fundamentals", "earnings", "news", "market"),
-    "stock": ("price", "tech", "chips", "fundamentals", "earnings", "news", "market"),
+    "mod1": ("price", "tech", "chips", "fundamentals", "earnings", "street", "news", "market"),
+    "stock": ("price", "tech", "chips", "fundamentals", "earnings", "street", "news", "market"),
     "mod2": ("price", "tech", "news", "market"),
 }
 
 
 SECTION_LABELS = {"price": "價格走勢", "tech": "技術指標", "chips": "籌碼面", "fundamentals": "基本面與評價",
-                  "earnings": "財報與市場預期", "news": "近期新聞與公告", "market": "大盤環境"}
+                  "earnings": "財報與市場預期", "street": "分析師與持股結構", "news": "近期新聞與公告", "market": "大盤環境"}
 
 
 def _flat_facts(val: Any) -> Dict[str, str]:

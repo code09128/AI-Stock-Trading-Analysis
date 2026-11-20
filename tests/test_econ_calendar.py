@@ -95,13 +95,21 @@ class EventTests(Base):
 
 
 class BriefTests(Base):
-    def test_upcoming_high_us_cn_only(self):
+    def test_upcoming_high_mid_us_cn_only(self):
         with mock.patch.object(ec.qp, "_http_json", return_value=RAW):
             b = ec.brief(NOW)
-        self.assertIn("非農就業人數（預測 150K，前值 120K）", b)
+        self.assertIn("非農就業人數（影響高）（預測 150K，前值 120K）", b)
         self.assertIn("中國 零售銷售 年增", b)
         self.assertNotIn("CPI", b)  # 已經公布
         self.assertNotIn("紐西蘭", b)
+
+    def test_only_previous_no_empty_forecast(self):
+        raw = [{"title": "Revised UoM Inflation Expectations", "country": "USD", "date": "2026-11-20T10:00:00-05:00",
+                "impact": "Medium", "forecast": "", "previous": "4.3%"}]
+        with mock.patch.object(ec.qp, "_http_json", return_value=raw):
+            b = ec.brief(NOW)
+        self.assertIn("密大通膨預期終值（影響中）（前值 4.3%）", b)
+        self.assertNotIn("預測 ，", b)
 
     def test_empty_when_nothing(self):
         with mock.patch.object(ec.qp, "_http_json", return_value=[]):

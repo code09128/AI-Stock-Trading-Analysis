@@ -88,11 +88,16 @@ function Distribution({ trend }: { trend: any[] }) {
   );
 }
 
+// 券商紀錄最多 8 筆，全部攤開會把卡片拉很長：預設只顯示最近 3 筆
+const HIST_FOLD = 3;
+
 export function AnalystPanel({ symbol }: { symbol: string }) {
   const [a, setA] = useState<any>(null);
+  const [allHist, setAllHist] = useState(false);
   useEffect(() => {
     let stop = false;
     setA(null);
+    setAllHist(false);
     cachedJson('/api/analyst', { symbol }, 600000)
       // 舊版後端沒有這個路由：整段不顯示
       .then((d) => (d?._status === 404 ? { supported: false, hidden: true } : d))
@@ -157,7 +162,7 @@ export function AnalystPanel({ symbol }: { symbol: string }) {
         <div className="space-y-1">
           <div className="text-[11px] text-slate-400">券商最近 90 天的動作</div>
           <ul className="space-y-1">
-            {a.history.map((h: any) => (
+            {(allHist ? a.history : a.history.slice(0, HIST_FOLD)).map((h: any) => (
               <li key={`${h.date}-${h.firm}`} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] rounded-lg bg-slate-800/50 px-2.5 py-1.5">
                 <span className="mono text-slate-500">{h.date.slice(5)}</span>
                 <span className="text-slate-200 truncate max-w-[9rem]" title={h.firm}>
@@ -176,6 +181,11 @@ export function AnalystPanel({ symbol }: { symbol: string }) {
               </li>
             ))}
           </ul>
+          {a.history.length > HIST_FOLD && (
+            <button type="button" onClick={() => setAllHist(!allHist)} aria-expanded={allHist} className="text-[11px] text-sky-300 hover:underline">
+              {allHist ? '收合' : `顯示全部 ${a.history.length} 筆`}
+            </button>
+          )}
         </div>
       )}
       {!a.history?.length && a.market === 'TW' && <div className="text-[11px] text-slate-500">台股沒有個別券商的調升／調降紀錄，只有彙整後的目標價與評等。</div>}

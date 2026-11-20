@@ -51,6 +51,7 @@ TITLE_ZH = [
     ("Flash Manufacturing PMI", "製造業 PMI 初值"), ("Flash Services PMI", "服務業 PMI 初值"),
     ("Manufacturing PMI", "製造業 PMI"), ("Services PMI", "服務業 PMI"),
     ("Prelim UoM Consumer Sentiment", "密大消費者信心初值"), ("Revised UoM Consumer Sentiment", "密大消費者信心終值"),
+    ("Prelim UoM Inflation Expectations", "密大通膨預期初值"), ("Revised UoM Inflation Expectations", "密大通膨預期終值"),
     ("CB Consumer Confidence", "經濟諮商會消費者信心"), ("Durable Goods Orders", "耐久財訂單"),
     ("Core Durable Goods Orders", "核心耐久財訂單"), ("Building Permits", "營建許可"), ("Housing Starts", "新屋開工"),
     ("Existing Home Sales", "成屋銷售"), ("New Home Sales", "新屋銷售"), ("Pending Home Sales", "成屋待完成銷售"),
@@ -140,17 +141,24 @@ def events(now: Optional[float] = None) -> Dict[str, Any]:
             "note": "影響程度是資料來源的分級（高＝常讓市場大幅波動）。匯出檔沒有公布值，公布後的實際數字請看新聞。"}
 
 
+def _fp(e: Dict[str, Any]) -> str:
+    """「（預測 X，前值 Y）」，空的那個不寫。"""
+    parts = [f"{k} {e[f]}" for k, f in (("預測", "forecast"), ("前值", "previous")) if e[f]]
+    return f"（{'，'.join(parts)}）" if parts else ""
+
+
 def brief(now: Optional[float] = None, days: int = 3) -> str:
-    """給 AI 補充資料：接下來幾天內影響「高」的事件（只取美國與中國，和台股最相關）；沒有就回空字串。"""
+    """給 AI 補充資料：接下來幾天內影響「高」或「中」的事件（只取美國與中國，和台股最相關）；沒有就回空字串。
+    限制：匯出檔只有本週，週五、週末時看不到下週的事件。"""
     try:
         d = events(now)
     except Exception:
         return ""
     now_tw = datetime.fromtimestamp(now or time.time(), zone("Asia/Taipei"))
     until = (now_tw + timedelta(days=days)).isoformat()
-    hits = [e for e in d["events"] if not e["past"] and e["impact"] == "高" and e["country"] in ("USD", "CNY") and e["at"] <= until]
+    hits = [e for e in d["events"] if not e["past"] and e["impact"] in ("高", "中") and e["country"] in ("USD", "CNY") and e["at"] <= until]
     if not hits:
         return ""
-    items = [f"{e['date'][5:]}（{e['weekday']}）{e['time']} {e['country_zh']} {e['title_zh'] or e['title']}"
-             + (f"（預測 {e['forecast']}，前值 {e['previous']}）" if e["forecast"] or e["previous"] else "") for e in hits[:6]]
+    items = [f"{e['date'][5:]}（{e['weekday']}）{e['time']} {e['country_zh']} {e['title_zh'] or e['title']}（影響{e['impact']}）"
+             + _fp(e) for e in hits[:6]]
     return f"未來 {days} 天的重要經濟事件（台灣時間，公布前後波動可能變大）：" + "；".join(items)
