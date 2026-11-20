@@ -439,7 +439,7 @@ function AiExplain({ module, data, title = 'AI 解讀', provenance = [], drawer 
         <button
           type="button"
           onClick={() => bus.openAiDrawer?.(module)}
-          className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] hover:opacity-90 cursor-pointer shadow-lg shadow-indigo-500/20"
+          className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-violet-500 hover:opacity-90 cursor-pointer shadow-lg shadow-indigo-500/20"
         >
           ✦ 開啟 AI 分析抽屜
         </button>

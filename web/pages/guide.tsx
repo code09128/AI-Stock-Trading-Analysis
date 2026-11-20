@@ -363,7 +363,7 @@ function GuidePage({ onGo, onShowTour }) {
           <button
             type="button"
             onClick={onShowTour}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] hover:opacity-90 text-white font-semibold text-sm cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 hover:opacity-90 text-white font-semibold text-sm cursor-pointer"
           >
             開始新手導覽
           </button>
@@ -638,8 +638,8 @@ function GuidePage({ onGo, onShowTour }) {
             '不會。模擬下單一律按下就成交，這些委託種類只會記在暫存匣的委託條件裡，方便你練習券商的下單方式。',
           ],
           [
-            '動畫太多或畫面太鬆怎麼辦？',
-            '到「設定 → 外觀」：動態效果選「減少」會關掉換頁淡入、報價跳動與滑過浮起；資訊密度選「緊湊」可縮小卡片間距，同一畫面看到更多。動畫只用來說明變化，不影響任何數字。AI 解讀分析時會顯示步驟條（整理資料、連線、產生回答、核對數字），可展開看實際送給 AI 的資料項目。',
+            '動畫太多、畫面太鬆，或想換淺色怎麼辦？',
+            '到「設定 → 外觀」：主題可選 A 霧面玻璃（預設）、B 暖色、C 奶油淺色（白天或明亮環境比較舒服；產業鏈地圖是深色畫布，三個主題都維持深色）；動態效果選「減少」會關掉換頁淡入、報價跳動與滑過浮起；資訊密度選「緊湊」可縮小卡片間距，同一畫面看到更多。動畫只用來說明變化，不影響任何數字。AI 解讀分析時會顯示步驟條（整理資料、連線、產生回答、核對數字），可展開看實際送給 AI 的資料項目。',
           ],
           [
             '顯示「抓取失敗」怎麼辦？',

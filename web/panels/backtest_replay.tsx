@@ -24,7 +24,7 @@ const OVERLAYS = {
   revenue_high: ['exit_ma'],
   margin_down: ['ma'],
 };
-const LINE_COLORS = ['#f59e0b', '#38bdf8', '#a78bfa'];
+const LINE_COLORS = ['#f59e0b', 'var(--ch-sky)', 'var(--ch-violet)'];
 
 // 白話說明訊號當天為什麼成立（技術面策略帶出當天的指標數字；籌碼類用規則文字）
 function buyReason(key, p, bars, i) {
@@ -96,7 +96,7 @@ function Candles({ bars, from, to, overlays, trades, stopLine, w = 760, h = 300 
           />
         ))}
       {[hi, (hi + lo) / 2, lo].map((v) => (
-        <text key={v} x={w - pad.r + 4} y={y(v) + 3} fontSize="10" fill="#64748b" fontFamily="monospace">
+        <text key={v} x={w - pad.r + 4} y={y(v) + 3} fontSize="10" fill="rgb(var(--slate-500))" fontFamily="monospace">
           {f2(v)}
         </text>
       ))}
@@ -124,7 +124,7 @@ function Candles({ bars, from, to, overlays, trades, stopLine, w = 760, h = 300 
         return <polyline key={o.label} points={pts.join(' ')} fill="none" stroke={LINE_COLORS[n % 3]} strokeWidth="1.4" />;
       })}
       {stopLine && (
-        <line x1={pad.l} x2={w - pad.r} y1={y(stopLine)} y2={y(stopLine)} stroke="#fb7185" strokeDasharray="5 4" />
+        <line x1={pad.l} x2={w - pad.r} y1={y(stopLine)} y2={y(stopLine)} stroke="var(--ch-pink)" strokeDasharray="5 4" />
       )}
       {marks.map((m) => (
         <g key={`${m.buy ? 'b' : 's'}-${m.i}`}>
@@ -140,10 +140,10 @@ function Candles({ bars, from, to, overlays, trades, stopLine, w = 760, h = 300 
           </text>
         </g>
       ))}
-      <text x={pad.l} y={h - 6} fontSize="10" fill="#64748b" fontFamily="monospace">
+      <text x={pad.l} y={h - 6} fontSize="10" fill="rgb(var(--slate-500))" fontFamily="monospace">
         {view[0][0]}
       </text>
-      <text x={w - pad.r} y={h - 6} fontSize="10" fill="#64748b" fontFamily="monospace" textAnchor="end">
+      <text x={w - pad.r} y={h - 6} fontSize="10" fill="rgb(var(--slate-500))" fontFamily="monospace" textAnchor="end">
         {view[view.length - 1][0]}
       </text>
     </svg>

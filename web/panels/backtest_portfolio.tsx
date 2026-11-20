@@ -8,7 +8,7 @@ import { postJob } from '../desktop_bridge';
 
 const { useState } = React;
 const LS_KEY = 'tw_us_bt_portfolio_v1';
-const METHOD_COLORS = { equal: '#38bdf8', inv_vol: '#34d399', sharpe: '#f59e0b' };
+const METHOD_COLORS = { equal: 'var(--ch-sky)', inv_vol: '#34d399', sharpe: '#f59e0b' };
 
 const corrBg = (v) => {
   if (v == null) return 'transparent';
@@ -29,7 +29,7 @@ function Curves({ results }) {
   return (
     <svg viewBox={`0 0 ${W} ${H + 18}`} className="w-full h-52">
       <title>組合淨值曲線</title>
-      <line x1="0" x2={W} y1={y(1)} y2={y(1)} stroke="#475569" strokeDasharray="4 4" />
+      <line x1="0" x2={W} y1={y(1)} y2={y(1)} stroke="rgb(var(--slate-600))" strokeDasharray="4 4" />
       {results.map((r) => (
         <polyline
           key={r.method}
@@ -39,10 +39,10 @@ function Curves({ results }) {
           points={r.curve.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ')}
         />
       ))}
-      <text x="0" y={H + 14} fontSize="11" fill="#64748b" fontFamily="monospace">
+      <text x="0" y={H + 14} fontSize="11" fill="rgb(var(--slate-500))" fontFamily="monospace">
         {results[0].curve[1]?.date}
       </text>
-      <text x={W} y={H + 14} fontSize="11" fill="#64748b" fontFamily="monospace" textAnchor="end">
+      <text x={W} y={H + 14} fontSize="11" fill="rgb(var(--slate-500))" fontFamily="monospace" textAnchor="end">
         {results[0].curve[results[0].curve.length - 1]?.date}
       </text>
     </svg>

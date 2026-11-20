@@ -417,23 +417,23 @@ function Histogram({ bins, marker, label }) {
       {bins.map((b, i) => {
         const h = (b.count / max) * H;
         return (
-          <rect key={b.from} x={i * bw + 1} y={H - h} width={bw - 2} height={h} fill="#38bdf8" opacity="0.7">
+          <rect key={b.from} x={i * bw + 1} y={H - h} width={bw - 2} height={h} fill="var(--ch-sky)" opacity="0.7">
             <title>{`${b.from}% ～ ${b.to}%：${b.count} 次`}</title>
           </rect>
         );
       })}
       {mx != null && mx >= 0 && mx <= W && (
         <g>
-          <line x1={mx} x2={mx} y1={0} y2={H} stroke="#fbbf24" strokeWidth="2" strokeDasharray="4 3" />
-          <text x={Math.min(mx + 4, W - 60)} y={12} fill="#fbbf24" fontSize="11">
+          <line x1={mx} x2={mx} y1={0} y2={H} stroke="var(--ch-amber2)" strokeWidth="2" strokeDasharray="4 3" />
+          <text x={Math.min(mx + 4, W - 60)} y={12} fill="var(--ch-amber2)" fontSize="11">
             實際
           </text>
         </g>
       )}
-      <text x={0} y={H + 14} fill="#64748b" fontSize="11" fontFamily="monospace">
+      <text x={0} y={H + 14} fill="rgb(var(--slate-500))" fontSize="11" fontFamily="monospace">
         {lo}%
       </text>
-      <text x={W} y={H + 14} textAnchor="end" fill="#64748b" fontSize="11" fontFamily="monospace">
+      <text x={W} y={H + 14} textAnchor="end" fill="rgb(var(--slate-500))" fontSize="11" fontFamily="monospace">
         {hi}%
       </text>
     </svg>

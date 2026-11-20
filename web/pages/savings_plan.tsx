@@ -119,7 +119,7 @@ const Btn = ({ onClick, children, disabled, tone = 'slate' }: { onClick?: () => 
     disabled={disabled}
     className={`px-2.5 py-1 rounded-lg text-xs cursor-pointer disabled:opacity-50 ${
       tone === 'sky'
-        ? 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white font-semibold shadow-sm'
+        ? 'bg-gradient-to-r from-sky-500 to-violet-500 text-white font-semibold shadow-sm'
         : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
     }`}
   >
@@ -152,8 +152,8 @@ function LineChart({ points, xKey, lines, xLabel }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="資產變化圖">
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={py(t)} y2={py(t)} stroke="#1e293b" />
-            <text x={pad.l - 4} y={py(t) + 3} fontSize="9" fill="#64748b" textAnchor="end">
+            <line x1={pad.l} x2={W - pad.r} y1={py(t)} y2={py(t)} stroke="rgb(var(--slate-800))" />
+            <text x={pad.l - 4} y={py(t) + 3} fontSize="9" fill="rgb(var(--slate-500))" textAnchor="end">
               {wan(t)}
             </text>
           </g>
@@ -161,7 +161,7 @@ function LineChart({ points, xKey, lines, xLabel }) {
         {points
           .filter((_, i) => i % step === 0 || i === points.length - 1)
           .map((p) => (
-            <text key={p[xKey]} x={px(p[xKey])} y={H - 6} fontSize="9" fill="#64748b" textAnchor="middle">
+            <text key={p[xKey]} x={px(p[xKey])} y={H - 6} fontSize="9" fill="rgb(var(--slate-500))" textAnchor="middle">
               {p[xKey]}
             </text>
           ))}
@@ -484,8 +484,8 @@ function PlanTab({ s, set, ret }) {
           xKey="year"
           xLabel="第幾年"
           lines={[
-            { key: 'value', color: '#38bdf8', label: `資產（${shownRates[0].label} ${pct(shownRates[0].pct)}）` },
-            { key: 'principal', color: '#94a3b8', label: '投入本金', dash: true },
+            { key: 'value', color: 'var(--ch-sky)', label: `資產（${shownRates[0].label} ${pct(shownRates[0].pct)}）` },
+            { key: 'principal', color: 'rgb(var(--slate-400))', label: '投入本金', dash: true },
           ]}
         />
       )}
@@ -588,7 +588,7 @@ function IncomeTab({ s, set }) {
             items={rows.slice(0, 8).map((r) => ({
               label: r.symbol,
               value: Number((r.avg_yield_pct ?? r.ttm_yield_pct ?? 0).toFixed(2)),
-              color: r.symbol === s.symbol ? '#fbbf24' : '#4f7cff',
+              color: r.symbol === s.symbol ? 'var(--ch-amber2)' : 'var(--ch-blue)',
             }))}
             height={145}
             unit="%"
@@ -841,7 +841,7 @@ function LifeTab({ s, set, ret }) {
             points={r.curve}
             xKey="age"
             xLabel="年齡"
-            lines={[{ key: 'value', color: '#38bdf8', label: '資產（名目金額）' }]}
+            lines={[{ key: 'value', color: 'var(--ch-sky)', label: '資產（名目金額）' }]}
           />
           <Btn
             onClick={() =>
@@ -907,7 +907,7 @@ function SavingsPlanPage() {
                 onClick={() => set({ tab: id })}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer ${
                   s.tab === id
-                    ? 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white shadow-lg shadow-indigo-500/20'
+                    ? 'bg-gradient-to-r from-sky-500 to-violet-500 text-white shadow-lg shadow-indigo-500/20'
                     : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
                 }`}
               >

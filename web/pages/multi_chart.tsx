@@ -65,7 +65,7 @@ function MiniIntraday({ data, tz }) {
   const y = (v) => ((top - v) / (top - bot)) * H;
   const line = pts.map((p) => `${x(p.ts).toFixed(1)},${y(p.close).toFixed(1)}`).join(' ');
   const last = closes[closes.length - 1];
-  const color = last > prev ? 'var(--up)' : last < prev ? 'var(--down)' : '#94a3b8';
+  const color = last > prev ? 'var(--up)' : last < prev ? 'var(--down)' : 'rgb(var(--slate-400))';
   const pct = (v) => `${v > prev ? '+' : ''}${(((v - prev) / prev) * 100).toFixed(2)}%`;
   const hm = (ts) => {
     try {
@@ -77,7 +77,7 @@ function MiniIntraday({ data, tz }) {
   return (
     <div className="relative h-full">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-full" aria-hidden="true">
-        <line x1="0" x2={W} y1={y(prev)} y2={y(prev)} stroke="#475569" strokeDasharray="3 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        <line x1="0" x2={W} y1={y(prev)} y2={y(prev)} stroke="rgb(var(--slate-600))" strokeDasharray="3 3" strokeWidth="1" vectorEffect="non-scaling-stroke" />
         <polyline points={line} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       </svg>
       <span className="absolute left-1 top-0 text-[10px] mono opacity-85" style={{ color: 'var(--up)' }}>{pct(hi)}</span>

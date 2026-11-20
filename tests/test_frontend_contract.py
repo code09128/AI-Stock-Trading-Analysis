@@ -47,6 +47,12 @@ class StyleContractTests(unittest.TestCase):
     def test_css_variables_are_defined(self):
         html = read(WEB / "index.html")
         defined = set(re.findall(r"(--[\w-]+)\s*:", html))
+        # 主題色票由 <head> 的腳本產生（--slate-300 這類）：色階名稱取自 THEMES 的 key，色階是 K 陣列
+        m = re.search(r"const K = \[([\d,\s]+)\]", html)
+        self.assertIsNotNone(m, "找不到主題色票腳本的色階陣列 K")
+        shades = [k.strip() for k in m.group(1).split(",")]
+        names = set(re.findall(r"^\s*(\w+): pal\(", html, re.M)) | {"slate", "accent"}
+        defined |= {f"--{n}-{k}" for n in names for k in shades}
         used = set()
         for f in tsx_files():
             used |= set(re.findall(r"var\((--[\w-]+)", read(f)))

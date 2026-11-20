@@ -36,7 +36,7 @@ const SIGNAL_SET_TIP = {
 };
 const SIGNAL_CHAR = { 多頭確認: '多', 出場: '出', 空頭確認: '空', 回補: '補' };
 const signalTitle = (sg) => sg.label || (sg.type === 'buy' ? '買進訊號' : '賣出訊號');
-const signalColor = (sg) => (sg.type === 'warn' ? '#fbbf24' : sg.type === 'buy' ? 'var(--up)' : 'var(--down)');
+const signalColor = (sg) => (sg.type === 'warn' ? 'var(--ch-amber2)' : sg.type === 'buy' ? 'var(--up)' : 'var(--down)');
 
 // 一個訊號標記：買在 K 棒下方（▲）、賣與轉弱在上方（▼／!）；有 label 的規則會多標一個字
 function SignalMark({ sg, cx, yLow, yHigh, r, top, bottom }: { sg: any; cx: number; yLow: number; yHigh: number; r: number; top: number; bottom: number }) {
@@ -414,18 +414,18 @@ function CandlestickChart({
           <span className="flex items-center gap-1 text-yellow-400">
             <span className="w-3 h-0.5 bg-yellow-400 inline-block" /> MA5
           </span>
-          <span className="flex items-center gap-1" style={{ color: '#38bdf8' }}>
-            <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: '#38bdf8' }} /> MA20
+          <span className="flex items-center gap-1" style={{ color: 'var(--ch-sky)' }}>
+            <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: 'var(--ch-sky)' }} /> MA20
           </span>
           {hasMa60 && (
             <span className="flex items-center gap-1 text-emerald-400">
               <span className="w-3 h-0.5 bg-emerald-400 inline-block" /> MA60
             </span>
           )}
-          <span className="flex items-center gap-1" style={{ color: '#22d3ee' }}>
+          <span className="flex items-center gap-1" style={{ color: 'var(--ch-cyan)' }}>
             <span
               className="w-3 h-0.5 border-b border-dashed inline-block"
-              style={{ borderColor: '#22d3ee' }}
+              style={{ borderColor: 'var(--ch-cyan)' }}
             />{' '}
             支撐
           </span>
@@ -482,7 +482,7 @@ function CandlestickChart({
           量: <strong>{(activeBar.volume || 0).toLocaleString()}</strong>
         </span>
         <span className="text-yellow-400">MA5: {activeBar.ma5 ?? '-'}</span>
-        <span style={{ color: '#38bdf8' }}>MA20: {activeBar.ma20 ?? '-'}</span>
+        <span style={{ color: 'var(--ch-sky)' }}>MA20: {activeBar.ma20 ?? '-'}</span>
         {activeBar.ma60 != null && <span className="text-emerald-400">MA60: {activeBar.ma60}</span>}
         {showBB && activeBar.bb_upper != null && (
           <span className="text-violet-300">
@@ -522,14 +522,14 @@ function CandlestickChart({
               y1={tk.y}
               x2={width - padRight}
               y2={tk.y}
-              stroke="#1e293b"
+              stroke="rgb(var(--slate-800))"
               strokeWidth="1"
             />
             <text
               x={padLeft - 6}
               y={tk.y + 4}
               textAnchor="end"
-              fill="#64748b"
+              fill="rgb(var(--slate-500))"
               fontSize="10"
               fontFamily="monospace"
             >
@@ -542,14 +542,14 @@ function CandlestickChart({
           y1={volTop - 6}
           x2={width - padRight}
           y2={volTop - 6}
-          stroke="#334155"
+          stroke="rgb(var(--slate-700))"
           strokeWidth="1"
         />
         <text
           x={padLeft - 6}
           y={volTop + 10}
           textAnchor="end"
-          fill="#64748b"
+          fill="rgb(var(--slate-500))"
           fontSize="9.5"
           fontFamily="monospace"
         >
@@ -563,7 +563,7 @@ function CandlestickChart({
               y1={toY(v)}
               x2={width - padRight}
               y2={toY(v)}
-              stroke="#06b6d4"
+              stroke="var(--ch-cyan2)"
               strokeWidth="1"
               strokeDasharray="4 4"
               opacity="0.8"
@@ -571,7 +571,7 @@ function CandlestickChart({
             <text
               x={width - padRight + 4}
               y={toY(v) + 3}
-              fill="#22d3ee"
+              fill="var(--ch-cyan)"
               fontSize="9.5"
               fontFamily="monospace"
             >
@@ -586,7 +586,7 @@ function CandlestickChart({
               y1={toY(v)}
               x2={width - padRight}
               y2={toY(v)}
-              stroke="#f43f5e"
+              stroke="var(--ch-red)"
               strokeWidth="1"
               strokeDasharray="4 4"
               opacity="0.8"
@@ -594,7 +594,7 @@ function CandlestickChart({
             <text
               x={width - padRight + 4}
               y={toY(v) + 3}
-              fill="#fb7185"
+              fill="var(--ch-pink)"
               fontSize="9.5"
               fontFamily="monospace"
             >
@@ -618,7 +618,7 @@ function CandlestickChart({
                   y={padTop}
                   width={stepX}
                   height={volTop + volH - padTop}
-                  fill="#38bdf8"
+                  fill="var(--ch-sky)"
                   opacity="0.08"
                 />
               )}
@@ -651,8 +651,8 @@ function CandlestickChart({
                   cx={cx}
                   cy={Math.max(vY - 4, volTop - 3)}
                   r="2.2"
-                  fill={bigVolPending.has(b.date) ? 'none' : '#fcd34d'}
-                  stroke="#fcd34d"
+                  fill={bigVolPending.has(b.date) ? 'none' : 'var(--ch-amber)'}
+                  stroke="var(--ch-amber)"
                   strokeWidth={bigVolPending.has(b.date) ? 1 : 0}
                   pointerEvents="none"
                 >
@@ -674,7 +674,7 @@ function CandlestickChart({
                       y={hi ? Math.max(toY(b.high) - 4, padTop + 8) : Math.min(toY(b.low) + 11, padTop + priceH - 1)}
                       textAnchor="middle"
                       fontSize="9"
-                      fill="#cbd5e1"
+                      fill="rgb(var(--slate-300))"
                       opacity={pv.confirmed === false ? 0.55 : 1}
                       pointerEvents="none"
                     >
@@ -704,7 +704,7 @@ function CandlestickChart({
                   x={cx}
                   y={height - 6}
                   textAnchor="middle"
-                  fill="#64748b"
+                  fill="rgb(var(--slate-500))"
                   fontSize="9.5"
                   fontFamily="monospace"
                 >
@@ -720,7 +720,7 @@ function CandlestickChart({
           y1={padTop}
           x2={hoverCx}
           y2={volTop + volH}
-          stroke="#94a3b8"
+          stroke="rgb(var(--slate-400))"
           strokeWidth="1"
           strokeDasharray="3 3"
           opacity="0.75"
@@ -731,7 +731,7 @@ function CandlestickChart({
           y1={hoverCy}
           x2={width - padRight}
           y2={hoverCy}
-          stroke="#94a3b8"
+          stroke="rgb(var(--slate-400))"
           strokeWidth="1"
           strokeDasharray="3 3"
           opacity="0.75"
@@ -739,10 +739,10 @@ function CandlestickChart({
         />
         {showBB && bbBars.length > 1 && (
           <g pointerEvents="none">
-            <polygon points={bbBand} fill="#a78bfa" opacity="0.10" />
+            <polygon points={bbBand} fill="var(--ch-violet)" opacity="0.10" />
             <polyline
               fill="none"
-              stroke="#a78bfa"
+              stroke="var(--ch-violet)"
               strokeWidth="1.2"
               strokeDasharray="4 3"
               points={bbUpper.join(' ')}
@@ -750,7 +750,7 @@ function CandlestickChart({
             />
             <polyline
               fill="none"
-              stroke="#a78bfa"
+              stroke="var(--ch-violet)"
               strokeWidth="1.2"
               strokeDasharray="4 3"
               points={bbLower.join(' ')}
@@ -761,7 +761,7 @@ function CandlestickChart({
         {ma60Points && (
           <polyline
             fill="none"
-            stroke="#10b981"
+            stroke="var(--ch-green)"
             strokeWidth="1.5"
             points={ma60Points}
             opacity="0.9"
@@ -771,7 +771,7 @@ function CandlestickChart({
         {ma20Points && (
           <polyline
             fill="none"
-            stroke="#38bdf8"
+            stroke="var(--ch-sky)"
             strokeWidth="1.8"
             points={ma20Points}
             opacity="0.9"
@@ -781,7 +781,7 @@ function CandlestickChart({
         {ma5Points && (
           <polyline
             fill="none"
-            stroke="#facc15"
+            stroke="var(--ch-yellow)"
             strokeWidth="1.8"
             points={ma5Points}
             opacity="0.95"
@@ -868,7 +868,7 @@ function EquityCurveChart({ curve, initialCapital }) {
           y1={baseLineY}
           x2={width - padR}
           y2={baseLineY}
-          stroke="#475569"
+          stroke="rgb(var(--slate-600))"
           strokeDasharray="4 4"
           strokeWidth="1"
         />
@@ -876,21 +876,21 @@ function EquityCurveChart({ curve, initialCapital }) {
           x={padL - 6}
           y={baseLineY + 3}
           textAnchor="end"
-          fill="#94a3b8"
+          fill="rgb(var(--slate-400))"
           fontSize="9.5"
           fontFamily="monospace"
         >
           本金基準
         </text>
-        <polyline fill="none" stroke="#38bdf8" strokeWidth="2.5" points={polyPoints} />
+        <polyline fill="none" stroke="var(--ch-sky)" strokeWidth="2.5" points={polyPoints} />
         {curve.map((c, idx) => (
           <g key={c.step}>
             <circle
               cx={toX(idx)}
               cy={toY(c.equity)}
               r="4"
-              fill={c.equity >= initialCapital ? '#10b981' : '#f43f5e'}
-              stroke="#0f172a"
+              fill={c.equity >= initialCapital ? 'var(--ch-green)' : 'var(--ch-red)'}
+              stroke="rgb(var(--slate-900))"
               strokeWidth="1.5"
             />
             {curve.length <= 16 && (
@@ -898,7 +898,7 @@ function EquityCurveChart({ curve, initialCapital }) {
                 x={toX(idx)}
                 y={toY(c.equity) - 8}
                 textAnchor="middle"
-                fill="#e2e8f0"
+                fill="rgb(var(--slate-200))"
                 fontSize="9"
                 fontFamily="monospace"
               >
@@ -909,7 +909,7 @@ function EquityCurveChart({ curve, initialCapital }) {
               x={toX(idx)}
               y={height - 8}
               textAnchor="middle"
-              fill="#64748b"
+              fill="rgb(var(--slate-500))"
               fontSize="9"
               fontFamily="monospace"
             >

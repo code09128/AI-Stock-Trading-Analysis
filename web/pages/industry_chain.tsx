@@ -12,7 +12,7 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 const PANEL = 'bg-slate-950/80 border border-slate-700/60 backdrop-blur-md rounded-xl';
 const BTN = 'px-2.5 py-1 text-xs rounded-lg bg-slate-900/80 border border-slate-700/70 text-slate-200 hover:border-cyan-400 cursor-pointer disabled:opacity-50 disabled:cursor-default';
-const STAGE_COLORS = ['#22d3ee', '#a78bfa', '#f59e0b', '#34d399'];
+const STAGE_COLORS = ['var(--ch-cyan)', 'var(--ch-violet)', '#f59e0b', '#34d399'];
 
 const fmtPct = (v) => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
 const toneCls = (v) =>
@@ -98,7 +98,7 @@ function StageChart({ chain, hist, day }) {
             points={s.map((v, k) => `${X(k).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}
           />
         ))}
-        <line x1={X(day)} x2={X(day)} y1="8" y2={H - 8} stroke="#fff" strokeWidth="1.3" />
+        <line x1={X(day)} x2={X(day)} y1="8" y2={H - 8} stroke="rgb(var(--ink))" strokeWidth="1.3" />
       </svg>
       <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-3">
         {chain.stages.map((s, i) => (
@@ -704,7 +704,7 @@ function IndustryChainPage() {
           }
           if (!tgt.matches?.('input,select,textarea') && engineRef.current?.key(e)) e.preventDefault();
         }}
-        className="ta-card rounded-2xl overflow-hidden outline-none"
+        className="ta-card ta-force-dark rounded-2xl overflow-hidden outline-none"
         style={{ height: 'calc(100vh - 230px)', minHeight: 560, background: '#03050b' }}
       >
         <canvas

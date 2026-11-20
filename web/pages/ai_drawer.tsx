@@ -180,7 +180,7 @@ function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onR
         aria-modal="true"
         aria-label="AI 分析"
         data-tour="ai-drawer"
-        className="fixed right-0 top-0 bottom-0 z-50 w-[min(440px,100vw)] overflow-y-auto border-l border-white/10 bg-[#0e1220]/95 p-[18px] flex flex-col gap-3 backdrop-blur-xl"
+        className="fixed right-0 top-0 bottom-0 z-50 w-[min(440px,100vw)] overflow-y-auto border-l border-white/10 bg-slate-950/95 p-[18px] flex flex-col gap-3 backdrop-blur-xl"
       >
         <div className="flex items-center justify-between">
           <h2 className="m-0 text-base font-bold text-white">✦ AI 分析</h2>
@@ -270,7 +270,7 @@ function AiDrawer({ q, open, task, setTask, onClose, m1Data, m2Data, digest, onR
                       disabled={miss.length > 0}
                       title={miss.length ? `需要「${miss.map(labelOf).join('、')}」，目前資料不足或沒有勾選` : undefined}
                       onClick={() => setExplainQuestion(key, x.label)}
-                      className="px-2.5 py-[3px] rounded-full text-xs border border-white/10 text-slate-300 cursor-pointer hover:border-[#4f7cff] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-2.5 py-[3px] rounded-full text-xs border border-white/10 text-slate-300 cursor-pointer hover:border-sky-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {x.label}
                     </button>
@@ -573,7 +573,7 @@ function ModAiDrawer({
         aria-modal="true"
         aria-label="AI 分析"
         data-tour="ai-drawer"
-        className="fixed right-0 top-0 bottom-0 z-50 w-[min(440px,100vw)] overflow-y-auto border-l border-white/10 bg-[#0e1220]/95 p-[18px] flex flex-col gap-3 backdrop-blur-xl"
+        className="fixed right-0 top-0 bottom-0 z-50 w-[min(440px,100vw)] overflow-y-auto border-l border-white/10 bg-slate-950/95 p-[18px] flex flex-col gap-3 backdrop-blur-xl"
       >
         <div className="flex items-center justify-between">
           <h2 className="m-0 text-base font-bold text-white">✦ AI 分析</h2>
@@ -662,7 +662,7 @@ function ModAiDrawer({
                           : undefined
                       }
                       onClick={() => setExplainQuestion(key, x.label)}
-                      className="px-2.5 py-[3px] rounded-full text-xs border border-white/10 text-slate-300 cursor-pointer hover:border-[#4f7cff] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-2.5 py-[3px] rounded-full text-xs border border-white/10 text-slate-300 cursor-pointer hover:border-sky-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {x.label}
                     </button>

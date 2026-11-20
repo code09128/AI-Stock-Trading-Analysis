@@ -880,7 +880,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   key={k}
                   aria-selected={pTab === k}
                   onClick={() => setProfileTab(k)}
-                  className={`flex-1 rounded-lg px-1 py-[5px] text-xs cursor-pointer ${pTab === k ? 'bg-[#4f7cff]/25 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                  className={`flex-1 rounded-lg px-1 py-[5px] text-xs cursor-pointer ${pTab === k ? 'bg-sky-500/25 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
                 >
                   {label}
                 </button>
@@ -1147,7 +1147,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   items={etfRows
                     .filter((r) => r.yield_pct != null)
                     .slice(0, 8)
-                    .map((r) => ({ label: r.name || r.symbol, value: r.yield_pct, id: r.symbol, color: '#8b5cf6' }))}
+                    .map((r) => ({ label: r.name || r.symbol, value: r.yield_pct, id: r.symbol, color: 'var(--ch-purple)' }))}
                   format={(v) => `${fmt(v)}%`}
                   onPick={setSelected}
                   plain
@@ -1370,7 +1370,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                     <small className="ml-1.5 text-[13px] font-medium text-slate-400 mono">{q.symbol}</small>
                   </div>
                   <div className="mt-1 flex items-center gap-1 min-w-0">
-                    <span className="shrink-0 inline-block px-2 py-0.5 rounded-full text-[11px] bg-[#4f7cff]/20 text-[#b8c8ff]">{marketName(selected)}</span>
+                    <span className="shrink-0 inline-block px-2 py-0.5 rounded-full text-[11px] bg-sky-500/20 text-sky-300">{marketName(selected)}</span>
                     {categories[baseCode(selected)] && <CatChip cls={categories[baseCode(selected)]} />}
                     {q.error ? (
                       <span className="text-xs text-rose-300 truncate" title={`抓取失敗：${q.error}（為避免誤導，不顯示任何替代數字）`}>
@@ -1407,7 +1407,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   <span
                     className={`mono inline-block mt-1 px-2.5 py-0.5 rounded-full text-[13px] font-semibold whitespace-nowrap ${colorOf(dq.change)}`}
                     style={{
-                      background: `color-mix(in srgb,${dq.change > 0 ? 'var(--up)' : dq.change < 0 ? 'var(--down)' : '#8a93a8'} 16%,transparent)`,
+                      background: `color-mix(in srgb,${dq.change > 0 ? 'var(--up)' : dq.change < 0 ? 'var(--down)' : 'rgb(var(--slate-400))'} 16%,transparent)`,
                       boxShadow: dq.change && !dq.tag ? `0 0 18px color-mix(in srgb,${dq.change > 0 ? 'var(--up)' : 'var(--down)'} 30%,transparent)` : undefined,
                     }}
                   >

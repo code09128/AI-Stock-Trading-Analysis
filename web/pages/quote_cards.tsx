@@ -156,7 +156,7 @@ function DepthBody({ q, tw }: { q: any; tw: boolean }) {
 const SENT: Record<string, [string, string]> = {
   POSITIVE: ['利多', 'var(--up)'],
   NEGATIVE: ['利空', 'var(--down)'],
-  NEUTRAL: ['中性', '#b8c8ff'],
+  NEUTRAL: ['中性', 'rgb(var(--accent-300))'], // 跟著主題換（霧面玻璃時就是 #b8c8ff）
 };
 
 function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; loading: boolean; error: string; onAskAi: () => void; onDeep: () => void }) {
@@ -181,7 +181,7 @@ function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; lo
           <span className="grid place-items-center text-white" style={{ flex: pos || 0.2, background: 'color-mix(in srgb,var(--up) 70%,#000)' }}>
             利多 {pos}
           </span>
-          <span className="grid place-items-center text-white" style={{ flex: mid || 0.2, background: '#3b4256' }}>
+          <span className="grid place-items-center text-slate-100 bg-slate-600" style={{ flex: mid || 0.2 }}>
             中性 {mid}
           </span>
           <span className="grid place-items-center text-[#04130d]" style={{ flex: neg || 0.2, background: 'color-mix(in srgb,var(--down) 70%,#000)' }}>
@@ -191,7 +191,7 @@ function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; lo
         <button
           type="button"
           onClick={onAskAi}
-          className="px-2.5 py-1 rounded-[10px] text-xs font-semibold text-white bg-gradient-to-br from-[#4f7cff] to-[#8b5cf6] cursor-pointer hover:brightness-110"
+          className="px-2.5 py-1 rounded-[10px] text-xs font-semibold text-white bg-gradient-to-br from-sky-500 to-violet-500 cursor-pointer hover:brightness-110"
         >
           ✦ 讓 AI 判斷這些新聞
         </button>
@@ -211,7 +211,7 @@ function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; lo
             aria-pressed={kind === k}
             onClick={() => setKind(k)}
             className={`px-2.5 py-[3px] rounded-full text-xs border cursor-pointer ${
-              kind === k ? 'bg-[#4f7cff]/20 border-[#4f7cff] text-white' : 'border-white/10 text-slate-400 hover:text-white'
+              kind === k ? 'bg-sky-500/20 border-sky-500 text-white' : 'border-white/10 text-slate-400 hover:text-white'
             }`}
           >
             {k}
@@ -228,9 +228,9 @@ function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; lo
                 <span className="inline-block px-2 py-px rounded-full text-[11px] mr-1" style={{ color: tone, background: `color-mix(in srgb,${tone} 18%,transparent)` }}>
                   {label}
                 </span>
-                <span className="inline-block px-2 py-px rounded-full text-[11px] mr-1 bg-[#4f7cff]/20 text-[#b8c8ff]">{n.kind || '新聞'}</span>
+                <span className="inline-block px-2 py-px rounded-full text-[11px] mr-1 bg-sky-500/20 text-sky-300">{n.kind || '新聞'}</span>
                 {/^https?:\/\//i.test(n.link || '') ? (
-                  <a href={n.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-100 hover:text-[#b8c8ff] hover:underline">
+                  <a href={n.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-100 hover:text-sky-300 hover:underline">
                     {n.title} ↗
                   </a>
                 ) : (
@@ -255,7 +255,7 @@ function NewsBody({ digest, loading, error, onAskAi, onDeep }: { digest: any; lo
       <div className="text-[11.5px] text-slate-400 mt-2">
         語氣是關鍵字規則判斷（粗估）；「已反映」＝已有價格反應的新聞裡，發布前後收盤的方向和語氣一致的比例。
         另有 {others.length} 則其他新聞，逐則細節、其他新聞與手動輸入在
-        <button type="button" onClick={onDeep} className="mx-1 text-[#b8c8ff] underline cursor-pointer">
+        <button type="button" onClick={onDeep} className="mx-1 text-sky-300 underline cursor-pointer">
           新聞研究
         </button>
         分頁。

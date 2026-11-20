@@ -22,7 +22,7 @@
 | **交易檢討** | 分析交易紀錄的勝率、賺賠比、處置效應、報復性交易，產生 3 條個人規則，並成為下單前的勾選清單；「手續費＋稅」可改成對帳單實際金額，自動重算淨損益與報酬率並同步下單紀錄 |
 | **練習流程步驟條** | 策略回測、下單紀錄、交易檢討三頁上方：① 策略回測 → ② 今日訊號 → ③ 模擬下單 → ④ 下單紀錄 → ⑤ 交易檢討 → ⑥ 個人規則，標出目前在哪一步，點了就跳過去；說明頁「功能怎麼串在一起」也有同一條流程 |
 | **AI 解讀** | 每頁底部，研究主管／交易員口吻的報告格式（表格與段落），依你的持股給建議，回答中的數字自動與資料核對 |
-| **設定** | 雲端 AI（Gemini／OpenAI／Claude／OpenRouter）或本地模型（Ollama／LM Studio 自動偵測）；常駐背景提醒與 Windows 開機自動啟動；畫面縮放；金鑰與資料額度直接在畫面填寫 |
+| **設定** | 外觀：主題（A 霧面玻璃／B 暖色／C 奶油淺色）、動態效果、資訊密度、漲跌配色；雲端 AI（Gemini／OpenAI／Claude／OpenRouter）或本地模型（Ollama／LM Studio 自動偵測）；常駐背景提醒與 Windows 開機自動啟動；畫面縮放；金鑰與資料額度直接在畫面填寫 |
 
 「個股」頁頂端有行情／技術分析／新聞判斷三個分頁，共用同一檔股票。各頁之間會互相連動（個股 → 回測；熱力圖 → 查新聞；模擬成交 → 交易檢討 → 規則回到下單），程式內「說明」頁有完整流程圖與新手導覽。
 
@@ -109,6 +109,7 @@ cd AI-Stock-Trading-Analysis
   **`web/app.bundle.js` 要跟原始碼一起 commit**：線上更新只下載 Release 標籤的 `src/` 與 `web/`，沒有它更新後畫面會是空白（舊版更新程式已經發出去，沒辦法改）。
   發版前執行 `python build_web.py --web`（壓縮版，不要 commit `npm run dev` 產生的除錯版）；`tests/test_packaging.py` 會檢查 bundle 跟原始碼一致。
   沒有 Node.js 又沒有 bundle 時畫面會是空白，啟動訊息會說明；原始碼有 bundle（從 GitHub 下載的版本）則不需要 Node.js 就能執行。
+  **主題色**：`index.html` 的 `<head>` 腳本產生三套色票（CSS 變數 `--slate-300`、`--accent-500`…），Tailwind 的 slate／white／sky／amber 等都對應到變數，元件照常寫 `text-slate-400` 就會跟著主題換；淺色主題（`data-theme="cream"`）把淺色字與深色底的色階反轉，500～700 實心色不動。圖表顏色用 `rgb(var(--slate-400))`、`var(--ch-sky)` 這類變數，不要寫死色碼；寫死在 CSS 的顏色要在 `index.html` 的「主題 B、C」區塊補覆寫。產業鏈地圖是畫布，固定深色（`.ta-force-dark`）。
   **按鈕樣式**：`index.html` 依既有的 Tailwind 底色自動套浮雕（凸起＝可按，例如 `bg-slate-800`、`bg-white/5`、`bg-sky-600 hover:bg-sky-500`；凹陷＝目前選中，例如 `bg-sky-500/20`、沒有 hover 的 `bg-sky-600`、`aria-pressed`／`aria-selected`）。新按鈕沿用這些寫法、要有 `px-*` 內距；其他底色直接加 `ta-key`／`ta-key-on`，不想浮起加 `ta-flat`。陰影值是 `--raise`／`--press`／`--track` 變數。
 - **改後端（`src/*.py`）**：要**關掉黑色視窗、重新開 `start.bat`** 才會載入；只重新整理會看到舊功能或「Route not found」。
 - **只開伺服器、不開瀏覽器**：`python -m src.server.api_server [埠號]`

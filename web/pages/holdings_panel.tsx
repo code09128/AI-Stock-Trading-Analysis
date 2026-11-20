@@ -262,7 +262,7 @@ function HoldingsPanel({
       {holdRows.length > 0 && (
         // 持股摘要卡：最常看的三個數字放最上面；成本、現金、含息報酬等對帳細節在圓餅下方
         <div className="grid grid-cols-3 gap-2 mono mb-1" data-tour="hold-summary">
-          <div className="rounded-xl px-3 py-2.5 bg-gradient-to-br from-[#4f7cff] to-[#6d4fd8] min-w-0">
+          <div className="rounded-xl px-3 py-2.5 bg-gradient-to-br from-sky-500 to-violet-600 min-w-0">
             <div className="text-[10.5px] text-white/80 font-sans">總市值（台幣）</div>
             <div className="text-white font-bold text-sm truncate">{fmt(holdTotals.value, 0)}</div>
             {holdTotals.missing > 0 && <div className="text-[10px] text-white/75 font-sans">{holdTotals.missing} 筆缺報價或匯率</div>}

@@ -2,7 +2,7 @@
 // 有座標字的圖都依卡片實際寬度重畫（useChartWidth），卡片加寬時字維持原大小
 import { useChartWidth } from '../live_widgets';
 
-const PALETTE = ['#4f7cff', '#8b5cf6', '#22d3a0', '#fbbf24', '#fb7185', '#38bdf8', '#f97316', '#a3e635', '#e879f9', '#94a3b8'];
+const PALETTE = ['var(--ch-blue)', 'var(--ch-purple)', '#22d3a0', 'var(--ch-amber2)', 'var(--ch-pink)', 'var(--ch-sky)', '#f97316', '#a3e635', '#e879f9', 'rgb(var(--slate-400))'];
 
 type Slice = { label: string; value: number; color?: string };
 
@@ -47,12 +47,12 @@ function Donut({ items, center, sub, label, size = 112 }: { items: Slice[]; cent
           return el;
         })}
         {center && (
-          <text x="50%" y="49%" textAnchor="middle" fill="#e8ebf4" fontSize={size / 9} fontWeight="700">
+          <text x="50%" y="49%" textAnchor="middle" fill="rgb(var(--slate-100))" fontSize={size / 9} fontWeight="700">
             {center}
           </text>
         )}
         {sub && (
-          <text x="50%" y="63%" textAnchor="middle" fill="#8a93a8" fontSize={size / 14}>
+          <text x="50%" y="63%" textAnchor="middle" fill="rgb(var(--slate-400))" fontSize={size / 14}>
             {sub}
           </text>
         )}
@@ -114,7 +114,7 @@ function MiniBars({ items, format }: { items: { label: string; value: number }[]
         <div key={x.label} className="flex-1 min-w-0 h-full flex flex-col justify-end items-center gap-[3px] text-[11px] text-slate-400">
           <span className="mono truncate">{format(x.value)}</span>
           <i
-            className="block w-full rounded-t-md rounded-b-sm bg-gradient-to-b from-[#4f7cff] to-[#8b5cf6]"
+            className="block w-full rounded-t-md rounded-b-sm bg-gradient-to-b from-sky-500 to-violet-500"
             style={{ height: `${Math.max(2, (x.value / mx) * 60)}%` }}
           />
           <span className="truncate">{x.label}</span>
@@ -143,12 +143,12 @@ function Scatter({ dots, onPick, activeId, label, xLabel, yLabel, x0, x1 }: { do
   const py = (v: number) => pt + ((ymax - v) / (ymax - ymin || 1)) * (H - pt - pb);
   return (
     <svg ref={boxRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`} className="block w-full" role="img" aria-label={label}>
-      <line x1={pl} x2={W - pr} y1={H - pb} y2={H - pb} stroke="rgba(255,255,255,.2)" />
-      <line x1={pl} x2={pl} y1={pt} y2={H - pb} stroke="rgba(255,255,255,.2)" />
-      <text x={W - pr} y={H - 6} textAnchor="end" fill="#8a93a8" fontSize="10">
+      <line x1={pl} x2={W - pr} y1={H - pb} y2={H - pb} stroke="rgb(var(--ink) / .2)" />
+      <line x1={pl} x2={pl} y1={pt} y2={H - pb} stroke="rgb(var(--ink) / .2)" />
+      <text x={W - pr} y={H - 6} textAnchor="end" fill="rgb(var(--slate-400))" fontSize="10">
         {xLabel}
       </text>
-      <text x={pl + 2} y={pt + 9} fill="#8a93a8" fontSize="10">
+      <text x={pl + 2} y={pt + 9} fill="rgb(var(--slate-400))" fontSize="10">
         {yLabel}
       </text>
       {pts.map((d) => (
@@ -162,8 +162,8 @@ function Scatter({ dots, onPick, activeId, label, xLabel, yLabel, x0, x1 }: { do
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onPick?.(d.id)}
           className="cursor-pointer"
         >
-          <circle cx={px(d.x)} cy={py(d.y)} r={d.id === activeId ? 6 : 5} fill={d.color} opacity=".85" stroke={d.id === activeId ? '#fff' : 'none'} />
-          <text x={px(d.x) + 7} y={py(d.y) + 3} fontSize="9" fill="#e8ebf4">
+          <circle cx={px(d.x)} cy={py(d.y)} r={d.id === activeId ? 6 : 5} fill={d.color} opacity=".85" stroke={d.id === activeId ? 'rgb(var(--ink))' : 'none'} />
+          <text x={px(d.x) + 7} y={py(d.y) + 3} fontSize="9" fill="rgb(var(--slate-100))">
             {d.label}
           </text>
           <title>{d.label}</title>
@@ -194,7 +194,7 @@ function VBars({ items, height = 150, unit = '', label }: { items: VBar[]; heigh
   const labelStep = Math.max(1, Math.ceil(36 / slot));
   return (
     <svg ref={boxRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`} className="block w-full" role="img" aria-label={label || '直條圖'}>
-      <line x1={p} x2={W - p} y1={zeroY} y2={zeroY} stroke="rgba(255,255,255,.18)" />
+      <line x1={p} x2={W - p} y1={zeroY} y2={zeroY} stroke="rgb(var(--ink) / .18)" />
       {items.map((it, idx) => {
         const v = Number(it.value) || 0;
         const x = p + idx * slot + (slot - bw) / 2;
@@ -207,13 +207,13 @@ function VBars({ items, height = 150, unit = '', label }: { items: VBar[]; heigh
               <title>{`${it.label}: ${v >= 0 ? '+' : ''}${v}${unit}`}</title>
             </rect>
             {showVal && (
-              <text x={x + bw / 2} y={v >= 0 ? Math.max(11, y - 4) : Math.min(H - 14, y + h + 11)} textAnchor="middle" fontSize="10" fill="#e8ebf4" className="mono">
+              <text x={x + bw / 2} y={v >= 0 ? Math.max(11, y - 4) : Math.min(H - 14, y + h + 11)} textAnchor="middle" fontSize="10" fill="rgb(var(--slate-100))" className="mono">
                 {v >= 0 ? `+${v}` : v}
                 {unit}
               </text>
             )}
             {idx % labelStep === 0 && (
-              <text x={x + bw / 2} y={H - 5} textAnchor="middle" fontSize="10" fill="#8a93a8">
+              <text x={x + bw / 2} y={H - 5} textAnchor="middle" fontSize="10" fill="rgb(var(--slate-400))">
                 {it.label}
               </text>
             )}
@@ -270,15 +270,15 @@ function LinesChart({
           const y = yAt(v);
           return (
             <g key={v}>
-              <line x1={pl} x2={W - pr} y1={y} y2={y} stroke="rgba(255,255,255,.06)" />
-              <text x={pl - 5} y={y + 3} textAnchor="end" fontSize="9.5" fill="#8a93a8" className="mono">
+              <line x1={pl} x2={W - pr} y1={y} y2={y} stroke="rgb(var(--ink) / .06)" />
+              <text x={pl - 5} y={y + 3} textAnchor="end" fontSize="9.5" fill="rgb(var(--slate-400))" className="mono">
                 {Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : Math.abs(max - min) < 10 ? v.toFixed(1) : v.toFixed(0)}
                 {unit}
               </text>
             </g>
           );
         })}
-        {zeroLine && min < 0 && max > 0 && <line x1={pl} x2={W - pr} y1={yAt(0)} y2={yAt(0)} stroke="rgba(255,255,255,.22)" strokeDasharray="3 3" />}
+        {zeroLine && min < 0 && max > 0 && <line x1={pl} x2={W - pr} y1={yAt(0)} y2={yAt(0)} stroke="rgb(var(--ink) / .22)" strokeDasharray="3 3" />}
         {valid.map((s, si) => {
           const c = s.color || PALETTE[si % PALETTE.length];
           const pts = s.values.map((v, i) => `${xAt(i, s.values.length).toFixed(1)},${yAt(v).toFixed(1)}`).join(' ');
@@ -292,7 +292,7 @@ function LinesChart({
         })}
         {labels.map((lb, i) =>
           i % step === 0 || i === labels.length - 1 ? (
-            <text key={`${lb}-${i}`} x={xAt(i, n0)} y={H - 6} textAnchor="middle" fontSize="9.5" fill="#8a93a8">
+            <text key={`${lb}-${i}`} x={xAt(i, n0)} y={H - 6} textAnchor="middle" fontSize="9.5" fill="rgb(var(--slate-400))">
               {lb}
             </text>
           ) : null,
@@ -343,7 +343,7 @@ function HeatMat({ pairs }: { pairs: { a: string; b: string; r: number }[] }) {
                 const v = i === j ? 1 : (map.get(`${rName}|${cName}`) ?? null);
                 const bg =
                   i === j || v === null
-                    ? 'rgba(255,255,255,.06)'
+                    ? 'rgb(var(--ink) / .06)'
                     : v >= 0.7
                       ? 'rgba(255,77,109,.28)'
                       : v >= 0.4

@@ -43,7 +43,7 @@ function Kpi({ label, value, sub, tone = '', hero = false, onClick, title }: { l
       {sub != null && <span className={`block mono text-[10.5px] ${hero ? 'text-white/75' : tone || 'text-slate-500'}`}>{sub}</span>}
     </>
   );
-  const cls = `min-w-[104px] text-left rounded-xl px-3 py-1.5 ${hero ? 'bg-gradient-to-br from-[#4f7cff] to-[#6d4fd8]' : 'ta-card'}`;
+  const cls = `min-w-[104px] text-left rounded-xl px-3 py-1.5 ${hero ? 'bg-gradient-to-br from-sky-500 to-violet-600' : 'ta-card'}`;
   return onClick ? (
     <button type="button" onClick={onClick} title={title} className={`${cls} cursor-pointer ${hero ? '' : 'ta-key'}`}>
       {body}

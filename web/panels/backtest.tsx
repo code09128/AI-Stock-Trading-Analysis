@@ -471,7 +471,7 @@ function Mod3Panel({ ctx }) {
             <button
               type="button"
               onClick={() => bus.openAiDrawer?.('mod3')}
-              className="text-xs px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white font-semibold shadow-lg shadow-indigo-500/20 cursor-pointer"
+              className="text-xs px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 text-white font-semibold shadow-lg shadow-indigo-500/20 cursor-pointer"
             >
               ✦ AI 策略回測分析
             </button>
@@ -498,7 +498,7 @@ function Mod3Panel({ ctx }) {
             onClick={() => setView(k)}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer border ${
               view === k
-                ? 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] border-transparent text-white shadow-lg shadow-indigo-500/20'
+                ? 'bg-gradient-to-r from-sky-500 to-violet-500 border-transparent text-white shadow-lg shadow-indigo-500/20'
                 : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
             }`}
           >
@@ -719,7 +719,7 @@ function Mod3Panel({ ctx }) {
                 type="button"
                 onClick={runMod3}
                 disabled={m3Loading}
-                className="w-full py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] hover:opacity-95 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition cursor-pointer"
+                className="w-full py-2.5 px-6 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 hover:opacity-95 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition cursor-pointer"
               >
                 {m3Loading ? '回測中...' : '執行回測'}
               </button>

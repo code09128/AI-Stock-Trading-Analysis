@@ -500,7 +500,7 @@ function StockInfoPanel({ symbol, hideValuation = false, tab, onAskAi }: { symbo
         <button
           type="button"
           onClick={onAskAi}
-          className="w-full px-3 py-1.5 rounded-[10px] text-xs font-semibold text-white bg-gradient-to-br from-[#4f7cff] to-[#8b5cf6] cursor-pointer hover:brightness-110"
+          className="w-full px-3 py-1.5 rounded-[10px] text-xs font-semibold text-white bg-gradient-to-br from-sky-500 to-violet-500 cursor-pointer hover:brightness-110"
         >
           ✦ AI 解讀這檔標的（含 3 利多／3 風險）
         </button>
@@ -565,7 +565,7 @@ function DividendCalendar({ symbols, quotes, categories, selected, onSelect, hol
             <b className="block text-slate-400 text-[11px] mb-0.5">{i + 1} 月</b>
             {list.length ? (
               list.map((c) => (
-                <span key={c} className="inline-block px-1.5 py-px m-px rounded-full text-[11px] bg-[#4f7cff]/20 text-[#b8c8ff]">
+                <span key={c} className="inline-block px-1.5 py-px m-px rounded-full text-[11px] bg-sky-500/20 text-sky-300">
                   {c}
                 </span>
               ))

@@ -234,7 +234,7 @@ function LayoutMenu({ ctl }: { ctl: Ctl }) {
         版面設定 ▾{hiddenN > 0 && <span className="ml-1 text-amber-300">（{hiddenN} 張隱藏）</span>}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-30 w-60 rounded-xl border border-white/10 bg-[#0b1020]/95 p-3 shadow-2xl backdrop-blur-xl space-y-2 text-xs">
+        <div className="absolute right-0 top-full mt-2 z-30 w-60 rounded-xl border border-white/10 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-xl space-y-2 text-xs">
           {ctl.defs.map((d) => (
             <label key={d.id} className="flex items-center gap-2 text-slate-200 cursor-pointer">
               <input type="checkbox" checked={!ctl.prefs.hidden[d.id]} onChange={() => ctl.toggleHidden(d.id)} />

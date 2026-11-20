@@ -149,23 +149,23 @@ function DailyEquityChart({ points, initialCapital, dd }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-44">
         <title>每日淨值曲線</title>
         {pi >= 0 && ti > pi && (
-          <rect x={x(pi)} y={pad.t} width={x(ti) - x(pi)} height={ph} fill="#f43f5e" opacity="0.12" />
+          <rect x={x(pi)} y={pad.t} width={x(ti) - x(pi)} height={ph} fill="var(--ch-red)" opacity="0.12" />
         )}
-        <line x1={pad.l} x2={W - pad.r} y1={y(initialCapital)} y2={y(initialCapital)} stroke="#475569" strokeDasharray="4 4" />
-        <text x={pad.l - 6} y={y(initialCapital) + 3} textAnchor="end" fill="#94a3b8" fontSize="10" fontFamily="monospace">
+        <line x1={pad.l} x2={W - pad.r} y1={y(initialCapital)} y2={y(initialCapital)} stroke="rgb(var(--slate-600))" strokeDasharray="4 4" />
+        <text x={pad.l - 6} y={y(initialCapital) + 3} textAnchor="end" fill="rgb(var(--slate-400))" fontSize="10" fontFamily="monospace">
           本金
         </text>
-        <text x={pad.l - 6} y={pad.t + 8} textAnchor="end" fill="#64748b" fontSize="10" fontFamily="monospace">
+        <text x={pad.l - 6} y={pad.t + 8} textAnchor="end" fill="rgb(var(--slate-500))" fontSize="10" fontFamily="monospace">
           {Math.round(hi).toLocaleString()}
         </text>
-        <text x={pad.l - 6} y={pad.t + ph} textAnchor="end" fill="#64748b" fontSize="10" fontFamily="monospace">
+        <text x={pad.l - 6} y={pad.t + ph} textAnchor="end" fill="rgb(var(--slate-500))" fontSize="10" fontFamily="monospace">
           {Math.round(lo).toLocaleString()}
         </text>
-        <polyline fill="none" stroke={last.equity >= initialCapital ? '#34d399' : '#fb7185'} strokeWidth="1.8" points={line} />
-        <text x={pad.l} y={H - 6} fill="#64748b" fontSize="10" fontFamily="monospace">
+        <polyline fill="none" stroke={last.equity >= initialCapital ? '#34d399' : 'var(--ch-pink)'} strokeWidth="1.8" points={line} />
+        <text x={pad.l} y={H - 6} fill="rgb(var(--slate-500))" fontSize="10" fontFamily="monospace">
           {points[0].date}
         </text>
-        <text x={W - pad.r} y={H - 6} textAnchor="end" fill="#64748b" fontSize="10" fontFamily="monospace">
+        <text x={W - pad.r} y={H - 6} textAnchor="end" fill="rgb(var(--slate-500))" fontSize="10" fontFamily="monospace">
           {last.date}
         </text>
       </svg>

@@ -15,7 +15,7 @@ function MiniCandle({ quote }: { quote: any }) {
   }
   const span = high - low;
   const y = (v: number) => (span > 0 ? 1 + ((high - v) / span) * (H - 2) : H / 2);
-  const col = price > open ? 'var(--up)' : price < open ? 'var(--down)' : '#94a3b8';
+  const col = price > open ? 'var(--up)' : price < open ? 'var(--down)' : 'rgb(var(--slate-400))';
   const top = y(Math.max(open, price));
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0" role="img" aria-label={`今日開 ${open} 高 ${high} 低 ${low} 現價 ${price}`}>

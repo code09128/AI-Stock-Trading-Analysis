@@ -506,7 +506,7 @@ function SectorShareCard({ poll }: { poll: any }) {
               <span className="w-24 shrink-0 truncate text-slate-300">{r.name}</span>
               <div className="flex-1 h-2.5 bg-white/5 rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6]"
+                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-violet-500"
                   style={{ width: `${(r.turnover_share_pct / maxShare) * 100}%` }}
                 />
               </div>

@@ -272,8 +272,8 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
         <title>{isClosedOrNoTrade ? '最後成交日分時走勢圖' : '當日分時走勢圖'}</title>
         {ticks.map((t) => (
           <g key={t.y}>
-            <line x1={padL} x2={W - padR} y1={t.y} y2={t.y} stroke="#1e293b" strokeWidth="1" />
-            <text x={W - padR + 4} y={t.y + 3} fontSize="10" fill="#94a3b8" className="mono">
+            <line x1={padL} x2={W - padR} y1={t.y} y2={t.y} stroke="rgb(var(--slate-800))" strokeWidth="1" />
+            <text x={W - padR + 4} y={t.y + 3} fontSize="10" fill="rgb(var(--slate-400))" className="mono">
               {fmt(t.v)}
             </text>
           </g>
@@ -285,10 +285,10 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
               x2={W - padR}
               y1={y(prev)}
               y2={y(prev)}
-              stroke="#64748b"
+              stroke="rgb(var(--slate-500))"
               strokeDasharray="4 3"
             />
-            <text x={W - padR + 4} y={y(prev) + 3} fontSize="10" fill="#cbd5e1" className="mono">
+            <text x={W - padR + 4} y={y(prev) + 3} fontSize="10" fill="rgb(var(--slate-300))" className="mono">
               昨收
             </text>
           </g>
@@ -302,7 +302,7 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
             y={padT + priceH + 10 + volH - (p.volume / maxVol) * volH}
             width="3"
             height={(p.volume / maxVol) * volH}
-            fill="#475569"
+            fill="rgb(var(--slate-600))"
           />
         ))}
         {newsDots.map((d, i) => {
@@ -312,8 +312,8 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
               cx={d.cx}
               cy={d.cy}
               r="5"
-              fill={d.n.sentiment === 'POSITIVE' ? 'var(--up)' : d.n.sentiment === 'NEGATIVE' ? 'var(--down)' : '#8a93a8'}
-              stroke="#070a13"
+              fill={d.n.sentiment === 'POSITIVE' ? 'var(--up)' : d.n.sentiment === 'NEGATIVE' ? 'var(--down)' : 'rgb(var(--slate-400))'}
+              stroke="rgb(var(--slate-950))"
               strokeWidth="2"
               className={href ? 'cursor-pointer' : ''}
             >
@@ -334,14 +334,14 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
             <g key={`${d.n.published_utc}-${i}`}>{dot}</g>
           );
         })}
-        <text x={padL} y={H - 2} fontSize="10" fill="#94a3b8" className="mono">
+        <text x={padL} y={H - 2} fontSize="10" fill="rgb(var(--slate-400))" className="mono">
           {pts[0].t}
         </text>
         <text
           x={W - padR}
           y={H - 2}
           fontSize="10"
-          fill="#94a3b8"
+          fill="rgb(var(--slate-400))"
           textAnchor="end"
           className="mono"
         >
@@ -354,7 +354,7 @@ const IntradayChart = ({ data, lastTrade, tz, news, livePrice }: { data: any; la
               x2={x(act.ts)}
               y1={padT}
               y2={padT + priceH}
-              stroke="#94a3b8"
+              stroke="rgb(var(--slate-400))"
               strokeDasharray="2 2"
             />
             <circle cx={x(act.ts)} cy={y(act.close)} r="3.5" fill={col} />

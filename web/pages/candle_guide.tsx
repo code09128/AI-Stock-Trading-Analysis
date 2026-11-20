@@ -47,7 +47,7 @@ const Anatomy = () => (
       ['最高', 60, 20, 12],
       ['最低', 60, 112, 12],
     ].map(([t, x, y]) => (
-      <text key={`${t}${x}${y}`} x={Number(x) + 18} y={y} fontSize="10" fill="#cbd5e1">
+      <text key={`${t}${x}${y}`} x={Number(x) + 18} y={y} fontSize="10" fill="rgb(var(--slate-300))">
         ← {t}
       </text>
     ))}
@@ -57,13 +57,13 @@ const Anatomy = () => (
     <text x="200" y="127" fontSize="11" fill={DOWN} textAnchor="middle">
       綠K（收＜開，下跌）
     </text>
-    <text x="236" y="40" fontSize="10" fill="#cbd5e1">
+    <text x="236" y="40" fontSize="10" fill="rgb(var(--slate-300))">
       ← 上影線
     </text>
-    <text x="236" y="68" fontSize="10" fill="#cbd5e1">
+    <text x="236" y="68" fontSize="10" fill="rgb(var(--slate-300))">
       ← 實體
     </text>
-    <text x="236" y="100" fontSize="10" fill="#cbd5e1">
+    <text x="236" y="100" fontSize="10" fill="rgb(var(--slate-300))">
       ← 下影線
     </text>
   </svg>
@@ -128,7 +128,7 @@ const MiniChart = ({ before, bars, line, label }) => {
       <title>{label}</title>
       <g transform="translate(0,2)">
         {line != null && (
-          <line x1="0" x2={W} y1={100 - line} y2={100 - line} stroke="#fbbf24" strokeDasharray="3 2" />
+          <line x1="0" x2={W} y1={100 - line} y2={100 - line} stroke="var(--ch-amber2)" strokeDasharray="3 2" />
         )}
         {all.map((b, i) => (
           // 示意圖的 K 棒固定不變，用位置當 key
@@ -384,8 +384,8 @@ const LiveCandles = () => {
             const v = lo + (hi - lo) * r;
             return (
               <g key={r}>
-                <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#1e293b" />
-                <text x={W - padR + 4} y={y(v) + 3} fontSize="10" fill="#94a3b8">
+                <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="rgb(var(--slate-800))" />
+                <text x={W - padR + 4} y={y(v) + 3} fontSize="10" fill="rgb(var(--slate-400))">
                   {fmt(v, 0)}
                 </text>
               </g>
@@ -416,7 +416,7 @@ const LiveCandles = () => {
                   fill={col}
                 />
                 {i === bars.length - 1 && (
-                  <text x={cx} y={H - 2} fontSize="10" fill="#fbbf24" textAnchor="middle">
+                  <text x={cx} y={H - 2} fontSize="10" fill="var(--ch-amber2)" textAnchor="middle">
                     最新
                   </text>
                 )}
@@ -454,7 +454,7 @@ const ChartHelp = () => (
       </li>
       <li>
         <b className="text-yellow-400">MA5（黃線）</b>＝近 5 日收盤均價，反應短線；
-        <b style={{ color: '#38bdf8' }}> MA20（藍線）</b>＝近 20 日（約一個月），反應中期趨勢；
+        <b style={{ color: 'var(--ch-sky)' }}> MA20（藍線）</b>＝近 20 日（約一個月），反應中期趨勢；
         <b className="text-emerald-400"> MA60（綠線）</b>＝近 60
         日（約一季），被稱為季線或生命線。股價站上 MA20 且短中長均線多頭排列時，通常表示偏強。
       </li>

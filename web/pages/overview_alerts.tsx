@@ -369,7 +369,7 @@ function OverviewPanel({ symbols, rows, quotes, selected, onSelect, loading }) {
   const trendBar = [
     { label: '多頭', value: have.filter((d) => d.o.trend === '多頭').length, color: 'var(--up)' },
     { label: '空頭', value: have.filter((d) => d.o.trend === '空頭').length, color: 'var(--down)' },
-    { label: '盤整／其他', value: have.filter((d) => d.o.trend !== '多頭' && d.o.trend !== '空頭').length, color: '#64748b' },
+    { label: '盤整／其他', value: have.filter((d) => d.o.trend !== '多頭' && d.o.trend !== '空頭').length, color: 'rgb(var(--slate-500))' },
   ];
   const th = (key, label, title?) => (
     <th title={title} className="font-medium text-right">

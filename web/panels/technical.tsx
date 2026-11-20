@@ -600,7 +600,7 @@ function Mod1Panel({ ctx }) {
               <span className="font-mono text-slate-300">
                 <span className="text-yellow-400">週 MA5 {fmt2(m1Data.weekly_snapshot.MA5)}</span>{' '}
                 ・{' '}
-                <span style={{ color: '#38bdf8' }}>MA20 {fmt2(m1Data.weekly_snapshot.MA20)}</span>{' '}
+                <span style={{ color: 'var(--ch-sky)' }}>MA20 {fmt2(m1Data.weekly_snapshot.MA20)}</span>{' '}
                 ・{' '}
                 <span className="text-emerald-400">
                   MA60{' '}
@@ -667,7 +667,7 @@ function Mod1Panel({ ctx }) {
                   MA5={fmt2(m1Data.snapshot.indicators.MA5)}
                 </span>{' '}
                 ｜{' '}
-                <span style={{ color: '#38bdf8' }}>
+                <span style={{ color: 'var(--ch-sky)' }}>
                   MA20={fmt2(m1Data.snapshot.indicators.MA20)}
                 </span>{' '}
                 ｜{' '}

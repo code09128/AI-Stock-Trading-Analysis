@@ -123,18 +123,18 @@ function PctChart({ rows }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="組合與加權指數累積報酬">
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={py(t)} y2={py(t)} stroke="#1e293b" />
-            <text x={pad.l - 4} y={py(t) + 3} fontSize="9" fill="#64748b" textAnchor="end">
+            <line x1={pad.l} x2={W - pad.r} y1={py(t)} y2={py(t)} stroke="rgb(var(--slate-800))" />
+            <text x={pad.l - 4} y={py(t) + 3} fontSize="9" fill="rgb(var(--slate-500))" textAnchor="end">
               {fmt(t, 0)}%
             </text>
           </g>
         ))}
-        <line x1={pad.l} x2={W - pad.r} y1={py(0)} y2={py(0)} stroke="#475569" strokeDasharray="3 3" />
+        <line x1={pad.l} x2={W - pad.r} y1={py(0)} y2={py(0)} stroke="rgb(var(--slate-600))" strokeDasharray="3 3" />
         {rows
           .map((r, i) => [r, i])
           .filter(([, i]) => i % step === 0)
           .map(([r, i]) => (
-            <text key={r.date} x={px(i)} y={H - 6} fontSize="9" fill="#64748b" textAnchor="middle">
+            <text key={r.date} x={px(i)} y={H - 6} fontSize="9" fill="rgb(var(--slate-500))" textAnchor="middle">
               {r.date.slice(0, 7)}
             </text>
           ))}
@@ -752,7 +752,7 @@ function PortfolioTab() {
                   color: '#f59e0b',
                   label: `預估資產（${proj.req.labels[0]} ${pct(proj.req.rates[0])}）`,
                 },
-                { key: 'principal', color: '#94a3b8', label: '累積投入', dash: true },
+                { key: 'principal', color: 'rgb(var(--slate-400))', label: '累積投入', dash: true },
               ]}
             />
           )}

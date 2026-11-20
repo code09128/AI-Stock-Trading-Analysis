@@ -54,7 +54,7 @@ function TradeFlow({ current }: { current: StepId }) {
               title={s.what}
               className={`px-2.5 py-1 rounded-lg border cursor-pointer ${
                 s.id === current
-                  ? 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] border-transparent text-white font-semibold'
+                  ? 'bg-gradient-to-r from-sky-500 to-violet-500 border-transparent text-white font-semibold'
                   : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
               }`}
             >

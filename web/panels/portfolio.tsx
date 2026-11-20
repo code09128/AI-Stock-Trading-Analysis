@@ -83,7 +83,7 @@ function Bars({ items }) {
           </div>
           <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
             <div
-              className={`h-full ${x.weight_pct >= 50 ? 'bg-amber-400' : 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6]'}`}
+              className={`h-full ${x.weight_pct >= 50 ? 'bg-amber-400' : 'bg-gradient-to-r from-sky-500 to-violet-500'}`}
               style={{ width: `${Math.min(x.weight_pct, 100)}%` }}
             />
           </div>
@@ -517,7 +517,7 @@ function Mod4Panel({ ctx }) {
             <button
               type="button"
               onClick={() => bus.openAiDrawer?.('mod4')}
-              className="text-xs px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white font-semibold shadow-lg shadow-indigo-500/20 cursor-pointer"
+              className="text-xs px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 text-white font-semibold shadow-lg shadow-indigo-500/20 cursor-pointer"
             >
               ✦ AI 組合風控分析
             </button>
@@ -717,7 +717,7 @@ function Mod4Panel({ ctx }) {
                 type="button"
                 onClick={runMod4}
                 disabled={m4Loading}
-                className="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] hover:opacity-95 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition cursor-pointer"
+                className="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 hover:opacity-95 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition cursor-pointer"
               >
                 {m4Loading ? '計算中...' : '計算穿透曝險與再平衡'}
               </button>
@@ -822,7 +822,7 @@ function Mod4Panel({ ctx }) {
                         <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
                           <div
                             className={`h-full rounded-full ${
-                              pct >= 30 && !sym.endsWith('其他成分股') ? 'bg-amber-400' : 'bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6]'
+                              pct >= 30 && !sym.endsWith('其他成分股') ? 'bg-amber-400' : 'bg-gradient-to-r from-sky-500 to-violet-500'
                             }`}
                             style={{ width: `${Math.min(pct, 100)}%` }}
                           />

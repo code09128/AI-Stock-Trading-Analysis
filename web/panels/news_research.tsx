@@ -177,7 +177,7 @@ function SentimentBar({ counts }) {
     <div className="space-y-1">
       <div className="flex h-2 rounded-full overflow-hidden bg-slate-800">
         {seg(counts.positive, 'var(--up)')}
-        {seg(counts.neutral, '#64748b')}
+        {seg(counts.neutral, 'rgb(var(--slate-500))')}
         {seg(counts.negative, 'var(--down)')}
       </div>
       <div className="flex gap-3 text-[11px] text-slate-400">
@@ -352,7 +352,7 @@ function ResearchSummary({ d, m2Data, onPick }) {
                           ? 'var(--up)'
                           : t.sentiment === 'NEGATIVE'
                             ? 'var(--down)'
-                            : '#64748b',
+                            : 'rgb(var(--slate-500))',
                     }}
                     aria-hidden="true"
                   />

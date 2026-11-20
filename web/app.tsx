@@ -993,7 +993,7 @@ function App() {
                 type="button"
                 onClick={openAi}
                 data-tour="ai-drawer-btn"
-                className="text-[12.5px] px-3 py-1.5 rounded-[10px] font-semibold text-white bg-gradient-to-br from-[#4f7cff] to-[#8b5cf6] hover:brightness-110 cursor-pointer"
+                className="text-[12.5px] px-3 py-1.5 rounded-[10px] font-semibold text-white bg-gradient-to-br from-sky-500 to-violet-500 hover:brightness-110 cursor-pointer"
                 style={{ boxShadow: '0 6px 20px rgba(79,124,255,.35)' }}
               >
                 ✦ <span className="hidden sm:inline">AI 分析</span>
@@ -1014,7 +1014,7 @@ function App() {
                 onClick={() => setUiPref({ motion: uiPrefs.motion === 'reduce' ? 'auto' : 'reduce' })}
                 title="關閉換頁淡入、數字閃動、滑過浮起等動畫"
                 className={`hidden sm:block text-[12.5px] px-3 py-1.5 rounded-[10px] border cursor-pointer ${
-                  uiPrefs.motion === 'reduce' ? 'border-[#4f7cff] bg-[#4f7cff]/20 text-white' : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'
+                  uiPrefs.motion === 'reduce' ? 'border-sky-500 bg-sky-500/20 text-white' : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'
                 }`}
               >
                 減少動態

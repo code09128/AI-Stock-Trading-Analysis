@@ -8,28 +8,85 @@
   <link rel="icon" type="image/svg+xml"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230ea5e9'/%3E%3Cstop offset='1' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='url(%23g)'/%3E%3Cg stroke='white' stroke-width='2' stroke-linecap='round' fill='none'%3E%3Cpath d='M12 6v4M12 22v3M21 5v3M21 18v4'/%3E%3Crect x='9.5' y='10' width='5' height='12' rx='1' fill='white'/%3E%3Crect x='18.5' y='8' width='5' height='10' rx='1'/%3E%3C/g%3E%3C/svg%3E">
   <!-- 第三方套件放在 web/vendor（固定版本：Tailwind 3.4.17、React 18.3.1、esbuild 打包），離線也能開；字型離線時改用系統字型 -->
+  <script>
+    // 先套主題，避免淺色主題開頁時閃一下深色（完整的外觀偏好由設定頁的外觀模組套用）
+    try { const t = JSON.parse(localStorage.getItem('tw_us_ui_prefs_v1') || 'null')?.theme; if (t === 'warm' || t === 'cream') document.documentElement.dataset.theme = t; } catch (_e) {}
+  </script>
   <script src="./vendor/tailwindcss-3.4.17.js"></script>
   <script>
-    // 主題：中性深灰底、單一藍色強調色；漲跌維持台股紅漲綠跌（rose / emerald），amber 只用於警示
-    const ACCENT = { 50: '#eef2ff', 100: '#dfe6ff', 200: '#c8d4ff', 300: '#b8c8ff', 400: '#7d9dff', 500: '#4f7cff',
-      600: '#4f7cff', 700: '#3f63d6', 800: '#304ca8', 900: '#243a80', 950: '#16244f' };
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            slate: { 50: '#f5f7fb', 100: '#e8ebf4', 200: '#dde1ec', 300: '#c3c9d8', 400: '#8a93a8', 500: '#6a7388',
-              600: '#454d61', 700: '#2b3244', 800: '#1d2333', 900: '#111625', 950: '#0b0f1c' },
-            sky: ACCENT, blue: ACCENT, indigo: ACCENT,
-            // 漲跌色走 CSS 變數，頂欄「紅漲綠跌」切換時整站一起換
-            rose: { 400: 'var(--up)' }, emerald: { 400: 'var(--down)' },
-          },
-          fontFamily: {
-            sans: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
-            mono: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
+    // 主題色票：三套主題（A 霧面玻璃＝預設、B 暖色、C 奶油淺色）的 Tailwind 色階都走 CSS 變數（--slate-300 這類，值是「R G B」），
+    // 切換時只換 <html data-theme>，元件的 class 不用改。<alpha-value> 讓 bg-slate-900/90 這類半透明寫法照常運作。
+    // 淺色主題的做法：中性色整條反轉（深底淺字 → 淺底深字）；彩色只反轉「當文字的淺色（50～400）」與「當底色的深色（800～950）」，
+    // 500～700 是實心按鈕底色，維持原樣，上面的白字（--ink 在這些底色上設回白色，見 <style>）才看得清楚。
+    // 漲跌色 rose-400／emerald-400 另外走 --up／--down（頂欄「紅漲綠跌」切換）。
+    (() => {
+      const K = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+      const pal = (hex) => Object.fromEntries(K.map((k, i) => [k, hex[i]]));
+      const TW = {
+        amber: pal(['#fffbeb', '#fef3c7', '#fde68a', '#fcd34d', '#fbbf24', '#f59e0b', '#d97706', '#b45309', '#92400e', '#78350f', '#451a03']),
+        rose: pal(['#fff1f2', '#ffe4e6', '#fecdd3', '#fda4af', '#fb7185', '#f43f5e', '#e11d48', '#be123c', '#9f1239', '#881337', '#4c0519']),
+        emerald: pal(['#ecfdf5', '#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46', '#064e3b', '#022c22']),
+        cyan: pal(['#ecfeff', '#cffafe', '#a5f3fc', '#67e8f9', '#22d3ee', '#06b6d4', '#0891b2', '#0e7490', '#155e75', '#164e63', '#083344']),
+        violet: pal(['#f5f3ff', '#ede9fe', '#ddd6fe', '#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95', '#2e1065']),
+        teal: pal(['#f0fdfa', '#ccfbf1', '#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a', '#042f2e']),
+        yellow: pal(['#fefce8', '#fef9c3', '#fef08a', '#fde047', '#facc15', '#eab308', '#ca8a04', '#a16207', '#854d0e', '#713f12', '#422006']),
+      };
+      const SLATE = pal(['#f5f7fb', '#e8ebf4', '#dde1ec', '#c3c9d8', '#8a93a8', '#6a7388', '#454d61', '#2b3244', '#1d2333', '#111625', '#0b0f1c']);
+      const ACCENT = pal(['#eef2ff', '#dfe6ff', '#c8d4ff', '#b8c8ff', '#7d9dff', '#4f7cff', '#4f7cff', '#3f63d6', '#304ca8', '#243a80', '#16244f']);
+      // 淺色反轉：50↔950、100↔900、200↔800、300↔700、400↔600；500～700 實心色不動
+      const flip = (p) => ({ ...p, 50: p[950], 100: p[900], 200: p[800], 300: p[700], 400: p[600], 800: p[200], 900: p[100], 950: p[50] });
+      const THEMES = {
+        glass: { slate: SLATE, accent: ACCENT, ...TW },
+        warm: {
+          ...TW,
+          slate: pal(['#fbf1ea', '#f3e6dd', '#e6d3c8', '#d5bdb0', '#b9a094', '#8d776d', '#5e4c45', '#40332e', '#2e2421', '#241b18', '#1a1311']),
+          // 強調色用橘色、漸層第二色用珊瑚色，和警示用的 amber 分開
+          accent: pal(['#fff7f2', '#ffeadb', '#fed3b6', '#fdba8c', '#fb9a5c', '#f0803c', '#c45a1f', '#a84a18', '#8a3f17', '#6b3214', '#3b1a0a']),
+          violet: pal(['#fff1ee', '#ffe0d9', '#fcc4b6', '#f6a68f', '#ef8a6d', '#e8795c', '#cf5f42', '#ad4a31', '#8a3a27', '#6e2f21', '#3f1a12']),
+        },
+        cream: {
+          ...Object.fromEntries(Object.entries(TW).map(([k, v]) => [k, flip(v)])),
+          // 中性色整條反轉：900 是卡片、950 是頁面底色，50 是最深的字
+          slate: pal(['#2b2622', '#3a332e', '#4a423c', '#554c45', '#5f564f', '#766c63', '#a39a90', '#d3cbc1', '#e3ddd4', '#efeae3', '#e8e3db']),
+          accent: pal(['#16244f', '#1c2d66', '#243a80', '#2c46a0', '#3652b8', '#4466d6', '#3f63d6', '#3550b8', '#c8d4ff', '#dfe6ff', '#eef2ff']),
+        },
+      };
+      const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(' ');
+      const block = (sel, t, ink) =>
+        `${sel}{--ink:${ink};${Object.entries(t).map(([name, p]) => K.map((k) => `--${name}-${k}:${rgb(p[k])};`).join('')).join('')}}`;
+      const css = [
+        block(':root', THEMES.glass, '255 255 255'),
+        block('html[data-theme="warm"]', THEMES.warm, '255 255 255'),
+        block('html[data-theme="cream"]', THEMES.cream, '43 38 34'),
+        // 產業鏈地圖是深色畫布（霓虹風格），淺色主題時整塊維持霧面玻璃色票（class ta-force-dark）
+        block('html[data-theme="cream"] .ta-force-dark', THEMES.glass, '255 255 255'),
+      ].join('\n');
+      const el = document.createElement('style');
+      el.id = 'theme-palette';
+      el.textContent = css;
+      document.head.appendChild(el);
+      const v = (name) => Object.fromEntries(K.map((k) => [k, `rgb(var(--${name}-${k}) / <alpha-value>)`]));
+      const accent = v('accent');
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slate: v('slate'),
+              white: 'rgb(var(--ink) / <alpha-value>)',
+              sky: accent, blue: accent, indigo: accent,
+              amber: v('amber'), cyan: v('cyan'), violet: v('violet'), teal: v('teal'), yellow: v('yellow'),
+              // 漲跌色走 CSS 變數，頂欄「紅漲綠跌」切換時整站一起換
+              rose: { ...v('rose'), 400: 'var(--up)' },
+              emerald: { ...v('emerald'), 400: 'var(--down)' },
+            },
+            fontFamily: {
+              sans: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
+              mono: ['Inter', '"Noto Sans TC"', 'system-ui', 'sans-serif'],
+            },
           },
         },
-      },
-    };
+      };
+    })();
   </script>
   <script src="./vendor/react.production.min.js"></script>
   <script src="./vendor/react-dom.production.min.js"></script>
@@ -257,8 +314,11 @@
       --raise: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 3px 3px 8px rgba(0, 0, 0, 0.45), -2px -2px 6px rgba(140, 130, 255, 0.05);
       --press: inset 3px 3px 7px rgba(0, 0, 0, 0.55), inset -2px -2px 6px rgba(160, 150, 255, 0.08);
       --track: inset 2px 2px 6px rgba(0, 0, 0, 0.55), inset -2px -2px 5px rgba(255, 255, 255, 0.04);
-      --ring: inset 0 0 0 1px rgba(79, 124, 255, 0.5);
-      --on-bg: rgba(79, 124, 255, 0.14);
+      --ring: inset 0 0 0 1px rgb(var(--accent-500) / 0.5);
+      --on-bg: rgb(var(--accent-500) / 0.14);
+      /* 圖表的資料線顏色（均線、布林、成交量標記…）：深色主題用亮色，淺色主題在下面換深一階，線才看得清楚 */
+      --ch-sky: #38bdf8; --ch-cyan: #22d3ee; --ch-cyan2: #06b6d4; --ch-violet: #a78bfa; --ch-yellow: #facc15; --ch-amber: #fcd34d;
+      --ch-amber2: #fbbf24; --ch-green: #10b981; --ch-red: #f43f5e; --ch-pink: #fb7185; --ch-blue: #4f7cff; --ch-purple: #8b5cf6;
     }
     html[data-color="us"] { --up: #22d3a0; --down: #ff4d6d; --up-bg: color-mix(in srgb, var(--up) 16%, transparent); --down-bg: color-mix(in srgb, var(--down) 16%, transparent); }
     body {
@@ -277,7 +337,7 @@
     #root aside { box-shadow: 4px 0 16px rgba(0, 0, 0, 0.35), inset -1px 0 0 rgba(255, 255, 255, 0.03); }
     #root header.shrink-0 { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
     html[data-density="compact"] #root header.shrink-0 { padding-top: 0.3rem; padding-bottom: 0.3rem; }
-    button.bg-sky-600, button.bg-blue-600 { background-image: linear-gradient(135deg, #4f7cff, #8b5cf6); box-shadow: 0 6px 20px -8px rgba(79, 124, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+    button.bg-sky-600, button.bg-blue-600 { background-image: linear-gradient(135deg, rgb(var(--accent-500)), rgb(var(--violet-500))); box-shadow: 0 6px 20px -8px rgb(var(--accent-500) / 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
 
     /* V4 卡片：半透明底、白色細框。刻意不用 backdrop-filter：它會讓卡片內 position: fixed 的東西（K 線放大、提示框）
        改以卡片為定位基準而跑位或被擋住；這裡的背景是平滑漸層，有沒有模糊看不出差別 */
@@ -317,7 +377,7 @@
     .ta-icon:active { background-color: rgba(255, 255, 255, 0.05); box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.45); }
     /* 全站按鈕浮雕：沿用各頁既有的 Tailwind 底色來判斷（不逐一改 281 個按鈕）。
        凸起＝一般按鈕（bg-slate-800／950、bg-white/5、10、bg-slate-700、bg-rose-950、只有 border-slate-700 外框）與主要動作（hover:bg-sky-500／600、漸層）；
-       凹陷＝目前選中（bg-sky-500/20、bg-sky-600/20、30、bg-[#4f7cff]/20、25、bg-sky-600，且沒有 hover:bg-*；或 aria-pressed／aria-selected）。
+       凹陷＝目前選中（bg-sky-500/20、25、bg-sky-600/20、30、bg-sky-600，且沒有 hover:bg-*；或 aria-pressed／aria-selected）。
        有 hover:bg-* 的同色按鈕是「動作」（例如說明頁的「導覽」），維持凸起。
        限制：只認這些寫法，新按鈕用別的底色不會浮起（直接加 ta-key／ta-key-on）；不想浮起的加 ta-flat；沒有 px-* 內距的不套 */
     button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):is(
@@ -329,7 +389,7 @@
       transition: box-shadow .15s ease, transform .15s ease, color .15s ease, background-color .15s ease;
     }
     button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):is(
-      [class~="bg-sky-500/20"], [class~="bg-sky-600/20"], [class~="bg-sky-600/30"], [class~="bg-[#4f7cff]/20"], [class~="bg-[#4f7cff]/25"],
+      [class~="bg-sky-500/20"], [class~="bg-sky-600/20"], [class~="bg-sky-600/30"], [class~="bg-sky-500/25"],
       [class~="bg-sky-600"]):not([class*="hover:bg-"]),
     button[class*="px-"]:not(.ta-flat, .ta-key, .ta-icon, .ta-nav, :disabled):is([aria-pressed="true"], [role="tab"][aria-selected="true"]) {
       border-color: transparent; box-shadow: var(--press), var(--ring);
@@ -355,8 +415,67 @@
     html[data-motion="reduce"] .ta-key, html[data-motion="reduce"] .ta-key:active { transition: none; transform: none; }
     @media (prefers-reduced-motion: reduce) { .ta-key, .ta-key:active { transition: none; transform: none; } }
     @media (prefers-reduced-transparency: reduce) {
-      .ta-card, #root aside, #root header.shrink-0 { background-color: #111625 !important; background-image: none !important; }
+      .ta-card, #root aside, #root header.shrink-0 { background-color: rgb(var(--slate-900)) !important; background-image: none !important; }
     }
+
+    /* ===== 主題 B 暖色、C 奶油淺色（A 霧面玻璃是上面的預設值）=====
+       色階由 <head> 的腳本產生；這裡只覆寫寫死在 CSS 裡的底色、陰影與捲軸。新加的 CSS 顏色要嘛用變數，要嘛在這裡補兩個主題 */
+    html[data-theme="warm"] body {
+      background:
+        radial-gradient(900px 500px at 8% -10%, rgba(245, 165, 36, 0.16), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(232, 121, 92, 0.14), transparent 55%),
+        #1a1311;
+    }
+    html[data-theme="warm"] #root aside, html[data-theme="warm"] #root header.shrink-0 { background-color: rgba(26, 19, 17, 0.78); border-color: rgba(255, 226, 210, 0.1); }
+    html[data-theme="warm"] .ta-card { background-color: rgba(36, 27, 24, 0.78); border-color: rgba(255, 226, 210, 0.1); }
+    html[data-theme="warm"] { --raise: inset 0 1px 0 rgba(255, 236, 224, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 3px 3px 8px rgba(10, 4, 2, 0.5), -2px -2px 6px rgba(255, 190, 140, 0.06);
+      --press: inset 3px 3px 7px rgba(10, 4, 2, 0.6), inset -2px -2px 6px rgba(255, 200, 160, 0.08); }
+
+    html[data-theme="cream"] {
+      color-scheme: light; --up: #b8243f; --down: #0b7550;
+      --raise: 3px 3px 7px rgba(165, 150, 132, 0.42), -3px -3px 7px rgba(255, 255, 255, 0.9);
+      --press: inset 3px 3px 6px rgba(165, 150, 132, 0.5), inset -3px -3px 6px rgba(255, 255, 255, 0.9);
+      --track: inset 3px 3px 7px rgba(165, 150, 132, 0.45), inset -3px -3px 7px rgba(255, 255, 255, 0.9);
+      --ring: inset 0 0 0 1px rgb(var(--accent-600) / 0.4);
+      --on-bg: rgb(var(--accent-600) / 0.08);
+      --ch-sky: #0284c7; --ch-cyan: #0891b2; --ch-cyan2: #0e7490; --ch-violet: #7c3aed; --ch-yellow: #a16207; --ch-amber: #b45309;
+      --ch-amber2: #b45309; --ch-green: #047857; --ch-red: #be123c; --ch-pink: #be123c; --ch-blue: #3f63d6; --ch-purple: #6d28d9;
+    }
+    html[data-theme="cream"][data-color="us"] { --up: #0b7550; --down: #b8243f; }
+    html[data-theme="cream"] body { background: #e8e3db; color: #2b2622; }
+    html[data-theme="cream"] #root aside, html[data-theme="cream"] #root header.shrink-0 { background-color: rgba(239, 234, 227, 0.94); border-color: rgba(60, 48, 40, 0.1); }
+    html[data-theme="cream"] #root aside { box-shadow: 4px 0 14px rgba(165, 150, 132, 0.25); }
+    html[data-theme="cream"] #root header.shrink-0 { box-shadow: 0 4px 14px rgba(165, 150, 132, 0.22); }
+    html[data-theme="cream"] .ta-card,
+    html[data-theme="cream"] .rounded-2xl[class*="bg-slate-900"], html[data-theme="cream"] .rounded-xl[class*="bg-slate-900"] {
+      background-color: #efeae3; background-image: none; border-color: transparent;
+      box-shadow: 6px 6px 14px rgba(165, 150, 132, 0.38), -5px -5px 12px rgba(255, 255, 255, 0.75);
+    }
+    html[data-theme="cream"] .ta-card:hover { border-color: transparent; }
+    html[data-theme="cream"] .rounded-xl[class*="bg-slate-950"], html[data-theme="cream"] .rounded-lg[class*="bg-slate-950"] { box-shadow: none; }
+    html[data-theme="cream"] .fixed .rounded-2xl[class*="bg-slate-900"] { background-color: #efeae3; box-shadow: 0 24px 60px -20px rgba(80, 64, 50, 0.45); }
+    html[data-theme="cream"] .ta-track { background: rgba(60, 48, 40, 0.04); }
+    html[data-theme="cream"] [role="tablist"][class~="bg-black/20"], html[data-theme="cream"] [class~="bg-black/20"] { background-color: rgba(60, 48, 40, 0.05); }
+    html[data-theme="cream"] .ta-key { background-color: #efeae3; }
+    html[data-theme="cream"] .ta-key:hover, html[data-theme="cream"] .ta-icon:hover { background-color: rgba(60, 48, 40, 0.06); }
+    html[data-theme="cream"] .ta-icon:active { background-color: rgba(60, 48, 40, 0.06); box-shadow: inset 1px 1px 3px rgba(165, 150, 132, 0.5); }
+    html[data-theme="cream"] select.ta-key option { background: #efeae3; color: #2b2622; }
+    html[data-theme="cream"] ::-webkit-scrollbar-track { background: #e3ddd4; }
+    html[data-theme="cream"] ::-webkit-scrollbar-thumb { background: #c9c0b5; }
+    html[data-theme="cream"] ::-webkit-scrollbar-thumb:hover { background: #b3a99e; }
+    /* 實心彩色底（主要按鈕、買賣、漸層卡）上的 text-white 要維持白色：在這些元素上把 --ink 設回白 */
+    html[data-theme="cream"] :is(.bg-sky-500, .bg-sky-600, .bg-sky-700, .bg-blue-600, .bg-indigo-600, .bg-violet-500, .bg-violet-600,
+      .bg-emerald-500, .bg-emerald-600, .bg-rose-500, .bg-rose-600, .bg-amber-500, .bg-amber-600,
+      .from-sky-500, [style*="var(--up)"], [style*="var(--down)"]) { --ink: 255 255 255; }
+    html[data-theme="cream"] #splash { background: #e8e3db; color: #2b2622; }
+    html[data-theme="cream"] .ta-force-dark {
+      color-scheme: dark; color: #dde2e9; --up: #ff4d6d; --down: #22d3a0;
+      --raise: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 3px 3px 8px rgba(0, 0, 0, 0.45);
+      --press: inset 3px 3px 7px rgba(0, 0, 0, 0.55); --ring: inset 0 0 0 1px rgba(79, 124, 255, 0.5); --on-bg: rgba(79, 124, 255, 0.14);
+    }
+    html[data-theme="cream"][data-color="us"] .ta-force-dark { --up: #22d3a0; --down: #ff4d6d; }
+    /* 深綠實心條上的深色字（委賣、利空）：淺色主題的綠更深，改白字 */
+    html[data-theme="cream"] .text-\[\#04130d\] { color: #fff; }
     @media (forced-colors: active) { .ta-key-on, .ta-row-on, .ta-nav-active, button[aria-pressed="true"], [role="tab"][aria-selected="true"] { outline: 2px solid CanvasText; } }
 
     /* 卡片裡的長網址、長代號要能換行，不要把卡片撐破 */
@@ -366,6 +485,8 @@
     /* 漲跌／買賣／多空的標籤底色：跟著 --up／--down，切換紅漲綠跌時一起換 */
     .ta-up-chip { color: color-mix(in srgb, var(--up) 55%, #fff); background: var(--up-bg); border-color: color-mix(in srgb, var(--up) 45%, transparent); }
     .ta-down-chip { color: color-mix(in srgb, var(--down) 55%, #fff); background: var(--down-bg); border-color: color-mix(in srgb, var(--down) 45%, transparent); }
+    html[data-theme="cream"] .ta-up-chip { color: color-mix(in srgb, var(--up) 85%, #000); }
+    html[data-theme="cream"] .ta-down-chip { color: color-mix(in srgb, var(--down) 85%, #000); }
     .ta-live-dot { background: var(--down); box-shadow: 0 0 8px var(--down); animation: ta-live 1.8s infinite; }
 
     .glass-card {

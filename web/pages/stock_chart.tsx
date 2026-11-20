@@ -94,25 +94,25 @@ function FiveDay({ data }: { data: any }) {
         onMouseLeave={() => setHover(null)}
       >
         <polyline points={line} fill="none" stroke={up ? 'var(--up)' : 'var(--down)'} strokeWidth="2" strokeLinejoin="round" />
-        <line x1="0" x2={plotW} y1={y(base)} y2={y(base)} stroke="rgba(255,255,255,.55)" strokeDasharray="5 4" />
-        <text x={plotW + 4} y={y(base) + 3} fontSize="10.5" fill="#fff">
+        <line x1="0" x2={plotW} y1={y(base)} y2={y(base)} stroke="rgb(var(--ink) / .55)" strokeDasharray="5 4" />
+        <text x={plotW + 4} y={y(base) + 3} fontSize="10.5" fill="rgb(var(--ink))">
           {fmt(base)}
         </text>
         {[base + m, base - m].map((v) => (
-          <text key={v} x={plotW + 4} y={y(v) + 8} fontSize="10.5" fill="#8a93a8">
+          <text key={v} x={plotW + 4} y={y(v) + 8} fontSize="10.5" fill="rgb(var(--slate-400))">
             {fmt(v)}
           </text>
         ))}
         {dayStart.map((si: number, k: number) => (
           <g key={data.days[k]}>
-            <line x1={x(si)} x2={x(si)} y1={PT} y2={H - 22} stroke="rgba(255,255,255,.07)" />
-            <text x={x(si) + 2} y={H - 6} fontSize="10.5" fill="#8a93a8">
+            <line x1={x(si)} x2={x(si)} y1={PT} y2={H - 22} stroke="rgb(var(--ink) / .07)" />
+            <text x={x(si) + 2} y={H - 6} fontSize="10.5" fill="rgb(var(--slate-400))">
               {data.days[k].slice(5)}
             </text>
           </g>
         ))}
-        {hover != null && <line x1={x(i)} x2={x(i)} y1={PT} y2={H - 22} stroke="rgba(255,255,255,.4)" />}
-        {hover != null && <circle cx={x(i)} cy={y(p.close)} r="4" fill="#fff" />}
+        {hover != null && <line x1={x(i)} x2={x(i)} y1={PT} y2={H - 22} stroke="rgb(var(--ink) / .4)" />}
+        {hover != null && <circle cx={x(i)} cy={y(p.close)} r="4" fill="rgb(var(--ink))" />}
       </svg>
       <div className="text-[11.5px] text-slate-400 mt-1.5">近 5 個交易日（{data.source}）；虛線是 5 日前第一筆的價格。</div>
     </div>
@@ -178,8 +178,8 @@ function DailyK({ data }: { data: any }) {
       >
         {[mx - pad, (mx + mn) / 2, mn + pad].map((v) => (
           <g key={v}>
-            <line x1="0" x2={plotW} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,.06)" />
-            <text x={plotW + 4} y={y(v) + 3} fontSize="10.5" fill="#8a93a8">
+            <line x1="0" x2={plotW} y1={y(v)} y2={y(v)} stroke="rgb(var(--ink) / .06)" />
+            <text x={plotW + 4} y={y(v) + 3} fontSize="10.5" fill="rgb(var(--slate-400))">
               {fmt(v)}
             </text>
           </g>
@@ -194,7 +194,7 @@ function DailyK({ data }: { data: any }) {
               <rect x={cx - w * 0.32} width={w * 0.64} y={y(Math.max(k.open, k.close))} height={Math.max(1, Math.abs(y(k.open) - y(k.close)))} fill={c} />
               <rect x={cx - w * 0.32} width={w * 0.64} y={VB - vh} height={vh} fill={c} opacity={bigVol.has(k.date) ? '.95' : '.45'} />
               {bigVol.has(k.date) && (
-                <circle cx={cx} cy={VB - vh - 4} r="2" fill={bigVolPending.has(k.date) ? 'none' : '#fcd34d'} stroke="#fcd34d" strokeWidth={bigVolPending.has(k.date) ? 1 : 0} />
+                <circle cx={cx} cy={VB - vh - 4} r="2" fill={bigVolPending.has(k.date) ? 'none' : 'var(--ch-amber)'} stroke="var(--ch-amber)" strokeWidth={bigVolPending.has(k.date) ? 1 : 0} />
               )}
               {pivBy.has(k.date) && !sigBy.has(k.date) && (
                 <text
@@ -202,7 +202,7 @@ function DailyK({ data }: { data: any }) {
                   y={pivBy.get(k.date).kind === 'high' ? Math.max(y(k.high) - 4, PT + 8) : y(k.low) + 11}
                   textAnchor="middle"
                   fontSize="9"
-                  fill="#cbd5e1"
+                  fill="rgb(var(--slate-300))"
                   opacity={pivBy.get(k.date).confirmed === false ? 0.55 : 1}
                 >
                   {pivBy.get(k.date).kind === 'high' ? '頭' : '底'}
@@ -215,11 +215,11 @@ function DailyK({ data }: { data: any }) {
             </g>
           );
         })}
-        {hover != null && <line x1={i * w + w / 2} x2={i * w + w / 2} y1={PT} y2={VB} stroke="rgba(255,255,255,.4)" />}
-        <text x="2" y={H - 54} fontSize="10.5" fill="#8a93a8">
+        {hover != null && <line x1={i * w + w / 2} x2={i * w + w / 2} y1={PT} y2={VB} stroke="rgb(var(--ink) / .4)" />}
+        <text x="2" y={H - 54} fontSize="10.5" fill="rgb(var(--slate-400))">
           {bars[0].date.slice(5)}
         </text>
-        <text x={plotW - 2} y={H - 54} textAnchor="end" fontSize="10.5" fill="#8a93a8">
+        <text x={plotW - 2} y={H - 54} textAnchor="end" fontSize="10.5" fill="rgb(var(--slate-400))">
           {bars[bars.length - 1].date.slice(5)}
         </text>
       </svg>

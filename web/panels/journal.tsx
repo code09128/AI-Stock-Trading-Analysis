@@ -333,9 +333,9 @@ function JournalChartsRow({ m5Data, m5Entries: tableEntries }: { m5Data: any; m5
         <Donut
           items={[
             { label: '獲利達標', value: winHit, color: 'var(--up)' },
-            { label: '獲利賣飛', value: winEarly, color: '#fbbf24' },
+            { label: '獲利賣飛', value: winEarly, color: 'var(--ch-amber2)' },
             { label: '小虧停損', value: lossSmall, color: 'var(--down)' },
-            { label: '凹單大虧(≤-10%)', value: lossBig, color: '#8b5cf6' },
+            { label: '凹單大虧(≤-10%)', value: lossBig, color: 'var(--ch-purple)' },
           ]}
           size={148}
           center={`${m5Data.statistics?.win_rate_pct ?? 0}%`}
@@ -352,7 +352,7 @@ function JournalChartsRow({ m5Data, m5Entries: tableEntries }: { m5Data: any; m5
       >
         {cumVals.length >= 2 ? (
           <LinesChart
-            series={[{ name: '累積報酬%', values: cumVals, color: '#4f7cff', fill: true }]}
+            series={[{ name: '累積報酬%', values: cumVals, color: 'var(--ch-blue)', fill: true }]}
             labels={cumLabels}
             height={148}
             unit="%"
@@ -430,7 +430,7 @@ function Mod5Panel({ ctx }) {
             <button
               type="button"
               onClick={() => bus.openAiDrawer?.('mod5')}
-              className="text-xs px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white font-semibold shadow-lg shadow-indigo-500/20 cursor-pointer"
+              className="text-xs px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 text-white font-semibold shadow-lg shadow-indigo-500/20 cursor-pointer"
             >
               ✦ AI 交易教練分析
             </button>
@@ -581,7 +581,7 @@ function Mod5Panel({ ctx }) {
                 type="button"
                 onClick={() => runMod5()}
                 disabled={m5Loading}
-                className="text-xs px-3 py-1 rounded-lg bg-gradient-to-r from-[#4f7cff] to-[#8b5cf6] text-white font-semibold cursor-pointer"
+                className="text-xs px-3 py-1 rounded-lg bg-gradient-to-r from-sky-500 to-violet-500 text-white font-semibold cursor-pointer"
               >
                 {m5Loading ? '診斷中...' : '執行交易診斷'}
               </button>
