@@ -4,7 +4,7 @@
 // 資料：/api/chains/map（全景，30 秒）、/api/chains/detail（單一產業鏈的即時報價，30 秒）、/api/chains/history（回放，按需載入）、
 //       /api/indices（核心的大盤指數：台股加權指數／美股 S&P 500，30 秒）
 // 產業鏈結構在 src/market/chain_data.py（自行整理的示意分類，更新方式見該檔開頭）。
-import { Tip, colorOf, readLS, writeLS } from '../ui';
+import { Tip, colorOf, fmt, readLS, writeLS } from '../ui';
 import { PageHead } from './card_box';
 import { OrbitEngine } from './orbit_engine';
 import { pollEvery } from '../desktop_bridge';
@@ -12,8 +12,11 @@ import { pollEvery } from '../desktop_bridge';
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-const PANEL = 'bg-slate-950/80 border border-slate-700/60 backdrop-blur-md rounded-xl';
-const BTN = 'px-2.5 py-1 text-xs rounded-lg bg-slate-900/80 border border-slate-700/70 text-slate-200 hover:border-cyan-400 cursor-pointer disabled:opacity-50 disabled:cursor-default';
+// HUD 風格：半透明深藍玻璃、細青色邊、柔和陰影，浮在星空上不搶畫面（畫布固定深色，見 .ta-force-dark）
+// 不用 backdrop-blur：底下的畫布每幀都在動，瀏覽器得每幀重新模糊面板後面整塊區域，拖曳會卡；改用稍微不透明的玻璃色
+const PANEL = 'bg-[rgba(6,11,28,0.8)] border border-cyan-300/15 ring-1 ring-inset ring-white/5 rounded-xl shadow-[0_12px_40px_-12px_rgba(0,0,0,0.75)]';
+const BTN = 'px-2.5 py-1 text-xs rounded-lg bg-white/[0.04] border border-white/10 text-slate-200 hover:border-cyan-300/60 hover:bg-cyan-400/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default';
+const BTN_ON = 'border-cyan-300/70 bg-cyan-400/15 text-cyan-50';
 const STAGE_COLORS = ['var(--ch-cyan)', 'var(--ch-violet)', '#f59e0b', '#34d399'];
 
 const fmtPct = (v) => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
@@ -120,17 +123,22 @@ function StageChart({ chain, hist, day }) {
   );
 }
 
-function Row({ left, mid, bar, right, tone, onClick }: { left: any; mid: any; bar?: number; right: string; tone: string; onClick?: () => void }) {
+// price：選填，只有成分個股傳（成交價；回放時傳 '—'，因為過去某天的漲跌配今天的價格會誤導）
+function Row({ left, mid, bar, right, tone, onClick, price }: { left: any; mid: any; bar?: number; right: string; tone: string; onClick?: () => void; price?: string }) {
   const inner = (
     <>
       <span className="text-slate-400 tabular-nums w-12 shrink-0 text-left">{left}</span>
-      <span className="flex-1 truncate text-left">{mid}</span>
+      <span className="flex-1 truncate text-left" title={typeof mid === 'string' ? mid : undefined}>
+        {mid}
+      </span>
+      {price !== undefined && <span className="tabular-nums w-14 shrink-0 text-right text-slate-200">{price}</span>}
       {bar !== undefined && (
-        <span className="w-16 h-1.5 rounded bg-slate-800 overflow-hidden shrink-0">
+        // 有價格欄時長條縮短，名稱才不會被擠成一兩個字（明細面板約 350px 寬）
+        <span className={`${price !== undefined ? 'w-8' : 'w-16'} h-1.5 rounded bg-slate-800 overflow-hidden shrink-0`}>
           <i className="block h-full rounded" style={{ width: `${Math.min(100, (Math.abs(bar) / 4) * 100)}%`, background: barColor(bar) }} />
         </span>
       )}
-      <b className={`tabular-nums w-[4.8rem] text-right shrink-0 ${tone}`}>{right}</b>
+      <b className={`tabular-nums ${price !== undefined ? 'w-[4.2rem]' : 'w-[4.8rem]'} text-right shrink-0 ${tone}`}>{right}</b>
     </>
   );
   const cls = 'flex items-center gap-2 py-1 border-b border-slate-800/70 text-[13px] w-full';
@@ -195,7 +203,7 @@ function DetailPanel({ view, map, hubMap, det, hist, replay, market, onNode, onC
       {!node && sectorHub && sectorHub.chains.length > 1 && (
         <div className="flex flex-wrap gap-1">
           {sectorHub.chains.map((id) => (
-            <button key={id} type="button" onClick={() => onChain(id)} className={`${BTN} ${id === chain.id ? 'border-cyan-400 bg-cyan-500/15' : ''}`}>
+            <button key={id} type="button" onClick={() => onChain(id)} className={`${BTN} ${id === chain.id ? BTN_ON : ''}`}>
               {map.chains.find((c) => c.id === id).name}
             </button>
           ))}
@@ -208,12 +216,13 @@ function DetailPanel({ view, map, hubMap, det, hist, replay, market, onNode, onC
             上一環：{chain.edges.filter((e) => e[1] === node.id).map((e) => chain.nodes.find((n) => n.id === e[0]).name).join('、') || '—'}　下一環：
             {chain.edges.filter((e) => e[0] === node.id).map((e) => chain.nodes.find((n) => n.id === e[1]).name).join('、') || '—'}
           </div>
-          <div className="text-[11px] text-cyan-300 tracking-wider pt-1">成分個股</div>
+          <div className="text-[11px] text-cyan-300 tracking-wider pt-1">成分個股{!useHist && <span className="text-slate-500 tracking-normal">（代號・名稱・成交價・漲跌）</span>}</div>
           {node.stocks.map((s) => {
             const st = det?.stocks[s.code];
             const v = useHist ? pickSeries(hist.stocks[s.code], day, replay.cum) : st?.ok ? st.change_pct : null;
+            const price = !useHist && st?.ok && st.price ? fmt(st.price, st.price >= 1000 ? 0 : 2) : '—';
             return (
-              <Row key={s.code} left={s.code} mid={st?.name || s.name} bar={v ?? 0} right={fmtPct(v)} tone={toneCls(v)} />
+              <Row key={s.code} left={s.code} mid={st?.name || s.name} price={price} bar={v ?? 0} right={fmtPct(v)} tone={toneCls(v)} />
             );
           })}
           {!useHist && (
@@ -381,6 +390,40 @@ function ChainSearch({ map, onPick }: { map: any; onPick: (h: Hit) => void }) {
 }
 
 // 滑鼠移動時只重繪這個小元件，不牽動整個頁面
+// 層級路徑：大盤 › 類股 › 產業鏈 › 環節，每一段都可以點回那一層
+function Breadcrumb({ view, map, rootName, onGo }) {
+  if (!map) return null;
+  const chain = view.chain ? map.chains.find((c) => c.id === view.chain) : null;
+  const sector = chain ? chain.sector : view.sector;
+  const node = chain && view.state === 'node' ? chain.nodes.find((n) => n.id === view.node) : null;
+  const crumbs: [string, any][] = [[rootName, { state: 'overview', sector: null }]];
+  if (sector) crumbs.push([sector, { state: 'overview', sector }]);
+  if (chain && chain.name !== sector) crumbs.push([chain.name, { state: 'chain', chain: chain.id }]);
+  else if (chain) crumbs[crumbs.length - 1] = [sector, { state: 'chain', chain: chain.id }];
+  if (node) crumbs.push([node.name, null]);
+  return (
+    <nav aria-label="目前位置" className="flex items-center min-w-0 text-xs">
+      {crumbs.map(([label, target], i) => {
+        const last = i === crumbs.length - 1;
+        return (
+          <span key={`${label}-${i}`} className="flex items-center min-w-0">
+            {i > 0 && <span className="px-1 text-slate-500" aria-hidden="true">›</span>}
+            {last || !target ? (
+              <span className="truncate font-semibold text-white" aria-current="location">
+                {label}
+              </span>
+            ) : (
+              <button type="button" onClick={() => onGo(target)} className="truncate text-slate-300 hover:text-cyan-200 cursor-pointer">
+                {label}
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
 function HoverTip({ apiRef }) {
   const [h, setH] = useState(null);
   useEffect(() => {
@@ -391,7 +434,7 @@ function HoverTip({ apiRef }) {
   }, [apiRef]);
   if (!h) return null;
   return (
-    <div className="fixed z-50 pointer-events-none px-2.5 py-1.5 rounded-lg text-xs bg-slate-950/95 border border-slate-600 text-slate-100 whitespace-nowrap" style={{ left: h.x + 14, top: h.y + 14 }}>
+    <div className={`${PANEL} fixed z-50 pointer-events-none px-2.5 py-1.5 text-xs text-slate-100 whitespace-nowrap`} style={{ left: h.x + 14, top: h.y + 14 }}>
       <b>{h.kind === 'stock' ? `${h.code} ${h.name}` : h.name}</b> <span className={toneCls(h.has ? h.v : null)}>{fmtPct(h.has ? h.v : null)}</span>
       <div className="text-slate-400">
         {h.kind === 'hub' ? (h.hasChains ? '點擊展開產業鏈' : `${h.note || '無資料'}・這個類股還沒有產業鏈`) : h.kind === 'node' ? '點擊看成分個股' : ''}
@@ -752,48 +795,61 @@ function IndustryChainPage() {
           style={{ width: '100%', height: '100%' }}
         />
 
-        {/* 上方：產業鏈切換與工具 */}
-        <div className="absolute z-30 left-3 right-3 top-3 flex flex-wrap xl:flex-nowrap items-center gap-2 pointer-events-none">
-          <div className={`${PANEL} px-2 py-1.5 flex flex-wrap xl:flex-nowrap xl:min-w-0 items-center gap-1 pointer-events-auto`}>
-            <fieldset className="flex m-0 p-0 min-w-0 rounded-lg overflow-hidden border border-slate-700/70 mr-1" aria-label="市場">
+        {/* 上方：市場・目前位置・搜尋・產業鏈下拉・工具（收成一行，窄螢幕才換行） */}
+        <div className="absolute z-30 left-3 right-3 top-3 flex flex-wrap lg:flex-nowrap items-center gap-2 pointer-events-none">
+          <div className={`${PANEL} px-2 py-1.5 flex items-center gap-2 min-w-0 flex-1 pointer-events-auto`}>
+            <fieldset className="flex m-0 p-0 shrink-0 rounded-lg overflow-hidden border border-white/10" aria-label="市場">
               {([['TW', '台股'], ['US', '美股']] as const).map(([m, label]) => (
                 <button
                   key={m}
                   type="button"
                   aria-pressed={market === m}
                   onClick={() => setMarket(m)}
-                  className={`px-2.5 py-1 text-xs cursor-pointer ${market === m ? 'bg-cyan-500/25 text-cyan-100' : 'bg-slate-900/80 text-slate-300 hover:text-white'}`}
+                  className={`px-2.5 py-1 text-xs cursor-pointer transition-colors ${market === m ? 'bg-cyan-400/20 text-cyan-50' : 'bg-transparent text-slate-400 hover:text-white'}`}
                 >
                   {label}
                 </button>
               ))}
             </fieldset>
+            <Breadcrumb view={view} map={map} rootName={indexQuote?.name || (market === 'US' ? 'S&P 500' : '加權指數')} onGo={(t) => engineRef.current?.go(t)} />
+            <div className="flex-1" />
             <ChainSearch map={map} onPick={flyTo} />
-            <span className="text-[11px] text-slate-400 px-1">產業鏈</span>
-            {/* 產業鏈變多了（25 條）：單行橫向捲動，不要把工具列撐成好幾排蓋住下面的清單 */}
-            <div className="flex gap-1 overflow-x-auto pb-1 w-full min-w-0 xl:w-auto xl:flex-1">
-              {(map?.chains || []).map((c) => (
-                <button key={c.id} type="button" onClick={() => goChain(c.id)} className={`${BTN} shrink-0 whitespace-nowrap ${view.chain === c.id ? 'border-cyan-400 bg-cyan-500/20' : ''}`}>
-                  {c.name}
-                </button>
+            <select
+              aria-label="跳到產業鏈"
+              value={view.chain || ''}
+              onChange={(e) => e.target.value && goChain(e.target.value)}
+              className="shrink-0 max-w-[10rem] text-xs rounded-lg bg-white/[0.04] border border-white/10 text-slate-200 px-2 py-1 cursor-pointer hover:border-cyan-300/60"
+            >
+              <option value="" className="bg-slate-900">
+                產業鏈（{map?.chains?.length || 0}）
+              </option>
+              {[...new Set<string>((map?.chains || []).map((c) => c.sector))].map((sec) => (
+                <optgroup key={sec} label={sec} className="bg-slate-900">
+                  {(map?.chains || [])
+                    .filter((c) => c.sector === sec)
+                    .map((c) => (
+                      <option key={c.id} value={c.id} className="bg-slate-900">
+                        {c.name}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
-            </div>
+            </select>
           </div>
-          <div className="flex-1" />
           <div className="flex gap-1.5 pointer-events-auto shrink-0">
             {view.state !== 'overview' && (
-              <button type="button" className={BTN} onClick={() => engineRef.current?.back()}>
+              <button type="button" className={BTN} onClick={() => engineRef.current?.back()} title="回上一層（Esc）">
                 ← 返回
               </button>
             )}
-            <button type="button" className={BTN} onClick={() => engineRef.current?.refit()}>
+            <button type="button" className={BTN} onClick={() => engineRef.current?.refit()} title="攝影機回到目前這一層的中心">
               ⌖ 重置視角
             </button>
-            <button type="button" className={`${BTN} ${listOpen ? 'border-cyan-400' : ''}`} aria-pressed={listOpen} onClick={() => setListOpen((v) => !v)}>
+            <button type="button" className={`${BTN} ${listOpen ? BTN_ON : ''}`} aria-pressed={listOpen} onClick={() => setListOpen((v) => !v)}>
               ☰ 清單
             </button>
-            <button type="button" className={`${BTN} ${debug ? 'border-cyan-400' : ''}`} aria-pressed={debug} onClick={() => setDebug((v) => !v)}>
-              ⚙ 引擎
+            <button type="button" className={`${BTN} ${debug ? BTN_ON : ''}`} aria-pressed={debug} onClick={() => setDebug((v) => !v)} title="引擎除錯資訊（FPS、每幀時間、畫質）">
+              ⚙
             </button>
           </div>
         </div>
@@ -807,13 +863,13 @@ function IndustryChainPage() {
 
         {/* 左側：全部產業清單 */}
         {listOpen && map && view.state === 'overview' && (
-          <aside className={`${PANEL} absolute left-3 top-28 xl:top-14 ${debug ? 'bottom-44' : 'bottom-24'} w-[250px] p-2.5 overflow-auto hidden md:block`} aria-label="全部產業">
+          <aside className={`${PANEL} absolute left-3 top-28 lg:top-16 ${debug ? 'bottom-[15.5rem]' : 'bottom-16'} w-[250px] p-2.5 overflow-auto hidden md:block`} aria-label="全部產業">
             <div className="flex items-center gap-1 text-[11px] text-slate-400 tracking-wider mb-1.5">
               全部產業（{map.hubs.length}）
               <Tip text="證交所全部類股。漲跌用即時類股指數（盤中隨成交更新），少數類股沒有即時指數就用盤後資料。有「鏈」標記的可以點進去看上中下游環節與個股。" />
             </div>
             {withData.length > 1 && (
-              <div className="grid gap-0.5 text-[11px] p-2 mb-2 rounded-lg bg-cyan-500/5 border border-slate-700/60">
+              <div className="grid gap-0.5 text-[11px] p-2 mb-2 rounded-lg bg-cyan-400/[0.06] border border-cyan-300/10">
                 <div className="flex justify-between">
                   <span className="text-slate-400">最強</span>
                   <span className={toneCls(withData[0].change_pct)}>
@@ -835,9 +891,14 @@ function IndustryChainPage() {
                 onClick={() => clickSector(h)}
                 className={`w-full flex items-center justify-between gap-2 px-2 py-1 rounded-md text-[13px] hover:bg-cyan-500/10 cursor-pointer ${view.sector === h.name ? 'bg-cyan-500/15' : ''}`}
               >
-                <span className="truncate text-left text-slate-200">
-                  {h.name}
-                  {h.chains.length > 0 && <span className="ml-1 text-[10px] text-cyan-300">鏈</span>}
+                <span className="flex items-center gap-1.5 min-w-0 text-left text-slate-200">
+                  <i
+                    aria-hidden="true"
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ background: h.change_pct === null || h.change_pct === undefined ? '#60708f' : barColor(h.change_pct), boxShadow: '0 0 6px currentColor' }}
+                  />
+                  <span className="truncate">{h.name}</span>
+                  {h.chains.length > 0 && <span className="shrink-0 px-1 rounded text-[10px] leading-4 text-cyan-200 bg-cyan-400/10 border border-cyan-300/20">鏈</span>}
                 </span>
                 <span className={`tabular-nums ${toneCls(h.change_pct)}`}>{fmtPct(h.change_pct)}</span>
               </button>
@@ -847,7 +908,7 @@ function IndustryChainPage() {
 
         {/* 右側：明細 */}
         {showDetail && map && (
-          <aside className={`${PANEL} absolute right-3 top-44 xl:top-14 bottom-44 md:bottom-24 w-[330px] max-w-[calc(100%-1.5rem)] p-3 overflow-auto`} aria-live="polite">
+          <aside className={`${PANEL} absolute right-3 top-28 lg:top-16 bottom-44 md:bottom-20 w-[330px] max-w-[calc(100%-1.5rem)] p-3 overflow-auto`} aria-live="polite">
             <DetailPanel
               view={view}
               map={map}
@@ -862,10 +923,10 @@ function IndustryChainPage() {
           </aside>
         )}
 
-        {/* 下方：回放列 */}
-        <div className={`${PANEL} absolute left-1/2 -translate-x-1/2 bottom-3 px-3 py-2 flex flex-wrap items-center justify-center gap-2.5 max-w-[calc(100%-1.5rem)]`}>
-          {chainId ? (
-            replay.on && histOk ? (
+        {/* 下方中間：產業鏈裡才有回放列；全景只留一行淡淡的操作提示 */}
+        {chainId ? (
+          <div className={`${PANEL} absolute left-1/2 -translate-x-1/2 bottom-3 px-3 py-2 flex flex-wrap items-center justify-center gap-2.5 max-w-[calc(100%-1.5rem)]`}>
+            {replay.on && histOk ? (
               <>
                 <button type="button" className={BTN} onClick={() => setReplay((r) => (r.day >= hist.dates.length - 1 ? { ...r, day: 0, playing: true } : { ...r, playing: !r.playing }))}>
                   {replay.playing ? '⏸ 暫停' : '▶ 播放'}
@@ -896,28 +957,43 @@ function IndustryChainPage() {
                 <button type="button" className={BTN} disabled={histLoading} onClick={() => startReplay()}>
                   {histLoading ? '載入歷史日 K…' : '▶ 回放近 30 日'}
                 </button>
-                <span className="text-[11px] text-slate-400">{histErr ? <span className="text-amber-300">{histErr}</span> : '目前是即時報價；回放可看漲跌怎麼由上游傳到下游'}</span>
+                <span className="text-[11px] text-slate-400">{histErr ? <span className="text-amber-300">{histErr}</span> : '即時報價中；回放可看漲跌怎麼由上游傳到下游'}</span>
               </>
-            )
-          ) : (
-            <span className="text-[11px] text-slate-400">拖曳平移・滾輪縮放・點擊有「鏈」的產業展開・Esc 返回</span>
-          )}
-          <button type="button" className={`${BTN} ${anim ? 'border-cyan-400' : ''}`} aria-pressed={anim} onClick={() => setAnim((v) => !v)}>
-            流動動畫
+            )}
+          </div>
+        ) : (
+          map && (
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-4 text-[11px] text-slate-400/80 pointer-events-none whitespace-nowrap hidden md:block" style={{ textShadow: '0 1px 6px #000' }}>
+              點有「鏈」的產業展開・拖曳平移・滾輪縮放・Esc 返回
+            </div>
+          )
+        )}
+
+        {/* 左下：畫面設定（動畫・銀河・3D・圖例） */}
+        <fieldset className={`${PANEL} m-0 min-w-0 absolute left-3 bottom-3 px-1.5 py-1 flex items-center gap-1 z-20`} aria-label="畫面設定">
+          <button type="button" className={`${BTN} ${anim ? BTN_ON : ''}`} aria-pressed={anim} onClick={() => setAnim((v) => !v)} title="軌道轉動、粒子與天氣動畫">
+            動畫
           </button>
-          <button
-            type="button"
-            className={BTN}
-            title="背景銀河的亮度（強＝荒原銀河、淡＝湖畔夜空、關＝只有程式畫的星空）"
-            onClick={() => setFx((f) => ({ ...f, sky: f.sky === 'strong' ? 'soft' : f.sky === 'soft' ? 'off' : 'strong' }))}
-          >
-            銀河：{SKY_LABEL[fx.sky] || '強'}
+          <fieldset className="flex m-0 p-0 items-center rounded-lg overflow-hidden border border-white/10" aria-label="銀河亮度">
+            <span className="px-1.5 text-[11px] text-slate-400">銀河</span>
+            {(['strong', 'soft', 'off'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={fx.sky === k}
+                onClick={() => setFx((f) => ({ ...f, sky: k }))}
+                title={{ strong: '荒原銀河（較亮）', soft: '湖畔夜空（較淡）', off: '只有程式畫的星空' }[k]}
+                className={`px-1.5 py-1 text-xs cursor-pointer transition-colors ${fx.sky === k ? 'bg-cyan-400/20 text-cyan-50' : 'text-slate-400 hover:text-white'}`}
+              >
+                {SKY_LABEL[k]}
+              </button>
+            ))}
+          </fieldset>
+          <button type="button" className={`${BTN} ${fx.tilt ? BTN_ON : ''}`} aria-pressed={fx.tilt} onClick={() => setFx((f) => ({ ...f, tilt: !f.tilt }))} title="軌道平面傾斜成 3D 透視">
+            3D
           </button>
-          <button type="button" className={`${BTN} ${fx.tilt ? 'border-cyan-400' : ''}`} aria-pressed={fx.tilt} onClick={() => setFx((f) => ({ ...f, tilt: !f.tilt }))}>
-            3D 傾斜
-          </button>
-          <Tip text="中心是大盤（台股加權指數／美股 S&P 500），類股依上下游分圈繞行，點進去是產業鏈、再點是環節的代表個股。大小＝成交佔比、顏色＝漲跌。漲跌越大，重力井越深、塵埃越多、引力絲越亮、越會把相關的拉過去。🌪 大漲＝龍捲風（上升氣流）、🌀 大跌＝漩渦（往下沉）、☁ 漲跌較大＝風暴雲（漲＝火花上飄、跌＝下雨）、⛈ 相關的一起大漲或大跌＝風暴前緣。天氣門檻是漲跌幅排名加上最低幅度，是視覺示意，不是訊號。" />
-        </div>
+          <Tip text="中心是大盤（台股加權指數／美股 S&P 500），類股依上下游分圈繞行，點進去是產業鏈、再點是環節的代表個股。大小＝成交佔比、顏色＝漲跌。漲跌越大，重力井越深、塵埃越多、引力絲越亮、越會把相關的拉過去。🌪 大漲＝龍捲風（上升氣流）、🌀 大跌＝漩渦（往下沉）、☁ 漲跌較大＝風暴雲（漲＝火花上飄、跌＝下雨）、⛈ 相關的一起大漲或大跌＝風暴前緣。天氣門檻是漲跌幅排名加上最低幅度，是視覺示意，不是訊號。操作：點有「鏈」的產業展開、拖曳平移、滾輪縮放、Esc 返回；產業鏈裡按空白鍵播放回放。" />
+        </fieldset>
 
         {!showDetail && (
           <canvas
@@ -931,7 +1007,7 @@ function IndustryChainPage() {
         )}
 
         {debug && stats && (
-          <pre className="absolute left-3 bottom-3 m-0 px-2.5 py-2 rounded-lg text-[11px] leading-snug text-cyan-200 bg-black/70 border border-cyan-500/30 pointer-events-none">
+          <pre className={`${PANEL} absolute left-3 bottom-14 m-0 px-2.5 py-2 text-[11px] leading-snug text-cyan-200 pointer-events-none z-20`}>
             {`FPS        ${stats.fps.toFixed(0)}\n更新次數   ${stats.ticks}（固定 60Hz）\n實體數     ${stats.entities}（本幀繪製 ${stats.drawn}）\n粒子(活動) ${stats.particles}/${stats.particlesMax}\n補間動畫   ${stats.tweens}\n攝影機     (${stats.camX.toFixed(0)}, ${stats.camY.toFixed(0)}) x${stats.zoom.toFixed(2)}\n狀態       ${stats.state}${stats.chain ? ` / ${stats.chain}` : ''}${stats.node ? ` / ${stats.node}` : ''}\n畫布       ${stats.w}x${stats.h} @${stats.dpr}x\n每幀繪圖   ${(stats.ms ?? 0).toFixed(1)} ms・畫質 ${stats.quality ?? '-'}（2 最高，太慢會自動降）`}
           </pre>
         )}

@@ -116,7 +116,7 @@ function create(canvas: HTMLCanvasElement, host: any) {
   const S: any = { state: 'overview', chain: null, node: null, sector: null };
   const E: any = {
     t: 0, timeScale: 1, motion: !host.reduced, tilt: 0.42, fx: { sky: 'strong', tilt: true }, hover: null,
-    cam: { x: 0, y: 0, z: 0.8 }, camTo: { x: 0, y: 0, z: 0.8 }, follow: true, focusT: 0, nodeT: 0,
+    cam: { x: 0, y: 0, z: 0.8 }, camTo: { x: 0, y: 0, z: 0.8 }, pan: { x: 0, y: 0 }, zoomK: 1, dragging: false, focusT: 0, nodeT: 0,
     shock: [], bolts: [], effects: [], fps: 60, ms: 0, quality: 2, slow: 0, fast: 0, ticks: 0, drawn: 0, map: null, sig: '', gradeAt: 0, gradeSig: '',
   };
   let hubs: any[] = [];
@@ -395,6 +395,7 @@ function create(canvas: HTMLCanvasElement, host: any) {
   function drawDisk(x: any, cx: number, cy: number, Rd: number, a: number, run: number, col: number[]) {
     const pw = x.power || 0;
     const bright = mix(col, [255, 255, 255], 0.45);
+    const cols = [0, 1, 2, 3, 4, 5].map((i) => rgba(mix(bright, [150, 180, 255], (i / 5) * 0.6), 1));
     const every = E.quality === 0 ? 2 : 1;
     let i = 0;
     for (const q of x.disk) {
@@ -405,10 +406,12 @@ function create(canvas: HTMLCanvasElement, host: any) {
         q.th = Math.random() * 7;
       }
       if (i++ % every) continue;
-      lx.fillStyle = rgba(mix(bright, [150, 180, 255], q.r * 0.6), a * (0.25 + 0.6 * (1 - q.r)) * (0.6 + 0.4 * q.k));
+      lx.fillStyle = cols[Math.round(clamp(q.r, 0, 1) * 5)];
+      lx.globalAlpha = a * (0.25 + 0.6 * (1 - q.r)) * (0.6 + 0.4 * q.k);
       const s = 0.9 + q.k * 1.1 + (1 - q.r) * 0.8;
       lx.fillRect(cx + Math.cos(q.th) * q.r * Rd, cy + Math.sin(q.th) * q.r * Rd * E.tilt, s, s);
     }
+    lx.globalAlpha = 1;
   }
   // 時空網格：平面底下的網格往質量處凹陷（核心最深），一眼看出誰在拉誰
   function wellGrid(proj: (x: number, y: number) => any, masses: any[], R: number, scale: number, a: number) {
@@ -421,13 +424,13 @@ function create(canvas: HTMLCanvasElement, host: any) {
       return [p.x, p.y + s * k];
     };
     ctx.lineWidth = 1;
-    const rings = 13;
+    const rings = 10; // 網格解析度：每點都要對全部質量算距離，點數是效能主因
     for (let i = 1; i <= rings; i++) {
       const r = (R * i) / rings;
       ctx.strokeStyle = `rgba(110,170,255,${a * (0.08 + 0.16 * (1 - i / rings))})`;
       ctx.beginPath();
-      for (let j = 0; j <= 90; j++) {
-        const t = (j / 90) * Math.PI * 2;
+      for (let j = 0; j <= 64; j++) {
+        const t = (j / 64) * Math.PI * 2;
         const [X, Y] = pt(Math.cos(t) * r, Math.sin(t) * r);
         if (j) ctx.lineTo(X, Y);
         else ctx.moveTo(X, Y);
@@ -435,11 +438,11 @@ function create(canvas: HTMLCanvasElement, host: any) {
       ctx.stroke();
     }
     ctx.strokeStyle = `rgba(110,170,255,${a * 0.09})`;
-    for (let i = 0; i < 36; i++) {
-      const t = (i / 36) * Math.PI * 2;
+    for (let i = 0; i < 24; i++) {
+      const t = (i / 24) * Math.PI * 2;
       ctx.beginPath();
-      for (let j = 0; j <= 26; j++) {
-        const r = R * (0.06 + 0.94 * (j / 26));
+      for (let j = 0; j <= 18; j++) {
+        const r = R * (0.06 + 0.94 * (j / 18));
         const [X, Y] = pt(Math.cos(t) * r, Math.sin(t) * r);
         if (j) ctx.lineTo(X, Y);
         else ctx.moveTo(X, Y);
@@ -636,30 +639,37 @@ function create(canvas: HTMLCanvasElement, host: any) {
       regrade();
     }
   }
-  function cameraTarget() {
+  // 目前這一層的焦點（攝影機的基準位置與縮放）：全景＝大盤（或選中的類股）、產業鏈＝類股、環節＝環節
+  function baseTarget() {
     const fit = fitZoom();
     const fh = focusHub();
-    if (!E.follow) return;
-    if (S.state === 'overview') {
-      const sh = S.sector && hubByName[S.sector];
-      E.camTo = sh ? { x: sh._wx, y: sh._wy * E.tilt, z: fit * 1.7 } : { x: 0, y: 0, z: fit };
-    } else if (S.state === 'chain' && fh) {
-      E.camTo = { x: fh._wx, y: fh._wy * E.tilt, z: clamp(fit * 2.6, 1.2, 3.4) };
-    } else if (S.state === 'node' && fh) {
+    if (S.state === 'chain' && fh) return { x: fh._wx, y: fh._wy * E.tilt, z: clamp(fit * 2.6, 1.2, 3.4) };
+    if (S.state === 'node' && fh) {
       // 環節的本地座標在展開完成後就等於世界座標的位移（系統縮放＝攝影機縮放）
       const m = chains[S.chain]?.byId[S.node];
-      const z = clamp(fit * 2.6, 1.2, 3.4);
-      E.camTo = { x: fh._wx + (m?._lx ?? 0), y: (fh._wy + (m?._ly ?? 0)) * E.tilt, z: z * 1.9 };
+      return { x: fh._wx + (m?._lx ?? 0), y: (fh._wy + (m?._ly ?? 0)) * E.tilt, z: clamp(fit * 2.6, 1.2, 3.4) * 1.9 };
     }
+    const sh = S.sector && hubByName[S.sector];
+    return sh ? { x: sh._wx, y: sh._wy * E.tilt, z: fit * 1.7 } : { x: 0, y: 0, z: fit };
   }
+  // 攝影機永遠跟著焦點；拖曳與滾輪記成相對偏移（pan）與縮放倍率（zoomK），焦點繞軌道時不會漂出畫面。換層級或重置視角時歸零
+  function cameraTarget() {
+    const b = baseTarget();
+    E.camTo = { x: b.x + E.pan.x, y: b.y + E.pan.y, z: clamp(b.z * E.zoomK, 0.3, 8) };
+  }
+  const resetView = () => {
+    E.pan = { x: 0, y: 0 };
+    E.zoomK = 1;
+  };
 
   function render(dt: number) {
     const t0 = performance.now();
     V = view();
     cameraTarget();
     const k = S.state === 'overview' ? 0.12 : 0.07;
-    E.cam.x = lerp(E.cam.x, E.camTo.x, k);
-    E.cam.y = lerp(E.cam.y, E.camTo.y, k);
+    // 拖曳時位置直接跟手（不補間，才不會覺得拖不動）；縮放照樣平滑
+    E.cam.x = E.dragging ? E.camTo.x : lerp(E.cam.x, E.camTo.x, k);
+    E.cam.y = E.dragging ? E.camTo.y : lerp(E.cam.y, E.camTo.y, k);
     E.cam.z = lerp(E.cam.z, E.camTo.z, k);
     placeHubs();
     const z = E.cam.z;
@@ -786,6 +796,19 @@ function create(canvas: HTMLCanvasElement, host: any) {
     const lite = dim > 0.5;
     const dustEvery = !lite ? 3 : E.quality === 0 ? 3 : E.quality === 1 ? 2 : 1;
     let di = 0;
+    const dustCols = new Map<number, string>();
+    const dustStyle = (near: number, dn: number) => {
+      const nb = Math.round(near * 7);
+      const db = Math.round(dn * 3);
+      const key = nb * 4 + db;
+      let st = dustCols.get(key);
+      if (!st) {
+        const n = nb / 7;
+        st = rgba(fog(mix(mix([120, 160, 255], coreCol, n * 0.8), [255, 255, 255], n * n * 0.4), db / 3), 1);
+        dustCols.set(key, st);
+      }
+      return st;
+    };
     for (const d of dust) {
       if (E.motion) {
         d.th += (dt * E.timeScale * 9) / d.r ** 0.85;
@@ -795,11 +818,12 @@ function create(canvas: HTMLCanvasElement, host: any) {
       if (di++ % dustEvery) continue;
       const p = project(Math.cos(d.th) * d.r, Math.sin(d.th) * d.r);
       const near = 1 - clamp((d.r - 60) / (OUTER - 60), 0, 1);
-      const col = mix(mix([120, 160, 255], coreCol, near * 0.8), [255, 255, 255], near * near * 0.4);
-      lx.fillStyle = rgba(fog(col, (Math.sin(d.th) + 1) / 2), (0.1 + 0.4 * near) * d.b * dim);
+      lx.fillStyle = dustStyle(near, (Math.sin(d.th) + 1) / 2);
+      lx.globalAlpha = (0.1 + 0.4 * near) * d.b * dim;
       const s = d.s * (0.7 + near) * clamp(z, 0.6, 1.6);
       lx.fillRect(p.x, p.y, s, s);
     }
+    lx.globalAlpha = 1;
     if (lite) {
       for (let i = 0; i < 14; i++) {
         const a = E.t * 0.08 + i * ((Math.PI * 2) / 14) + Math.sin(i * 7.1) * 0.2;
@@ -957,13 +981,15 @@ function create(canvas: HTMLCanvasElement, host: any) {
     // 6. 背景墊到下面：星點（全解析度）→ 星雲＋銀河（半解析度）
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = 'rgb(200,220,255)';
     for (const layer of stars)
       for (const s of layer) {
         const x = (((s.x - E.cam.x * s.depth) % W) + W * 1.5) % W;
         const y = (((s.y - E.cam.y * s.depth) % H) + H * 1.5) % H;
-        ctx.fillStyle = `rgba(200,220,255,${s.a * (0.65 + 0.35 * Math.sin(E.t * 1.3 + s.tw))})`;
+        ctx.globalAlpha = s.a * (0.65 + 0.35 * Math.sin(E.t * 1.3 + s.tw));
         ctx.fillRect(x, y, s.r, s.r);
       }
+    ctx.globalAlpha = 1;
     renderBackdrop();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(Bc, 0, 0, canvas.width, canvas.height);
@@ -1060,15 +1086,21 @@ function create(canvas: HTMLCanvasElement, host: any) {
     const z = E.cam.z;
     const c = project(0, 0);
     ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(0,0,0,.85)';
-    ctx.shadowBlur = 6;
+    // 深色外框取代 shadowBlur：畫布文字的模糊陰影每次都要做一次高斯模糊，幾十個標籤每幀就好幾毫秒
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(2,4,12,0.85)';
+    const txt = (str: string, x: number, y: number) => {
+      ctx.strokeText(str, x, y);
+      ctx.fillText(str, x, y);
+    };
     ctx.globalAlpha = dim;
     ctx.fillStyle = '#ffffff';
     // 字體都設上限：放大到環節層（約 5 倍）時，背景的名稱不會變成蓋住畫面的大字
     ctx.font = `800 ${clamp(15 * z, 11, 24)}px ${FONT}`;
-    ctx.fillText(index.name, c.x, c.y - 3 * z);
+    txt(index.name, c.x, c.y - 3 * z);
     ctx.font = `700 ${clamp(13 * z, 10, 20)}px ${MONO}`;
-    ctx.fillText(pct(index.v, index.has), c.x, c.y + 15 * z);
+    txt(pct(index.v, index.has), c.x, c.y + 15 * z);
     for (const h of hubs) {
       if (h === fh) continue;
       const s = h._s;
@@ -1078,20 +1110,20 @@ function create(canvas: HTMLCanvasElement, host: any) {
       ctx.globalAlpha = dim * (dimmedByHover(h) ? 0.3 : 1) * (0.35 + 0.65 * (h._depth + 1) / 2);
       ctx.font = `700 ${clamp(12 * z * s, 10, 18)}px ${FONT}`;
       ctx.fillStyle = '#e9f1ff';
-      ctx.fillText(h.name, h._p.x, h._p.y + r + 14 * z * s);
+      txt(h.name, h._p.x, h._p.y + r + 14 * z * s);
       ctx.font = `600 ${clamp(11 * z * s, 9, 16)}px ${MONO}`;
       ctx.fillStyle = rgba(mix(toneX(h), [255, 255, 255], 0.2), 1);
-      ctx.fillText(pct(h.v, h.has), h._p.x, h._p.y + r + 27 * z * s);
+      txt(pct(h.v, h.has), h._p.x, h._p.y + r + 27 * z * s);
     }
     if (fh) {
       const r = fh._r || fh.size * z;
       ctx.globalAlpha = moon ? 1 - 0.65 * nk : 1;
       ctx.font = `800 ${clamp(16 * z * 0.7, 12, 24)}px ${FONT}`;
       ctx.fillStyle = '#fff';
-      ctx.fillText(fh.name, fh._p.x, fh._p.y + r + 18 * z * 0.7);
+      txt(fh.name, fh._p.x, fh._p.y + r + 18 * z * 0.7);
       ctx.font = `700 ${clamp(13 * z * 0.7, 10, 20)}px ${MONO}`;
       ctx.fillStyle = rgba(toneX(fh), 1);
-      ctx.fillText(pct(fh.v, fh.has), fh._p.x, fh._p.y + r + 34 * z * 0.7);
+      txt(pct(fh.v, fh.has), fh._p.x, fh._p.y + r + 34 * z * 0.7);
     }
     const sub = (list: any[], k: number, alpha: number, unit: string) => {
       for (const m of list) {
@@ -1099,15 +1131,14 @@ function create(canvas: HTMLCanvasElement, host: any) {
         ctx.globalAlpha = k * alpha * (0.45 + 0.55 * m._dn);
         ctx.font = `700 ${clamp(11 * z * 0.7, 10, 15)}px ${FONT}`;
         ctx.fillStyle = '#e8f0ff';
-        ctx.fillText(m.name || m.code, m._q.x, m._q.y + r + 12);
+        txt(m.name || m.code, m._q.x, m._q.y + r + 12);
         ctx.font = `600 ${clamp(10 * z * 0.7, 9, 13)}px ${MONO}`;
         ctx.fillStyle = rgba(toneX(m), 1);
-        ctx.fillText(`${pct(m.v, m.has)}${unit ? `・${m.stocks.length} ${unit}` : m.code ? ` ${m.code}` : ''}`, m._q.x, m._q.y + r + 24);
+        txt(`${pct(m.v, m.has)}${unit ? `・${m.stocks.length} ${unit}` : m.code ? ` ${m.code}` : ''}`, m._q.x, m._q.y + r + 24);
       }
     };
     if (ch) sub(ch.moons, fk, moon ? 0.45 : 1, '檔');
     if (moon) sub(moon.stocks, nk, 1, '');
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
   }
@@ -1201,8 +1232,8 @@ function create(canvas: HTMLCanvasElement, host: any) {
       E.gradeSig = '';
       E.gradeAt = 0;
       setHover(null);
+      resetView();
     }
-    E.follow = true;
     if (instant) {
       E.focusT = next.state === 'overview' ? 0 : 1.2;
       E.nodeT = next.state === 'node' ? 1.2 : 0;
@@ -1236,7 +1267,7 @@ function create(canvas: HTMLCanvasElement, host: any) {
       // 合成事件沒有擷取需求，略過
     }
     const [x, y] = local(e);
-    drag = { sx: x, sy: y, cx: E.cam.x, cy: E.cam.y, moved: false };
+    drag = { sx: x, sy: y, px: E.pan.x, py: E.pan.y, moved: false };
   };
   const onMove = (e: any) => {
     const [x, y] = local(e);
@@ -1245,18 +1276,19 @@ function create(canvas: HTMLCanvasElement, host: any) {
       const dy = y - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) > 5) {
         drag.moved = true;
-        E.follow = false;
+        E.dragging = true;
         setHover(null);
       }
       if (drag.moved) {
-        E.camTo.x = E.cam.x = drag.cx - dx / E.cam.z;
-        E.camTo.y = E.cam.y = drag.cy - dy / E.cam.z;
+        E.pan.x = drag.px - dx / E.cam.z;
+        E.pan.y = drag.py - dy / E.cam.z;
       }
     } else setHover(pickAt(x, y), e);
   };
   const onUp = (e: any) => {
     const d = drag;
     drag = null;
+    E.dragging = false;
     canvas.style.cursor = 'grab';
     if (d && !d.moved) {
       const [x, y] = local(e);
@@ -1266,16 +1298,20 @@ function create(canvas: HTMLCanvasElement, host: any) {
   const onLeave = () => {
     if (!drag) setHover(null);
   };
+  const onCancel = () => {
+    drag = null;
+    E.dragging = false;
+  };
   const onWheel = (e: any) => {
     e.preventDefault();
-    E.follow = false;
-    E.camTo.z = clamp(E.camTo.z * Math.exp(-e.deltaY * 0.0015), 0.3, 6);
+    E.zoomK = clamp(E.zoomK * Math.exp(-e.deltaY * 0.0015), 0.25, 6);
     setHover(null);
   };
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('pointerleave', onLeave);
+  canvas.addEventListener('pointercancel', onCancel);
   canvas.addEventListener('wheel', onWheel, { passive: false });
 
   function loop(now: number) {
@@ -1319,7 +1355,7 @@ function create(canvas: HTMLCanvasElement, host: any) {
     },
     select(name: string | null) {
       S.sector = name;
-      E.follow = true;
+      resetView();
       emit();
     },
     back() {
@@ -1328,7 +1364,7 @@ function create(canvas: HTMLCanvasElement, host: any) {
       else if (S.sector) api.select(null);
     },
     refit() {
-      E.follow = true;
+      resetView();
     },
     resize(w: number, h: number) {
       DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -1368,16 +1404,15 @@ function create(canvas: HTMLCanvasElement, host: any) {
     },
     markDirty() {},
     key(e: any) {
-      const pan = 90 / E.cam.z;
+      const step = 90 / E.cam.z;
       if (e.key === 'Escape') api.back();
-      else if (e.key === 'ArrowLeft') E.camTo.x -= pan;
-      else if (e.key === 'ArrowRight') E.camTo.x += pan;
-      else if (e.key === 'ArrowUp') E.camTo.y -= pan;
-      else if (e.key === 'ArrowDown') E.camTo.y += pan;
-      else if (e.key === '+' || e.key === '=') E.camTo.z = clamp(E.camTo.z * 1.15, 0.3, 6);
-      else if (e.key === '-') E.camTo.z = clamp(E.camTo.z / 1.15, 0.3, 6);
+      else if (e.key === 'ArrowLeft') E.pan.x -= step;
+      else if (e.key === 'ArrowRight') E.pan.x += step;
+      else if (e.key === 'ArrowUp') E.pan.y -= step;
+      else if (e.key === 'ArrowDown') E.pan.y += step;
+      else if (e.key === '+' || e.key === '=') E.zoomK = clamp(E.zoomK * 1.15, 0.25, 6);
+      else if (e.key === '-') E.zoomK = clamp(E.zoomK / 1.15, 0.25, 6);
       else return false;
-      if (e.key !== 'Escape') E.follow = false;
       return true;
     },
     minimapClick(e: any) {
@@ -1387,9 +1422,9 @@ function create(canvas: HTMLCanvasElement, host: any) {
       const { k, ox, oy } = mini._k;
       const mx = ((e.clientX - r.left) / r.width) * mini.width;
       const my = ((e.clientY - r.top) / r.height) * mini.height;
-      E.follow = false;
-      E.camTo.x = (mx - ox) / k;
-      E.camTo.y = ((my - oy) / (k * 0.62)) * E.tilt;
+      const b = baseTarget(); // 點小地圖：偏移設成「點的位置－目前焦點」
+      E.pan.x = (mx - ox) / k - b.x;
+      E.pan.y = ((my - oy) / (k * 0.62)) * E.tilt - b.y;
     },
     stats() {
       const parts = hubs.reduce((n, h) => n + h.particles.length + h.disk.length, 0);
@@ -1416,6 +1451,7 @@ function create(canvas: HTMLCanvasElement, host: any) {
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointerleave', onLeave);
+      canvas.removeEventListener('pointercancel', onCancel);
       canvas.removeEventListener('wheel', onWheel);
     },
   };
