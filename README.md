@@ -11,7 +11,7 @@
 |---|---|
 | **個股（行情）** | 右側最上面一行是問候語（今天自選幾漲幾跌、台美股盤中／休市）與指標卡（持股市值、今日損益、未實現損益、提醒，點了直接打開持股或提醒）；左側清單分三頁：自選（清單／技術檢視）、我的持股（最上面是市值、今日損益、未實現損益摘要卡；含碎股、帳戶現金、已領配息對帳；配息月曆檢視）、探索（ETF 精選），提醒收在清單底部；即時報價、五檔、分時圖、52 週區間；**Windows 系統匣常駐背景提醒**（價格、漲跌幅、RSI 原生 Toast 通知）；模擬下單（台股整張／零股、ROD／IOC／FOK，美股限價／市價，多市場每手股數檢核與法定稅費，海外可設券商手續費率與每筆最低）；基本資料與配息；**股市熱力圖**（成交金額／市值／等權重／持股市值，紅漲綠跌） |
 | **大盤籌碼** | 開盤前先看大環境：國際指數（美股、亞洲、美元指數、匯率）、美股期貨、**本週經濟日曆**（美歐英日中等主要經濟數據與央行事件，台灣時間；來源每小時更新、最多 1 小時抓一次並存檔，沒有台灣、沒有公布值）、**台指期日盤＋夜盤**與期現貨價差；三大法人近 10 日買賣超、類股成交比重；**產業漲跌排行**（證交所各類股，附成交金額、比重、量比）；**台灣 50**（上市市值前 50 大，盤中即時、量比、市值）。全部公開資料，不需金鑰 |
-| **產業鏈地圖** | 把證交所全部類股（約 32 個）攤成一張可拖曳縮放的互動地圖，漲跌用**即時類股指數**上色（盤中隨成交更新，少數沒有即時指數的類股用盤後資料），圓的大小是成交比重；有整理產業鏈的類股（半導體、AI 伺服器、通信網路、面板顯示、電腦與週邊、印刷電路板、被動元件、電動車、重電與綠能、石化塑膠、航運、金融保險、鋼鐵、水泥營建、紡織與鞋業、食品民生、自動化機械、生技醫療、電子通路、資訊與雲端服務、零售與貿易、觀光餐旅與休閒、能源與環保、玻璃陶瓷與衛浴、化學與橡膠、遊戲與數位娛樂、五金與金屬製品，共 27 條；相關類股合併成一條，點合併進來的類股也進得到那條鏈）點進去展開**上中下游環節與個股**，環節漲跌是個股即時報價以成交值加權，光纖上的光點代表資金流向；可**回放近 30 日**看漲跌怎麼由上游傳到下游。切到「美股」有 12 條鏈，涵蓋 11 檔 SPDR 類股 ETF 代表的全部類股；環節分類是自行整理的示意（不是官方資料），更新方式見 `src/market/chain_data.py` 開頭 |
+| **產業鏈地圖** | 以大盤（加權指數／S&P 500）為核心、證交所全部類股（約 32 個）依上下游分圈繞行的軌道圖（可拖曳縮放；引力、吸積盤、牽引絲表示誰在拉誰，漲跌越大越強；大漲龍捲風、大跌漩渦、相關的一起大漲大跌連成風暴前緣；背景銀河是 Poly Haven 的 CC0 夜空全景，轉檔見 `tools/sky_emissive.py`），漲跌用**即時類股指數**上色（盤中隨成交更新，少數沒有即時指數的類股用盤後資料），圓的大小是成交比重；有整理產業鏈的類股（半導體、AI 伺服器、通信網路、面板顯示、電腦與週邊、印刷電路板、被動元件、電動車、重電與綠能、石化塑膠、航運、金融保險、鋼鐵、水泥營建、紡織與鞋業、食品民生、自動化機械、生技醫療、電子通路、資訊與雲端服務、零售與貿易、觀光餐旅與休閒、能源與環保、玻璃陶瓷與衛浴、化學與橡膠、遊戲與數位娛樂、五金與金屬製品，共 27 條；相關類股合併成一條，點合併進來的類股也進得到那條鏈）點進去展開**上中下游環節與個股**，環節漲跌是個股即時報價以成交值加權，光纖上的光點代表資金流向；可**回放近 30 日**看漲跌怎麼由上游傳到下游。切到「美股」有 12 條鏈，涵蓋 11 檔 SPDR 類股 ETF 代表的全部類股；環節分類是自行整理的示意（不是官方資料），更新方式見 `src/market/chain_data.py` 開頭 |
 | **多圖走勢** | 一次看 2×2／3×3／4×4 或自訂幾列幾欄（每邊 1～6）的分時走勢，每格自己輸入代號；版面可自行新增（最多 20 組）、改名、刪除，各自儲存（可一鍵帶入自選股或持股） |
 | **個股（技術分析）** | 還權日 K（可切 5／15／60 分 K，可疊**布林通道**、K 線**買賣訊號標記**：固定規則，2019 起 10 檔台美股實測相對隨機進場優勢很小，只當找突破位置的輔助，統計與限制見 `src/technical/signals.py`、`tools/backtest_signals.py`；另有「K 線收盤規則」可切換：標出頭和底、多頭確認、收盤跌破前一天低點出場、高檔大量轉弱，實測同樣沒有優勢，見 `src/technical/kline_rules.py`、`tools/backtest_kline_rules.py`）、**盤中指標即時重算**（均線、RSI、MACD、ATR 自動納入盤中最新價）、支撐壓力、100 分趨勢評分、多空三情境、週線；買進／觀望／賣出條件；顯示你這檔持股在停損／目標價的賺賠 |
 | **個股（新聞判斷）** | 按「分析新聞」一鍵產出研究摘要（整體語氣、重點新聞、已反映程度、資料缺口、時間軸、引用清單；語氣是標題關鍵字粗估，近期樣本沒有顯示預測力，見 `tools/backtest_news_tone.py`）；多來源真實新聞（Google News、鉅亨網、Yahoo 奇摩股市、MoneyDJ、證交所重大訊息、SEC 8-K、分析專欄），附摘要、去重；**重大訊息每日存檔（保留 90 天）與歷史公告查詢**；判斷消息是否已反映在股價（Priced-in）與預期波動區間；近期新聞彙整 |
@@ -123,8 +123,7 @@ cd AI-Stock-Trading-Analysis
 
 - **型別檢查（`tsconfig.json`）**：前端是 `.tsx`，目前用寬鬆模式（`strict` 關閉），檔案之間用 `import`／`export`；全域宣告（React、Tailwind）在 `web/globals.d.ts`。
   目前 48 個檔案全部都通過檢查，沒有任何 `@ts-nocheck`；新增或修改前端後要維持 `npm run typecheck` 零錯誤，不要用 `@ts-nocheck` 繞過。
-  很多地方用 `any`（biome 的 `noExplicitAny` 已關閉），之後可逐步補成具體型別、再打開 `strict`。`chain_engine.tsx` 的類別欄位是在建構子裡指派的，
-  用同名 `interface` 宣告欄位型別（只給 TypeScript 看，執行時不存在）。打包不做型別檢查（esbuild 只拿掉型別）；打包版執行時不需要 `node_modules`。
+  很多地方用 `any`（biome 的 `noExplicitAny` 已關閉），之後可逐步補成具體型別、再打開 `strict`。打包不做型別檢查（esbuild 只拿掉型別）；打包版執行時不需要 `node_modules`。
 
 - **離線範例資料**：設環境變數 `TRADING_ALLOW_SAMPLE=1`，查不到行情時改用範例資料（預設會直接報錯）。
 - 開發時的資料一樣存在專案的 `data/userdata.json`；要測試又不想動到自己的資料，可以把專案複製一份到別的資料夾再開。
@@ -318,7 +317,7 @@ src/
 - `app.tsx` 外殼與側邊導覽；`config.tsx`、`ui.tsx`、`charts.tsx`、`live_widgets.tsx`、`markdown.tsx` 共用元件；`sync_store.tsx` 資料同步；`boot_loader.tsx` 啟動預載；`desktop_bridge.tsx` 桌面版關閉確認、畫面縮放與背景工作（postJob）；`ai_store.tsx`、`portfolio_store.tsx` 跨頁狀態
 - `panels/`：technical（＋technical_parts 籌碼與持股卡片）、news、backtest（＋backtest_parts 小元件、backtest_verify 驗證類、backtest_tools 今日訊號／Pine／PDF、backtest_replay K 線回放、backtest_portfolio 策略組合、backtest_custom 自訂策略）、portfolio、journal、selftest（各分析頁）
 - `export_report.tsx`：右上角「匯出報告」的 JSON／Markdown 組裝
-- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、industry_chain＋chain_engine（產業鏈地圖與它的 Canvas 畫面引擎）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
+- `pages/`：watch（看盤）、heatmap（股市熱力圖）、market_board（大盤籌碼）、industry_chain＋orbit_engine（產業鏈地圖與它的 Canvas 軌道引擎）、multi_chart（多圖走勢）、savings_plan（存股計畫）、savings_portfolio（存股計畫的投資組合）、holdings_panel、order_panel、stock_info_panel、overview_alerts、
   settings／settings_ai（AI 連線編輯）／settings_background（背景服務）／settings_keys／settings_monitor、guide、tour、candle_guide、strategy_guide
 
 開發進度、待辦與已知限制見 [`Continue.md`](Continue.md)。

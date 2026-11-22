@@ -1,10 +1,12 @@
-// 產業鏈地圖：全部類股即時漲跌（第 1 層）→ 點進去展開上中下游環節與個股（第 2 層），可回放近 30 日。
-// 畫面由 chain_engine.tsx 的 Canvas 引擎繪製；這支檔案負責抓資料、HUD（清單、明細、回放列、小地圖）與把兩邊接起來。
-// 資料：/api/chains/map（全景，30 秒）、/api/chains/detail（單一產業鏈的即時報價，30 秒）、/api/chains/history（回放，按需載入）
+// 產業鏈地圖：全部類股即時漲跌（第 1 層）→ 點進去展開上中下游環節（第 2 層）→ 再點環節看代表個股（第 3 層），可回放近 30 日。
+// 畫面由 orbit_engine.tsx 的 Canvas 引擎繪製（大盤為核心、類股繞圈的軌道圖，引力與天氣效果）；
+// 這支檔案負責抓資料、HUD（清單、明細、回放列、小地圖、畫面設定）與把兩邊接起來。
+// 資料：/api/chains/map（全景，30 秒）、/api/chains/detail（單一產業鏈的即時報價，30 秒）、/api/chains/history（回放，按需載入）、
+//       /api/indices（核心的大盤指數：台股加權指數／美股 S&P 500，30 秒）
 // 產業鏈結構在 src/market/chain_data.py（自行整理的示意分類，更新方式見該檔開頭）。
-import { Tip, colorOf } from '../ui';
+import { Tip, colorOf, readLS, writeLS } from '../ui';
 import { PageHead } from './card_box';
-import { ChainEngine } from './chain_engine';
+import { OrbitEngine } from './orbit_engine';
 import { pollEvery } from '../desktop_bridge';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -44,7 +46,14 @@ function pickSeries(series, day, cum) {
 }
 
 // 引擎每幀來讀的數字：回放中讀歷史，否則讀即時報價；沒有資料一律回 null（畫面顯示「—」，不補假值）
+// 核心用的大盤指數（回放時沒有指數歷史，維持即時值）
+const INDEX_SYMBOL = { TW: '^TWII', US: '^GSPC' };
+// 畫面設定（跟著 userdata 同步）：銀河 strong／soft／off、3D 傾斜
+const LS_FX = 'tw_us_chain_fx_v1';
+const SKY_LABEL = { strong: '強', soft: '淡', off: '關' };
+
 function readValue(D, kind, a, b) {
+  if (kind === 'index') return D.index ? { v: D.index.change_pct, name: D.index.name, price: D.index.price } : { v: null };
   if (kind === 'hub') {
     const h = D.hubMap[a];
     if (!h || h.change_pct === null || h.change_pct === undefined) return { v: null };
@@ -436,12 +445,14 @@ function IndustryChainPage() {
   const [anim, setAnim] = useState(true);
   const [debug, setDebug] = useState(false);
   const [stats, setStats] = useState(null);
+  const [fx, setFx] = useState(() => ({ sky: 'strong', tilt: true, ...readLS(LS_FX, {}) }));
+  const [indexQuote, setIndexQuote] = useState(null);
   const tipRef = useRef(null);
 
   const hubMap = useMemo(() => Object.fromEntries((map?.hubs || []).map((h) => [h.name, h])), [map]);
   // 引擎每幀讀的最新資料（用 ref，不必每次資料更新都重建引擎）
-  const dataRef = useRef({ hubMap: {}, details: {}, history: {}, replay });
-  dataRef.current = { hubMap, details, history, replay };
+  const dataRef = useRef({ hubMap: {}, details: {}, history: {}, replay, index: null });
+  dataRef.current = { hubMap, details, history, replay, index: indexQuote };
   const listRef = useRef(listOpen);
   listRef.current = listOpen;
 
@@ -462,11 +473,12 @@ function IndustryChainPage() {
       onState: (S) => setView(S),
       onHover: (info, x, y) => tipRef.current?.(info ? { ...info, x, y } : null),
     };
-    const engine = ChainEngine.create(canvas, host);
+    const engine = OrbitEngine.create(canvas, host);
     engineRef.current = engine;
     const ro = new ResizeObserver(() => engine.resize(box.clientWidth, box.clientHeight));
     ro.observe(box);
     engine.resize(box.clientWidth, box.clientHeight);
+    engine.setFx(fx);
     engine.start();
     if (host.reduced) setAnim(false);
     return () => {
@@ -475,6 +487,31 @@ function IndustryChainPage() {
       engineRef.current = null;
     };
   }, []);
+
+  // ---- 核心：大盤指數（台股加權指數／美股 S&P 500），30 秒 ----
+  useEffect(() => {
+    let stop = false;
+    setIndexQuote(null);
+    const load = () =>
+      fetch('/api/indices')
+        .then((r) => r.json())
+        .then((d) => {
+          const q = (d.indices || []).find((x) => x.symbol === INDEX_SYMBOL[market]);
+          if (!stop && q) setIndexQuote(q);
+        })
+        .catch(() => {}); // 抓不到時核心顯示「大盤 —」，其他照常
+    load();
+    const cancel = pollEvery(load, 30000);
+    return () => {
+      stop = true;
+      cancel();
+    };
+  }, [market]);
+  // ---- 畫面設定 ----
+  useEffect(() => {
+    writeLS(LS_FX, fx);
+    engineRef.current?.setFx(fx);
+  }, [fx]);
 
   // ---- 全景資料 ----
   const marketRef = useRef(market);
@@ -868,6 +905,18 @@ function IndustryChainPage() {
           <button type="button" className={`${BTN} ${anim ? 'border-cyan-400' : ''}`} aria-pressed={anim} onClick={() => setAnim((v) => !v)}>
             流動動畫
           </button>
+          <button
+            type="button"
+            className={BTN}
+            title="背景銀河的亮度（強＝荒原銀河、淡＝湖畔夜空、關＝只有程式畫的星空）"
+            onClick={() => setFx((f) => ({ ...f, sky: f.sky === 'strong' ? 'soft' : f.sky === 'soft' ? 'off' : 'strong' }))}
+          >
+            銀河：{SKY_LABEL[fx.sky] || '強'}
+          </button>
+          <button type="button" className={`${BTN} ${fx.tilt ? 'border-cyan-400' : ''}`} aria-pressed={fx.tilt} onClick={() => setFx((f) => ({ ...f, tilt: !f.tilt }))}>
+            3D 傾斜
+          </button>
+          <Tip text="中心是大盤（台股加權指數／美股 S&P 500），類股依上下游分圈繞行，點進去是產業鏈、再點是環節的代表個股。大小＝成交佔比、顏色＝漲跌。漲跌越大，重力井越深、塵埃越多、引力絲越亮、越會把相關的拉過去。🌪 大漲＝龍捲風（上升氣流）、🌀 大跌＝漩渦（往下沉）、☁ 漲跌較大＝風暴雲（漲＝火花上飄、跌＝下雨）、⛈ 相關的一起大漲或大跌＝風暴前緣。天氣門檻是漲跌幅排名加上最低幅度，是視覺示意，不是訊號。" />
         </div>
 
         {!showDetail && (
@@ -883,7 +932,7 @@ function IndustryChainPage() {
 
         {debug && stats && (
           <pre className="absolute left-3 bottom-3 m-0 px-2.5 py-2 rounded-lg text-[11px] leading-snug text-cyan-200 bg-black/70 border border-cyan-500/30 pointer-events-none">
-            {`FPS        ${stats.fps.toFixed(0)}\n更新次數   ${stats.ticks}（固定 60Hz）\n實體數     ${stats.entities}（本幀繪製 ${stats.drawn}）\n粒子(活動) ${stats.particles}/${stats.particlesMax}\n補間動畫   ${stats.tweens}\n攝影機     (${stats.camX.toFixed(0)}, ${stats.camY.toFixed(0)}) x${stats.zoom.toFixed(2)}\n狀態       ${stats.state}${stats.chain ? ` / ${stats.chain}` : ''}${stats.node ? ` / ${stats.node}` : ''}\n畫布       ${stats.w}x${stats.h} @${stats.dpr}x`}
+            {`FPS        ${stats.fps.toFixed(0)}\n更新次數   ${stats.ticks}（固定 60Hz）\n實體數     ${stats.entities}（本幀繪製 ${stats.drawn}）\n粒子(活動) ${stats.particles}/${stats.particlesMax}\n補間動畫   ${stats.tweens}\n攝影機     (${stats.camX.toFixed(0)}, ${stats.camY.toFixed(0)}) x${stats.zoom.toFixed(2)}\n狀態       ${stats.state}${stats.chain ? ` / ${stats.chain}` : ''}${stats.node ? ` / ${stats.node}` : ''}\n畫布       ${stats.w}x${stats.h} @${stats.dpr}x\n每幀繪圖   ${(stats.ms ?? 0).toFixed(1)} ms・畫質 ${stats.quality ?? '-'}（2 最高，太慢會自動降）`}
           </pre>
         )}
 

@@ -30,21 +30,6 @@
       }
     }
   },
-  "overrides": [
-    {
-      "includes": ["web/pages/chain_engine.tsx"],
-      "linter": {
-        "rules": {
-          "correctness": {
-            "noUnusedVariables": "off"
-          },
-          "suspicious": {
-            "noUnsafeDeclarationMerging": "off"
-          }
-        }
-      }
-    }
-  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single"
