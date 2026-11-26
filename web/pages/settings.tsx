@@ -57,6 +57,7 @@ const DATA_KEYS = [
   ['tw_us_chart_news_v2', '介面偏好：分時走勢圖標出新聞發布時間', null],
   ['tw_us_chain_fx_v1', '介面偏好：產業鏈地圖的銀河亮度與 3D 傾斜', null],
   ['tw_us_watch_cards_v2', '介面偏好：行情卡片的收合與隱藏', null],
+  ['tw_us_watch_list_mini_v1', '介面偏好：個股頁左側清單收成細條', null],
 ];
 const describe = (k) => {
   try {

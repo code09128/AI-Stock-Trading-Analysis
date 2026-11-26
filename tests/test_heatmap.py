@@ -84,6 +84,16 @@ class HeatmapBuildTests(unittest.TestCase):
         self.assertEqual(item["holding_twd"], 2 * 4000 * 0.4)     # 持股市值仍依便士報價換算
         self.assertEqual(item["turnover_twd"], 4000 * 10 * 0.4)
 
+    def test_all_sector_pools_fit_symbol_limit(self):
+        # 全產業池要一次抓完：不能超過 MAX_SYMBOLS（超過的會被截掉，最後幾個產業會消失）
+        for pool in ("tw_all", "us_all"):
+            spec = [s for _, ss in heatmap.POOLS[pool]["groups"] for s in ss]
+            self.assertLessEqual(len(spec), heatmap.MAX_SYMBOLS, pool)
+            self.assertEqual(len(spec), len(set(spec)), f"{pool} 有重複代號")
+        # 美股產業名稱要和自選池用的 Yahoo 產業對照一致，兩個範圍看起來才是同一套分類
+        us_groups = {g for g, _ in heatmap.POOLS["us_all"]["groups"]}
+        self.assertEqual(us_groups, set(heatmap.US_SECTOR_ZH.values()))
+
     def test_unknown_pool_rejected(self):
         with self.assertRaises(ValueError):
             heatmap.build("bogus")

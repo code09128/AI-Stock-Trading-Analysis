@@ -1,6 +1,6 @@
 // 看盤頁：左側清單（自選股/ETF/持股）＋右側報價、分時圖、五檔、模擬下單
 import { bus } from '../bus';
-import { notifySaved } from '../sync_store';
+import { notifySaved, notifySavedLater } from '../sync_store';
 import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, shownQuote, TRIAL_TIP, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
 import { fillOrder, usePortfolio } from '../portfolio_store';
 import { RefreshButton } from '../refresh_button';
@@ -19,7 +19,7 @@ import { ValuationCard } from './valuation_card';
 import { AiDrawer } from './ai_drawer';
 import { StockTabs } from './stock_tabs';
 import { StockChart } from './stock_chart';
-import { DepthBody, HoldBody, NewsBody, StatsBody } from './quote_cards';
+import { DepthBody, HoldBody, NewsBody, Ranges, StatsKpis } from './quote_cards';
 import { HBars } from './mini_charts';
 import { openSavings } from './savings_plan';
 import { pollEvery } from '../desktop_bridge';
@@ -33,13 +33,13 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 // 行情分頁的卡片（順序＝預設順序；span 是 12 欄格線裡佔幾欄）
 const CARD_DEFS: CardDef[] = [
   { id: 'chart', title: '分時走勢', span: 8 },
-  { id: 'stats', title: '開高低量・區間', span: 4 },
-  { id: 'depth', title: '委買／委賣五檔', span: 4 },
+  // 開高低量改成卡片格線上方的一排大數字卡（StatsKpis）；今日／52 週區間併進五檔卡
+  { id: 'depth', title: '五檔・區間', span: 4 },
   { id: 'order', title: '模擬下單', span: 8 },
-  { id: 'news', title: '相關新聞', span: 8 },
-  { id: 'val', title: '估值參考', span: 8 },
-  { id: 'profile', title: '基本資料・配息', span: 4 },
   { id: 'hold', title: '我的持股', span: 4 },
+  { id: 'news', title: '相關新聞', span: 8 },
+  { id: 'profile', title: '基本資料・配息', span: 4 },
+  { id: 'val', title: '估值參考', span: 8 },
 ];
 const PROFILE_TABS = [
   ['basic', '基本資料'],
@@ -49,12 +49,16 @@ const PROFILE_TABS = [
 ];
 
 // 檢視 → 所屬的頂層分頁；頂層分頁 → 點下去先顯示的檢視
-const LIST_TOP: Record<string, string> = { watch: 'watch', overview: 'watch', hold: 'hold', div: 'hold', etf: 'explore' };
+const LIST_TOP: Record<string, string> = { watch: 'watch', overview: 'watch', hold: 'hold', div: 'hold' };
+// 原本的第三個分頁「探索」（熱門漲跌、ETF 精選、主題榜）已併進右側「市場熱力」：熱力圖下方的排行
 const LIST_TABS = [
   ['watch', '自選', 'watch'],
   ['hold', '我的持股', 'hold'],
-  ['explore', '探索', 'etf'],
 ] as const;
+const MKT_LABEL: Record<string, string> = { ALL: '全部市場', TW: '台股', INTL: '美股' };
+const CAT_LABEL: Record<string, string> = { ALL: '全部類型', STOCK: '股票', ETF: 'ETF', BOND: '債券' };
+const SORT_LABEL: Record<string, string> = { default: '我的順序', chg: '漲幅大→小', chgAsc: '跌幅大→小', turn: '成交金額' };
+const LS_LIST_MINI = 'tw_us_watch_list_mini_v1';
 const LIST_VIEWS: Record<string, readonly (readonly [string, string, string])[]> = {
   watch: [
     ['watch', '清單', '價格、漲跌與走勢'],
@@ -72,16 +76,26 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
   // 沿用舊的六個值，導覽與其他頁面送來的 { listTab } 指令不用改；只有 'alerts' 改成打開底部的提醒抽屜
   const [listTab, setListView] = useState('watch');
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const setListTab = (id: string) => (id === 'alerts' ? setAlertsOpen(true) : setListView(id));
+  // 舊的「探索」（listTab:'etf'）指令：導覽、說明頁或其他頁面送來的，改成打開右側「市場熱力」
+  const setListTab = (id: string) =>
+    id === 'alerts' ? setAlertsOpen(true) : id === 'etf' ? setRightTab('heatmap') : setListView(id);
   const listTop = LIST_TOP[listTab] || 'watch';
   // 探索分頁：市場、榜單種類（ETF 精選也是其中一種）、主題（產業鏈 id）
   const [exploreMarket, setExploreMarket] = useState('TW');
   const [exploreKind, setExploreKind] = useState('gain');
   const [exploreTheme, setExploreTheme] = useState('');
-  const showEtf = listTab === 'etf' && exploreKind === 'etf';
-  // WatchPage 只在行情／技術分析／新聞研究三個分頁掛著，左側清單一直看得到，所以只看「是不是在探索分頁」
-  const rankState = useRanking(exploreMarket, exploreKind, exploreTheme, listTab === 'etf');
-  const exploreThemes = useThemes(exploreMarket, listTab === 'etf' && exploreKind === 'theme');
+  const [rightTab, setRightTab] = useState('quote');
+  // 排行（原本左側「探索」）放在「市場熱力」頁：打開那一頁才抓榜單
+  const exploreOn = active === 'watch' && rightTab === 'heatmap';
+  const showEtf = exploreOn && exploreKind === 'etf';
+  const rankState = useRanking(exploreMarket, exploreKind, exploreTheme, exploreOn);
+  const exploreThemes = useThemes(exploreMarket, exploreOn && exploreKind === 'theme');
+  // 左側清單收合成細條（只剩代號＋漲跌色點），讓右邊個股畫面用滿寬度
+  const [listMini, setListMini] = useState(() => readLS(LS_LIST_MINI, false) === true);
+  useEffect(() => writeLS(LS_LIST_MINI, listMini), [listMini]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [dragSym, setDragSym] = useState<string | null>(null);
+  const [overSym, setOverSym] = useState<string | null>(null);
   // 切到「主題」或換市場後，主題清單回來了就預設選第一條
   useEffect(() => {
     if (exploreKind === 'theme' && exploreThemes.length && !exploreThemes.some((t) => t.id === exploreTheme)) {
@@ -163,7 +177,6 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     TW: filterScope.filter(isTW).length,
     INTL: filterScope.filter((x) => !isTW(x)).length,
   };
-  const [rightTab, setRightTab] = useState('quote');
   const cardCtl = useCardLayout(CARD_DEFS);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiTask, setAiTask] = useState('stock');
@@ -550,6 +563,17 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     [holdings, catFilter, categories, mktFilter], // eslint-disable-line
   );
 
+  // 篩選收起來時顯示的摘要；有套用條件（不是全部）時用強調色，避免忘了自己篩過
+  const filterActive = mktFilter !== 'ALL' || catFilter !== 'ALL' || (listTab === 'watch' && holdOnly);
+  const filterSummary = [
+    MKT_LABEL[mktFilter],
+    CAT_LABEL[catFilter],
+    listTab === 'watch' && holdOnly ? '只看持有' : null,
+    listTab === 'watch' ? SORT_LABEL[sortKey] : null,
+  ]
+    .filter(Boolean)
+    .join('・');
+
   const q = quotes[baseCode(selected)];
   // 報價卡顯示用：盤前沒有成交價時改顯示試撮價／昨收並加標記（提醒、下單等仍用 q）
   const dq = q ? shownQuote(q) : q;
@@ -580,6 +604,17 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
       notifySaved(`已把 ${sym} 加入自選股`);
     }
   };
+  // 拖動或 Alt＋↑↓ 調整自選股順序：把 from 移到 to 的前面（after＝後面），順序跟著自選清單一起存
+  const moveWatch = useCallback((from: string, to: string, after = false) => {
+    if (from === to) return;
+    setWatch((w: string[]) => {
+      if (!w.includes(from) || !w.includes(to)) return w;
+      const rest = w.filter((x) => x !== from);
+      rest.splice(rest.indexOf(to) + (after ? 1 : 0), 0, from);
+      return rest;
+    });
+    notifySavedLater('watch-order', '已調整自選股順序');
+  }, []);
   const removeSymbol = (s) => {
     setWatch(watch.filter((x) => x !== s));
     if (selected === s) setSelected(watch.find((x) => x !== s) || '2330');
@@ -611,17 +646,17 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
         e.preventDefault();
         setPaletteOpen(true);
       } else if (active === 'watch' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-        const list =
-          listTab === 'hold'
-            ? holdings.map((h) => h.symbol)
-            : listTab === 'div'
-              ? holdRows
-              : listTab === 'etf'
-              ? showEtf
-                ? etfRows.map((r) => r.symbol)
-                : (rankState.data?.rows || []).map((r) => r.symbol)
-              : watchRows;
+        const list = listTab === 'hold' ? holdings.map((h) => h.symbol) : listTab === 'div' ? holdRows : watchRows;
         const i = list.findIndex((x) => baseCode(x) === baseCode(selected));
+        // Alt＋↑↓：把選中的自選股往上／下移一格（拖動排序的鍵盤版；排序選「我的順序」時才有作用）
+        if (e.altKey) {
+          const to = i >= 0 ? list[i + (e.key === 'ArrowDown' ? 1 : -1)] : undefined;
+          if (listTab === 'watch' && sortKey === 'default' && to) {
+            e.preventDefault();
+            moveWatch(list[i], to, e.key === 'ArrowDown');
+          }
+          return;
+        }
         const next =
           list[Math.max(0, Math.min(list.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
         if (next) {
@@ -637,7 +672,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, listTab, holdings, holdRows, watchRows, etfRows, selected, paletteOpen, showEtf, rankState.data]);
+  }, [active, listTab, holdings, holdRows, watchRows, selected, paletteOpen, sortKey, moveWatch]);
 
   const etfMetric = (r) => {
     if (etfSort === 'hot') return `成交 ${fmt(r.turnover / 1e8, 1)} 億`;
@@ -860,16 +895,11 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             />
           </CardBox>
         );
-      case 'stats':
-        return (
-          <CardBox key={id} id={id} title="開高低量・區間" sub={selOverview?.volume_ratio == null ? undefined : `量比 ${fmt(selOverview.volume_ratio, 2)}x`} ctl={cardCtl}>
-            <StatsBody q={q} tw={tw} etf={etfFlag} intraday={intraday} volRatio={selOverview?.volume_ratio} />
-          </CardBox>
-        );
       case 'depth':
         return (
-          <CardBox key={id} id={id} title="委買／委賣五檔" sub={tw ? '委買／委賣' : `${marketName(selected)}無五檔`} ctl={cardCtl}>
+          <CardBox key={id} id={id} title="五檔・區間" sub={tw ? '委買／委賣' : `${marketName(selected)}無五檔`} ctl={cardCtl}>
             <DepthBody q={q} tw={tw} />
+            <Ranges q={q} intraday={intraday} />
           </CardBox>
         );
       case 'order':
@@ -955,6 +985,103 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
     }
   };
 
+  // 排行（原本左側「探索」）：放在「市場熱力」頁熱力圖下方；點了選中那一檔（熱力圖同步標出），★ 加減自選
+  const rankPanel = (
+    <section className="ta-card bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3" data-tour="watch-rank" aria-label="排行">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <h3 className="font-bold text-white text-sm">排行</h3>
+        <span className="text-[11px] text-slate-500">熱門升幅、熱門跌幅、成交熱門、ETF 精選與主題榜；點一檔就選中（熱力圖同步標出）</span>
+      </div>
+      <ExploreBar
+        market={exploreMarket}
+        setMarket={(m) => {
+          setExploreMarket(m);
+          setExploreTheme('');
+          if (m === 'US' && exploreKind === 'etf') setExploreKind('gain');
+        }}
+        kind={exploreKind}
+        setKind={setExploreKind}
+        theme={exploreTheme}
+        setTheme={setExploreTheme}
+        themes={exploreThemes}
+        timestamp={showEtf ? null : rankState.data?.timestamp}
+      />
+      {showEtf && (
+        <div className="space-y-1.5">
+          <div className="ta-track grid grid-cols-4 gap-1 rounded-[10px] p-1 max-w-[520px]">
+            {[
+              ['hot', '今日熱門'],
+              ['aum', '資產規模'],
+              ['plan', '定期定額戶'],
+              ['yield', '殖利率'],
+            ].map(([id, label]) => (
+              <button
+                type="button"
+                key={id}
+                aria-pressed={etfSort === id}
+                onClick={() => setEtfSort(id)}
+                className={`ta-key py-1 rounded-lg text-xs cursor-pointer ${etfSort === id ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-500 leading-snug">
+            {etfSort === 'hot'
+              ? '今日熱門＝即時成交金額（真實報價計算）'
+              : etfSort === 'aum'
+                ? '市值估算＝TWSE 發行單位數 × 即時市價（非淨值規模）'
+                : etfSort === 'plan'
+                  ? 'TWSE 定期定額交易戶數排行，只有前 20 名有值（不是總持股人數）'
+                  : '近 12 個月實際配息 ÷ 現價，由 Yahoo 配息紀錄自行計算'}
+          </p>
+        </div>
+      )}
+      {showEtf && etfRows.some((r) => r.yield_pct != null) && (
+        <div className="max-w-[620px]">
+          <div className="text-[11.5px] text-slate-400 mb-1">殖利率比較（前 8 檔）</div>
+          <HBars
+            items={etfRows
+              .filter((r) => r.yield_pct != null)
+              .slice(0, 8)
+              .map((r) => ({ label: r.name || r.symbol, value: r.yield_pct, id: r.symbol, color: 'var(--ch-purple)' }))}
+            format={(v) => `${fmt(v)}%`}
+            onPick={setSelected}
+            plain
+          />
+        </div>
+      )}
+      {/* 兩欄排列；榜單的說明文字（p）橫跨兩欄 */}
+      <div className="grid md:grid-cols-2 gap-x-4 gap-y-1.5 [&>p]:col-span-full">
+        {!showEtf && (
+          <ExploreRows
+            state={rankState}
+            market={exploreMarket}
+            kind={exploreKind}
+            selected={baseCode(selected)}
+            onSelect={setSelected}
+            star={(sym, name) => <StarToggle on={isWatched(sym)} name={name || sym} onToggle={() => toggleFromSearch(sym)} />}
+          />
+        )}
+        {showEtf &&
+          etfRows.map((r, i) => (
+            <Row
+              key={r.symbol}
+              sym={r.symbol}
+              compact
+              rank={i + 1}
+              nameOverride={r.name}
+              sub={`${r.tag}・${etfMetric(r)}`}
+              quote={r.lq}
+              active={baseCode(selected) === r.symbol}
+              onClick={() => setSelected(r.symbol)}
+              action={<StarToggle on={isWatched(r.symbol)} name={r.name || r.symbol} onToggle={() => toggleFromSearch(r.symbol)} />}
+            />
+          ))}
+      </div>
+    </section>
+  );
+
   return (
     <div className="space-y-4" data-tour="watch-root">
       {/* 行情狀態、自動更新、立即更新、新手導覽、版面設定都放到頂欄（App 的頂部列留了插槽） */}
@@ -997,13 +1124,53 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
-        {/* ===== 左：清單 ===== */}
+      <div className={`grid grid-cols-1 gap-4 items-start ${listMini ? 'xl:grid-cols-[84px_minmax(0,1fr)]' : 'xl:grid-cols-[380px_minmax(0,1fr)]'}`}>
+        {/* ===== 左：清單（可收合成細條：只剩代號＋漲跌色點）===== */}
         <aside
-          className="ta-card xl:sticky xl:top-0 xl:max-h-[calc(100vh-130px)] flex flex-col bg-slate-900/90 border border-slate-800 rounded-2xl p-4 gap-3.5"
+          className={`ta-card xl:sticky xl:top-0 xl:max-h-[calc(100vh-130px)] flex flex-col bg-slate-900/90 border border-slate-800 rounded-2xl gap-3 ${listMini ? 'p-2 items-stretch' : 'p-4 gap-3.5'}`}
           data-tour="watch-list"
         >
-          <div className="ta-track grid grid-cols-3 gap-1.5 p-1.5 rounded-xl shrink-0" role="tablist" aria-label="左側清單">
+          {listMini ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setListMini(false)}
+                aria-expanded="false"
+                aria-label="展開左側清單"
+                title="展開清單"
+                className="ta-icon w-9 h-9 mx-auto shrink-0 rounded-lg grid place-items-center text-slate-400 hover:text-white cursor-pointer"
+              >
+                ⇥
+              </button>
+              <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5" aria-label={listTop === 'hold' ? '我的持股（精簡）' : '自選股（精簡）'}>
+                {(listTop === 'hold' ? holdRows : watchRows).map((s) => {
+                  const lq = quotes[baseCode(s)];
+                  const c = lq?.change_pct;
+                  const on = baseCode(selected) === baseCode(s);
+                  return (
+                    <button
+                      type="button"
+                      key={s}
+                      onClick={() => setSelected(s)}
+                      aria-current={on ? 'true' : undefined}
+                      title={`${lq?.name || s}${c == null ? '' : `　${c > 0 ? '+' : ''}${fmt(c)}%`}`}
+                      className={`ta-key w-full rounded-xl py-1.5 flex flex-col items-center gap-1 text-[11px] mono cursor-pointer ${on ? 'ta-key-on text-white' : 'text-slate-300'}`}
+                    >
+                      <span className="truncate max-w-full px-1">{baseCode(s)}</span>
+                      <span
+                        aria-hidden="true"
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: c > 0 ? 'var(--up)' : c < 0 ? 'var(--down)' : 'rgb(var(--slate-500))' }}
+                      />
+                    </button>
+                  );
+                })}
+              </nav>
+            </>
+          ) : (
+          <>
+          <div className="flex items-center gap-2 shrink-0">
+          <div className="ta-track grid grid-cols-2 gap-1.5 p-1.5 rounded-xl flex-1" role="tablist" aria-label="左側清單">
             {LIST_TABS.map(([id, label, first]) => (
               <button
                 type="button"
@@ -1016,11 +1183,20 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                 }`}
               >
                 {label}
-                {id !== 'explore' && (
-                  <span className="mono text-[10px] opacity-60 ml-1">{id === 'watch' ? watch.length : holdings.length}</span>
-                )}
+                <span className="mono text-[10px] opacity-60 ml-1">{id === 'watch' ? watch.length : holdings.length}</span>
               </button>
             ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setListMini(true)}
+            aria-expanded="true"
+            aria-label="收合左側清單"
+            title="收合清單（只留代號，右邊畫面用滿寬度）"
+            className="ta-icon w-8 h-8 shrink-0 rounded-lg grid place-items-center text-slate-400 hover:text-white cursor-pointer"
+          >
+            ⇤
+          </button>
           </div>
 
           {LIST_VIEWS[listTop] && (
@@ -1060,143 +1236,97 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           )}
 
           {(listTab === 'watch' || listTab === 'div' || listTab === 'overview') && (
-            <div data-tour="watch-filters" className="flex flex-wrap items-center gap-2 shrink-0 order-1">
-              {[
-                ['ALL', '全部'],
-                ['TW', '台股'],
-                ['INTL', '美股'],
-              ].map(([k, label]) => (
-                <button
-                  type="button"
-                  key={k}
-                  aria-pressed={mktFilter === k}
-                  title={k === 'INTL' ? '美股與其他海外市場' : undefined}
-                  onClick={() => setMktFilter(k)}
-                  className={`ta-key px-3.5 py-1.5 rounded-full text-xs cursor-pointer ${
-                    mktFilter === k ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {label} <span className="mono text-[10px] opacity-70">{mktCounts[k]}</span>
-                </button>
-              ))}
-              <select
-                value={catFilter}
-                onChange={(e) => setCatFilter(e.target.value)}
-                aria-label="依類型篩選"
-                className={`ta-key rounded-full text-xs px-3 py-1.5 cursor-pointer ${
-                  catFilter !== 'ALL' ? 'ta-key-on text-white' : 'text-slate-400'
-                }`}
+            // 篩選與排序收成一列，點開才展開（清單可以多看幾檔）；摘要寫出目前條件，有篩選時用強調色
+            <div data-tour="watch-filters" className="shrink-0 order-1">
+              <button
+                type="button"
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen(!filtersOpen)}
+                className="w-full flex items-center gap-2 text-[11.5px] text-slate-400 hover:text-slate-200 cursor-pointer text-left"
               >
-                {[
-                  ['ALL', '全部類型'],
-                  ['STOCK', '股票'],
-                  ['ETF', 'ETF'],
-                  ['BOND', '債券'],
-                ].map(([k, label]) => (
-                  <option key={k} value={k} className="bg-slate-900 text-slate-100">
-                    {label}（{catCounts[k]}）
-                  </option>
-                ))}
-              </select>
-              {listTab === 'watch' && (
-                <button
-                  type="button"
-                  aria-pressed={holdOnly}
-                  title="只看有持股的自選股"
-                  onClick={() => setHoldOnly(!holdOnly)}
-                  className={`ta-key px-3.5 py-1.5 rounded-full text-xs cursor-pointer ${
-                    holdOnly ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  持有
-                </button>
+                <span aria-hidden="true">⚲</span>
+                <span className="shrink-0">{listTab === 'watch' ? '篩選與排序' : '篩選'}</span>
+                <span className={`truncate ${filterActive ? 'text-sky-300' : 'text-slate-500'}`}>{filterSummary}</span>
+                <span aria-hidden="true" className="ml-auto">
+                  {filtersOpen ? '▴' : '▾'}
+                </span>
+              </button>
+              {filtersOpen && (
+                <div className="mt-2.5 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    ['ALL', '全部'],
+                    ['TW', '台股'],
+                    ['INTL', '美股'],
+                  ].map(([k, label]) => (
+                    <button
+                      type="button"
+                      key={k}
+                      aria-pressed={mktFilter === k}
+                      title={k === 'INTL' ? '美股與其他海外市場' : undefined}
+                      onClick={() => setMktFilter(k)}
+                      className={`ta-key px-3.5 py-1.5 rounded-full text-xs cursor-pointer ${
+                        mktFilter === k ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {label} <span className="mono text-[10px] opacity-70">{mktCounts[k]}</span>
+                    </button>
+                  ))}
+                  <select
+                    value={catFilter}
+                    onChange={(e) => setCatFilter(e.target.value)}
+                    aria-label="依類型篩選"
+                    className={`ta-key rounded-full text-xs px-3 py-1.5 cursor-pointer ${
+                      catFilter !== 'ALL' ? 'ta-key-on text-white' : 'text-slate-400'
+                    }`}
+                  >
+                    {[
+                      ['ALL', '全部類型'],
+                      ['STOCK', '股票'],
+                      ['ETF', 'ETF'],
+                      ['BOND', '債券'],
+                    ].map(([k, label]) => (
+                      <option key={k} value={k} className="bg-slate-900 text-slate-100">
+                        {label}（{catCounts[k]}）
+                      </option>
+                    ))}
+                  </select>
+                  {listTab === 'watch' && (
+                    <button
+                      type="button"
+                      aria-pressed={holdOnly}
+                      title="只看有持股的自選股"
+                      onClick={() => setHoldOnly(!holdOnly)}
+                      className={`ta-key px-3.5 py-1.5 rounded-full text-xs cursor-pointer ${
+                        holdOnly ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      持有
+                    </button>
+                  )}
+                  </div>
+                  {listTab === 'watch' && (
+                    <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                      排序
+                      <select
+                        value={sortKey}
+                        onChange={(e) => setSortKey(e.target.value)}
+                        aria-label="自選股排序"
+                        className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-slate-200"
+                      >
+                        <option value="default">我的順序（可拖動）</option>
+                        <option value="chg">漲幅大→小</option>
+                        <option value="chgAsc">跌幅大→小</option>
+                        <option value="turn">成交金額</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
               )}
             </div>
           )}
 
-          {listTab === 'watch' && (
-            <div className="flex items-center gap-2 text-[11px] text-slate-400 shrink-0 order-3">
-              排序
-              <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value)}
-                aria-label="自選股排序"
-                className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-slate-200"
-              >
-                <option value="default">我的順序</option>
-                <option value="chg">漲幅大→小</option>
-                <option value="chgAsc">跌幅大→小</option>
-                <option value="turn">成交金額</option>
-              </select>
-              <span className="ml-auto text-slate-500">↑↓ 切換標的</span>
-            </div>
-          )}
-
-          {listTab === 'etf' && (
-            <ExploreBar
-              market={exploreMarket}
-              setMarket={(m) => {
-                setExploreMarket(m);
-                setExploreTheme('');
-                if (m === 'US' && exploreKind === 'etf') setExploreKind('gain');
-              }}
-              kind={exploreKind}
-              setKind={setExploreKind}
-              theme={exploreTheme}
-              setTheme={setExploreTheme}
-              themes={exploreThemes}
-              timestamp={showEtf ? null : rankState.data?.timestamp}
-            />
-          )}
-          {showEtf && (
-            <div className="space-y-1.5 shrink-0 order-1">
-              <div className="ta-track grid grid-cols-4 gap-1 rounded-[10px] p-1">
-                {[
-                  ['hot', '今日熱門'],
-                  ['aum', '資產規模'],
-                  ['plan', '定期定額戶'],
-                  ['yield', '殖利率'],
-                ].map(([id, label]) => (
-                  <button
-                    type="button"
-                    key={id}
-                    aria-pressed={etfSort === id}
-                    onClick={() => setEtfSort(id)}
-                    className={`ta-key py-1 rounded-lg text-xs cursor-pointer ${
-                      etfSort === id ? 'ta-key-on text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-slate-500 leading-snug">
-                {etfSort === 'hot'
-                  ? '今日熱門＝即時成交金額（真實報價計算）'
-                  : etfSort === 'aum'
-                    ? '市值估算＝TWSE 發行單位數 × 即時市價（非淨值規模）'
-                    : etfSort === 'plan'
-                      ? 'TWSE 定期定額交易戶數排行，只有前 20 名有值（不是總持股人數）'
-                      : '近 12 個月實際配息 ÷ 現價，由 Yahoo 配息紀錄自行計算'}
-              </p>
-            </div>
-          )}
-
           <div ref={listRef} className="flex-1 min-h-[120px] overflow-y-auto space-y-3 pr-1.5 py-1 order-4">
-            {showEtf && etfRows.some((r) => r.yield_pct != null) && (
-              <div className="pb-1">
-                <div className="text-[11.5px] text-slate-400 mb-1">殖利率比較（前 8 檔）</div>
-                <HBars
-                  items={etfRows
-                    .filter((r) => r.yield_pct != null)
-                    .slice(0, 8)
-                    .map((r) => ({ label: r.name || r.symbol, value: r.yield_pct, id: r.symbol, color: 'var(--ch-purple)' }))}
-                  format={(v) => `${fmt(v)}%`}
-                  onPick={setSelected}
-                  plain
-                />
-              </div>
-            )}
             {listTab === 'watch' &&
               watchRows.map((s) => (
                 <Row
@@ -1208,6 +1338,34 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                   bell={bellOf(s)}
                   active={baseCode(selected) === baseCode(s)}
                   onClick={() => setSelected(s)}
+                  drag={
+                    sortKey === 'default'
+                      ? {
+                          dragging: dragSym === s,
+                          over: overSym === s && dragSym !== s,
+                          onDragStart: (e) => {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', s);
+                            setDragSym(s);
+                          },
+                          onDragEnd: () => {
+                            setDragSym(null);
+                            setOverSym(null);
+                          },
+                          onDragOver: (e) => {
+                            if (!dragSym) return;
+                            e.preventDefault();
+                            if (overSym !== s) setOverSym(s);
+                          },
+                          onDrop: (e) => {
+                            e.preventDefault();
+                            if (dragSym) moveWatch(dragSym, s);
+                            setDragSym(null);
+                            setOverSym(null);
+                          },
+                        }
+                      : undefined
+                  }
                   action={
                     <button
                       type="button"
@@ -1221,32 +1379,6 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
                     >
                       ✕
                     </button>
-                  }
-                />
-              ))}
-            {listTab === 'etf' && !showEtf && (
-              <ExploreRows
-                state={rankState}
-                market={exploreMarket}
-                kind={exploreKind}
-                selected={baseCode(selected)}
-                onSelect={setSelected}
-                star={(sym, name) => <StarToggle on={isWatched(sym)} name={name || sym} onToggle={() => toggleFromSearch(sym)} />}
-              />
-            )}
-            {showEtf &&
-              etfRows.map((r, i) => (
-                <Row
-                  key={r.symbol}
-                  sym={r.symbol}
-                  rank={i + 1}
-                  nameOverride={r.name}
-                  sub={`${r.tag}・${etfMetric(r)}`}
-                  quote={r.lq}
-                  active={baseCode(selected) === r.symbol}
-                  onClick={() => setSelected(r.symbol)}
-                  action={
-                    <StarToggle on={isWatched(r.symbol)} name={r.name || r.symbol} onToggle={() => toggleFromSearch(r.symbol)} />
                   }
                 />
               ))}
@@ -1371,16 +1503,30 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
             )}
           </div>
           {listTab === 'watch' && (
-            <button
-              type="button"
-              onClick={() => {
-                setWatch(DEFAULT_WATCH);
-                notifySaved('自選股已還原為預設 8 檔');
-              }}
-              className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer shrink-0 order-5 text-left"
-            >
-              共 {watch.length} 檔・↺ 還原預設 8 檔
-            </button>
+            <div className="shrink-0 order-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+              <span title={sortKey === 'default' ? '按住列左邊的 ⠿ 拖到其他列上放開；鍵盤：選好一檔按 Alt＋↑↓' : '排序選「我的順序」時才能拖動'}>
+                {sortKey === 'default' ? '拖動 ⠿ 排序' : '排序中（不能拖動）'}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <kbd className="mono text-[10px] border border-white/10 rounded px-1">↑</kbd>
+                <kbd className="mono text-[10px] border border-white/10 rounded px-1">↓</kbd>
+                換上／下一檔
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  // 還原會蓋掉整份自選清單（含自己排的順序），先確認
+                  if (!window.confirm(`把自選股還原成預設 8 檔？目前的 ${watch.length} 檔與排列順序會被取代。`)) return;
+                  setWatch(DEFAULT_WATCH);
+                  notifySaved('自選股已還原為預設 8 檔');
+                }}
+                className="ml-auto hover:text-slate-300 cursor-pointer"
+              >
+                共 {watch.length} 檔・↺ 還原預設
+              </button>
+            </div>
+          )}
+          </>
           )}
         </aside>
         <SearchPalette
@@ -1394,16 +1540,19 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
 
         {/* ===== 右：報價卡（內含分頁）＋ 內容 ===== */}
         <section className="min-w-0 space-y-3.5">
-          <GreetingBar
-            watch={watch}
-            quotes={quotes}
-            holdings={holdings}
-            fx={fx}
-            alerts={alerts}
-            onOpenHold={() => setListTab('hold')}
-            onOpenAlerts={() => setAlertsOpen(true)}
-          />
           <div className="ta-card bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3.5" data-tour="watch-quote">
+            {/* 問候列（今天自選幾漲幾跌、持股市值與損益、提醒）併進報價卡頂端，少一層框 */}
+            <div className="pb-3 mb-3 border-b border-white/10">
+            <GreetingBar
+              watch={watch}
+              quotes={quotes}
+              holdings={holdings}
+              fx={fx}
+              alerts={alerts}
+              onOpenHold={() => setListTab('hold')}
+              onOpenAlerts={() => setAlertsOpen(true)}
+            />
+            </div>
             {q ? (
               // 股價固定在右上角、左邊文字單行：換標的時（來源說明長短不同）數字位置不會跳
               <div className="flex items-start justify-between gap-3 min-h-[76px]">
@@ -1516,6 +1665,7 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           {active === 'mod1' && techPanel}
           {active === 'mod2' && newsPanel}
           {active === 'watch' && rightTab === 'heatmap' && (
+            <>
             <HeatmapPanel
               watch={watch}
               holdings={holdings}
@@ -1528,8 +1678,15 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
               onSendMod1={(it) => onSendToMod1(quotes[baseCode(it.symbol)] || it)}
               onSendMod2={(it) => onSendToMod2(it.symbol, it.name)}
             />
+            {rankPanel}
+            </>
           )}
-          {active === 'watch' && rightTab === 'quote' && q && <CardGrid ctl={cardCtl} render={renderCard} />}
+          {active === 'watch' && rightTab === 'quote' && q && (
+            <>
+              <StatsKpis q={q} tw={tw} etf={etfFlag} volRatio={selOverview?.volume_ratio} />
+              <CardGrid ctl={cardCtl} render={renderCard} />
+            </>
+          )}
         </section>
       </div>
 

@@ -79,7 +79,7 @@ class MarketDataHandlers:
                                   int(arg_num(payload, "n", 15, "K 棒數量", integer=True, lo=1, hi=250)))
 
     def handle_heatmap(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """股市熱力圖：pool＝mine（帶 symbols、holdings）／tw_hot／us_core。"""
+        """股市熱力圖：pool＝mine（帶 symbols、holdings）／tw_hot／tw_all／us_core／us_all。"""
         out = heatmap.build(str(payload.get("pool", "mine")), [str(x) for x in payload.get("symbols", [])],
                             payload.get("holdings") if isinstance(payload.get("holdings"), dict) else None)
         out["timestamp"] = time.strftime("%H:%M:%S")

@@ -7,10 +7,10 @@ import { notifySaved } from '../sync_store';
 const { useState, useEffect } = React;
 
 const LS_UI = 'tw_us_ui_prefs_v1';
-type Theme = 'glass' | 'warm' | 'cream';
+type Theme = 'glass' | 'warm' | 'cream' | 'lilac';
 type UiPrefs = { theme: Theme; motion: 'auto' | 'reduce'; density: 'comfortable' | 'compact'; color: 'tw' | 'us' };
 const DEFAULT_PREFS: UiPrefs = { theme: 'glass', motion: 'auto', density: 'comfortable', color: 'tw' };
-const THEMES: Theme[] = ['glass', 'warm', 'cream'];
+const THEMES: Theme[] = ['glass', 'warm', 'cream', 'lilac'];
 
 function loadUiPrefs(): UiPrefs {
   try {
@@ -50,11 +50,13 @@ const THEME_OPTS = [
   ['glass', 'A 霧面玻璃', '深色、藍紫色調（預設）'],
   ['warm', 'B 暖色', '深色、琥珀暖色調，長時間看比較不刺眼'],
   ['cream', 'C 奶油淺色', '淺色、柔和凸起按鍵，適合白天或明亮的環境'],
+  ['lilac', 'D 白底紫色', '內容白底、側欄深紫、紫色強調，明亮又有層次'],
 ] as const;
 const THEME_SWATCH: Record<string, string> = {
   glass: 'linear-gradient(135deg, #8b7bff, #38bdf8)',
   warm: 'linear-gradient(135deg, #f5a524, #e8795c)',
   cream: 'linear-gradient(135deg, #efeae3, #3a302b)',
+  lilac: 'linear-gradient(135deg, #2a2153 50%, #f6f5fc 50%)',
 };
 const MOTION_OPTS = [
   ['auto', '自動', '有動畫；作業系統設定「減少動態效果」時自動關閉'],

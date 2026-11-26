@@ -152,6 +152,7 @@ function ExploreRows({ state, market, kind, selected, onSelect, star }: any) {
           <Row
             key={r.symbol}
             sym={r.symbol}
+            compact
             rank={i + 1}
             nameOverride={r.name}
             quote={r.price != null ? { price: r.price, change: r.change ?? r.change_pct, change_pct: r.change_pct } : null}

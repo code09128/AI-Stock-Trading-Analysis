@@ -5,7 +5,7 @@ export const STOCK_TABS = [
   { id: 'watch', label: '行情', hint: '報價、走勢、五檔、模擬下單、新聞、估值、基本資料' },
   { id: 'mod1', label: '技術分析', hint: 'K 線、買賣訊號、支撐壓力、多空情境' },
   { id: 'mod2', label: '新聞研究', hint: '新聞語氣、是否已反映、預期波動' },
-  { id: 'heatmap', label: '熱力圖', hint: '一格一檔：今天資金在哪個族群' },
+  { id: 'heatmap', label: '市場熱力', hint: '熱力圖看今天資金在哪個族群＋熱門漲跌、ETF、主題排行' },
 ] as const;
 
 export const STOCK_TAB_IDS: string[] = ['watch', 'mod1', 'mod2'];

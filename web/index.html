@@ -10,7 +10,7 @@
   <!-- 第三方套件放在 web/vendor（固定版本：Tailwind 3.4.17、React 18.3.1、esbuild 打包），離線也能開；字型離線時改用系統字型 -->
   <script>
     // 先套主題，避免淺色主題開頁時閃一下深色（完整的外觀偏好由設定頁的外觀模組套用）
-    try { const t = JSON.parse(localStorage.getItem('tw_us_ui_prefs_v1') || 'null')?.theme; if (t === 'warm' || t === 'cream') document.documentElement.dataset.theme = t; } catch (_e) {}
+    try { const t = JSON.parse(localStorage.getItem('tw_us_ui_prefs_v1') || 'null')?.theme; if (t === 'warm' || t === 'cream' || t === 'lilac') document.documentElement.dataset.theme = t; } catch (_e) {}
   </script>
   <script src="./vendor/tailwindcss-3.4.17.js"></script>
   <script>
@@ -50,6 +50,18 @@
           slate: pal(['#2b2622', '#3a332e', '#4a423c', '#554c45', '#5f564f', '#766c63', '#a39a90', '#d3cbc1', '#e3ddd4', '#efeae3', '#e8e3db']),
           accent: pal(['#16244f', '#1c2d66', '#243a80', '#2c46a0', '#3652b8', '#4466d6', '#3f63d6', '#3550b8', '#c8d4ff', '#dfe6ff', '#eef2ff']),
         },
+        // D 白底紫色：內容區白底、薰衣草灰字、紫色強調（做法同奶油淺色：中性色整條反轉）
+        lilac: {
+          ...Object.fromEntries(Object.entries(TW).map(([k, v]) => [k, flip(v)])),
+          slate: pal(['#1e2140', '#272a4d', '#33365c', '#43476d', '#5a5e82', '#73789b', '#a3a7c4', '#cfd1e6', '#e4e5f2', '#ffffff', '#f3f2fb']),
+          accent: pal(['#1f1147', '#2a1866', '#3a2490', '#4b30b3', '#5d3fd0', '#7c5cff', '#6d4ae8', '#5b3bd1', '#ddd3ff', '#ede8ff', '#f6f3ff']),
+        },
+        // D 白底紫色的側欄：深紫底、淺色字（只套在 <aside> 裡，見下方 block）
+        lilacSide: {
+          ...TW,
+          slate: pal(['#f4f2ff', '#ece9ff', '#ddd8fa', '#c9c3ee', '#a8a2d8', '#8a84bd', '#5b5490', '#3f3872', '#2f2860', '#241e4c', '#1c1738']),
+          accent: pal(['#f3f0ff', '#e6e0ff', '#d4caff', '#c4b5fd', '#a78bfa', '#8b6cff', '#7c5cff', '#6d4ae8', '#4c2fb0', '#36207f', '#1f1147']),
+        },
       };
       const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(' ');
       const block = (sel, t, ink) =>
@@ -60,6 +72,9 @@
         block('html[data-theme="cream"]', THEMES.cream, '43 38 34'),
         // 產業鏈地圖是深色畫布（霓虹風格），淺色主題時整塊維持霧面玻璃色票（class ta-force-dark）
         block('html[data-theme="cream"] .ta-force-dark', THEMES.glass, '255 255 255'),
+        block('html[data-theme="lilac"]', THEMES.lilac, '30 33 64'),
+        block('html[data-theme="lilac"] .ta-force-dark', THEMES.glass, '255 255 255'),
+        block('html[data-theme="lilac"] #root aside[data-tour="sidebar"]', THEMES.lilacSide, '255 255 255'),
       ].join('\n');
       const el = document.createElement('style');
       el.id = 'theme-palette';
@@ -403,6 +418,10 @@
     .ta-reveal { opacity: 0; transition: opacity .15s ease; }
     .group:hover .ta-reveal, .group:focus-within .ta-reveal, .group[aria-current] .ta-reveal, .ta-reveal:focus-visible { opacity: 1; }
     @media (hover: none) { .ta-reveal { opacity: 1; } }
+    /* 同上，但平常完全不佔位置（持股列下方那排按鈕）：觸控螢幕沒有滑過，一直顯示 */
+    .ta-reveal-row { display: none; }
+    .group:hover .ta-reveal-row, .group:focus-within .ta-reveal-row, .group[aria-current] .ta-reveal-row { display: block; }
+    @media (hover: none) { .ta-reveal-row { display: block; } }
     /* 分頁列的滑動指示：選中的底色滑到新分頁（StockTabs 量位置後設 transform／width） */
     .ta-thumb {
       position: absolute; top: 3px; bottom: 3px; left: 0; border-radius: 9px; pointer-events: none;
@@ -476,6 +495,94 @@
     html[data-theme="cream"][data-color="us"] .ta-force-dark { --up: #22d3a0; --down: #ff4d6d; }
     /* 深綠實心條上的深色字（委賣、利空）：淺色主題的綠更深，改白字 */
     html[data-theme="cream"] .text-\[\#04130d\] { color: #fff; }
+
+    /* ===== 主題 D 白底紫色：外框（側欄）深紫、內容區白底；不用浮雕，改用柔和陰影 ===== */
+    html[data-theme="lilac"] {
+      color-scheme: light; --up: #d61f4a; --down: #0a8a5f;
+      --raise: 0 1px 2px rgba(60, 50, 140, 0.14), 0 4px 12px -6px rgba(60, 50, 140, 0.28);
+      --press: inset 0 1px 3px rgba(60, 50, 140, 0.22);
+      --track: inset 0 1px 3px rgba(60, 50, 140, 0.14);
+      --ring: inset 0 0 0 1px rgb(var(--accent-500) / 0.45);
+      --on-bg: rgb(var(--accent-500) / 0.1);
+      --ch-sky: #0284c7; --ch-cyan: #0891b2; --ch-cyan2: #0e7490; --ch-violet: #6d28d9; --ch-yellow: #a16207; --ch-amber: #b45309;
+      --ch-amber2: #b45309; --ch-green: #047857; --ch-red: #be123c; --ch-pink: #be123c; --ch-blue: #4b30b3; --ch-purple: #6d28d9;
+    }
+    html[data-theme="lilac"][data-color="us"] { --up: #0a8a5f; --down: #d61f4a; }
+    html[data-theme="lilac"] body { background: linear-gradient(170deg, #2a2153, #1c1738); color: #1e2140; }
+    html[data-theme="lilac"] #root aside[data-tour="sidebar"] { color: #ece9ff; background-color: #211b45; border-color: rgba(255, 255, 255, 0.08); }
+    html[data-theme="lilac"] #root header.shrink-0 { background-color: rgba(255, 255, 255, 0.94); border-color: rgba(40, 40, 90, 0.08); box-shadow: none; }
+    /* 頁面裡的 <aside>（例如看盤頁左側清單）不是主選單：維持白色卡片（上面 #root aside 的深色規則權重較高，要蓋回來） */
+    html[data-theme="lilac"] #root aside:not([data-tour="sidebar"]) { background-color: #fff; border-color: rgba(40, 40, 90, 0.08); box-shadow: 0 10px 28px -18px rgba(60, 50, 140, 0.35); }
+    html[data-theme="lilac"] .ta-card,
+    html[data-theme="lilac"] .rounded-2xl[class*="bg-slate-900"], html[data-theme="lilac"] .rounded-xl[class*="bg-slate-900"] {
+      background-color: #fff; background-image: none; border-color: rgba(40, 40, 90, 0.08);
+      box-shadow: 0 10px 28px -18px rgba(60, 50, 140, 0.35);
+    }
+    html[data-theme="lilac"] .ta-card:hover { border-color: rgba(124, 92, 255, 0.25); }
+    html[data-theme="lilac"] .fixed .rounded-2xl[class*="bg-slate-900"] { background-color: #fff; box-shadow: 0 24px 60px -20px rgba(40, 30, 110, 0.45); }
+    html[data-theme="lilac"] .ta-track { background: rgba(124, 92, 255, 0.06); }
+    html[data-theme="lilac"] [role="tablist"][class~="bg-black/20"], html[data-theme="lilac"] [class~="bg-black/20"] { background-color: rgba(124, 92, 255, 0.06); }
+    html[data-theme="lilac"] .ta-key { background-color: #fff; }
+    html[data-theme="lilac"] .ta-key:hover, html[data-theme="lilac"] .ta-icon:hover { background-color: rgba(124, 92, 255, 0.07); }
+    html[data-theme="lilac"] .ta-icon:active { background-color: rgba(124, 92, 255, 0.08); box-shadow: inset 0 1px 3px rgba(60, 50, 140, 0.2); }
+    html[data-theme="lilac"] select.ta-key option { background: #fff; color: #1e2140; }
+    html[data-theme="lilac"] ::-webkit-scrollbar-track { background: transparent; }
+    html[data-theme="lilac"] ::-webkit-scrollbar-thumb { background: #cfcbe8; }
+    html[data-theme="lilac"] ::-webkit-scrollbar-thumb:hover { background: #b3aedb; }
+    html[data-theme="lilac"] :is(.bg-sky-500, .bg-sky-600, .bg-sky-700, .bg-blue-600, .bg-indigo-600, .bg-violet-500, .bg-violet-600,
+      .bg-emerald-500, .bg-emerald-600, .bg-rose-500, .bg-rose-600, .bg-amber-500, .bg-amber-600,
+      .from-sky-500, [style*="var(--up)"], [style*="var(--down)"]) { --ink: 255 255 255; }
+    html[data-theme="lilac"] #splash { background: #f3f2fb; color: #1e2140; }
+    html[data-theme="lilac"] .ta-force-dark {
+      color-scheme: dark; color: #dde2e9; --up: #ff4d6d; --down: #22d3a0;
+      --raise: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 3px 3px 8px rgba(0, 0, 0, 0.45);
+      --press: inset 3px 3px 7px rgba(0, 0, 0, 0.55); --ring: inset 0 0 0 1px rgba(79, 124, 255, 0.5); --on-bg: rgba(79, 124, 255, 0.14);
+    }
+    html[data-theme="lilac"][data-color="us"] .ta-force-dark { --up: #22d3a0; --down: #ff4d6d; }
+    html[data-theme="lilac"] .text-\[\#04130d\] { color: #fff; }
+    html[data-theme="lilac"] .ta-up-chip { color: color-mix(in srgb, var(--up) 85%, #000); }
+    html[data-theme="lilac"] .ta-down-chip { color: color-mix(in srgb, var(--down) 85%, #000); }
+    /* 側欄裡（深紫）沿用深色主題的按鍵手感 */
+    html[data-theme="lilac"] #root aside[data-tour="sidebar"] {
+      --raise: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 6px rgba(0, 0, 0, 0.3);
+      --press: inset 2px 2px 6px rgba(0, 0, 0, 0.4); --on-bg: rgba(255, 255, 255, 0.1); --ring: inset 0 0 0 1px rgba(196, 181, 253, 0.45);
+    }
+
+    /* ===== 整合側欄外框（桌面版）：側欄透明貼在外框上，右邊整塊是「內容面板」=====
+       展開：目前頁面的標籤＝內容面板同一個顏色、一路接到側欄右緣（上下內凹圓角），看起來從面板長出來。
+       收合：側欄變成獨立的浮動膠囊，目前頁面＝亮色圓形＋左側小點。標籤位置由 App 元件量好設 top／height，靠 transition 滑過去。 */
+    :root { --surface: rgba(255, 255, 255, 0.05); --surface-line: rgba(255, 255, 255, 0.07); --surface-ink: #fff;
+      --pill-bg: rgba(17, 22, 37, 0.82); --pill-on: #eef1ff; --pill-on-ink: #141a30; }
+    html[data-theme="warm"] { --surface: rgba(255, 230, 215, 0.035); --surface-line: rgba(255, 226, 210, 0.08); --pill-bg: rgba(36, 27, 24, 0.85); --pill-on: #fff4ec; --pill-on-ink: #2a1a12; }
+    html[data-theme="cream"] { --surface: #f1ece5; --surface-line: rgba(60, 48, 40, 0.06); --surface-ink: #2b2622; --pill-bg: #efeae3; --pill-on: #2b2622; --pill-on-ink: #f1ece4; }
+    html[data-theme="lilac"] { --surface: #f6f5fc; --surface-line: rgba(255, 255, 255, 0.0); --surface-ink: #1e2140; --pill-bg: #241e4c; --pill-on: #ffffff; --pill-on-ink: #1e2140; }
+    #root .ta-side { background: transparent !important; border: 0 !important; box-shadow: none !important; }
+    #root .ta-surface { margin: 8px 8px 8px 0; border-radius: 20px; background: var(--surface); border: 1px solid var(--surface-line); overflow: hidden; }
+    #root .ta-surface > header.shrink-0 { background-color: transparent !important; box-shadow: none !important; }
+    html[data-theme="cream"] #root .ta-surface { box-shadow: inset 2px 2px 6px rgba(165, 150, 132, 0.18); }
+    #root .ta-side .ta-nav-active { background: transparent !important; box-shadow: none !important; }
+    .ta-side .ta-nav { position: relative; z-index: 1; transition: color .25s ease; }
+    /* 側欄選單放不下時可以捲，但不顯示捲軸：捲軸會佔掉寬度，把膠囊裡的圖示擠得不置中 */
+    .ta-side nav { scrollbar-width: none; }
+    .ta-side nav::-webkit-scrollbar { display: none; }
+    .ta-side-ind { position: absolute; left: 8px; right: 0; z-index: 0; pointer-events: none; background: var(--surface); border-radius: 12px 0 0 12px;
+      transition: top .38s cubic-bezier(.3, 1.25, .5, 1), height .38s cubic-bezier(.3, 1.25, .5, 1); }
+    .ta-side-ind::before, .ta-side-ind::after { content: ""; position: absolute; right: 0; width: 14px; height: 14px; }
+    .ta-side-ind::before { top: -14px; background: radial-gradient(circle at 0 0, transparent 13.5px, var(--surface) 14px); }
+    .ta-side-ind::after { bottom: -14px; background: radial-gradient(circle at 0 100%, transparent 13.5px, var(--surface) 14px); }
+    /* 標籤是半透明時（霧面玻璃、暖色）疊在透明側欄上，和內容面板疊在同一個背景上，顏色才會一致 */
+    .ta-side:not(.ta-side-pill) .ta-nav-active { color: var(--surface-ink) !important; }
+    .ta-side:not(.ta-side-pill) .ta-nav-active::before { content: ""; position: absolute; left: 0; top: 25%; bottom: 25%; width: 3px; border-radius: 3px; background: rgb(var(--accent-500)); }
+    /* 收合＝浮動膠囊 */
+    #root .ta-side.ta-side-pill { background: var(--pill-bg) !important; border-radius: 34px; margin: 8px; border: 1px solid var(--surface-line) !important; box-shadow: 0 12px 30px -16px rgba(0, 0, 0, 0.6) !important; }
+    html[data-theme="cream"] #root .ta-side.ta-side-pill { box-shadow: 6px 6px 14px rgba(165, 150, 132, 0.38), -5px -5px 12px rgba(255, 255, 255, 0.75) !important; }
+    #root .ta-side-pill ~ .ta-surface { margin-left: 0; }
+    .ta-side-pill .ta-side-ind { left: 50%; right: auto; width: 36px; margin-left: -18px; border-radius: 50%; background: var(--pill-on); box-shadow: 0 4px 14px -4px var(--pill-on); }
+    .ta-side-pill .ta-side-ind::before { display: none; }
+    .ta-side-pill .ta-side-ind::after { left: -9px; right: auto; top: 50%; bottom: auto; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: var(--pill-on); }
+    .ta-side-pill .ta-nav-active { color: var(--pill-on-ink) !important; }
+    html[data-motion="reduce"] .ta-side-ind { transition: none; }
+    @media (prefers-reduced-motion: reduce) { .ta-side-ind { transition: none; } }
     @media (forced-colors: active) { .ta-key-on, .ta-row-on, .ta-nav-active, button[aria-pressed="true"], [role="tab"][aria-selected="true"] { outline: 2px solid CanvasText; } }
 
     /* 卡片裡的長網址、長代號要能換行，不要把卡片撐破 */

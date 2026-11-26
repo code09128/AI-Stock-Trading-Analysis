@@ -38,46 +38,73 @@ function Kv({ label, tip, children, cls = '' }: { label: any; tip?: string; chil
   );
 }
 
-function StatsBody({ q, tw, etf, intraday, volRatio }: { q: any; tw: boolean; etf: boolean; intraday: any; volRatio: any }) {
+// 開高低量：一排大數字卡（取代原本卡片裡兩欄的小格子）。昨收、量比、漲跌停放在各卡的小字，數字一樣不少
+function Kpi({ icon, label, tip, value, cls = '', sub, hero }: { icon: string; label: string; tip?: string; value: any; cls?: string; sub?: any; hero?: boolean }) {
+  return (
+    <div
+      // 主卡（成交量）數字最長（美股常到 9 位數），給比較寬的比例
+      className={`ta-card rounded-2xl px-3.5 py-3 ${hero ? 'ta-kpi-hero flex-[1.5] min-w-[170px]' : 'flex-1 min-w-[118px]'}`}
+      style={hero ? { background: 'linear-gradient(140deg, rgb(var(--accent-500) / .28), rgb(var(--violet-500) / .12))', borderColor: 'rgb(var(--accent-500) / .4)' } : undefined}
+    >
+      <div className="flex items-center gap-1.5 text-[11.5px] text-slate-400 whitespace-nowrap">
+        <span aria-hidden="true" className="w-[22px] h-[22px] rounded-md bg-white/5 grid place-items-center text-[11px]">
+          {icon}
+        </span>
+        {label}
+        {tip && <Tip text={tip} />}
+      </div>
+      <b className={`block mono text-[20px] leading-tight mt-1 truncate ${cls}`} title={typeof value === 'string' ? value : undefined}>
+        {value}
+      </b>
+      {sub != null && <div className="text-[11px] text-slate-400 mono truncate">{sub}</div>}
+    </div>
+  );
+}
+
+function StatsKpis({ q, tw, etf, volRatio }: { q: any; tw: boolean; etf: boolean; volRatio: any }) {
   const amp = q.high && q.low && q.prev_close ? ((q.high - q.low) / q.prev_close) * 100 : null;
   return (
-    <div>
-      <div className="grid [grid-template-columns:repeat(auto-fit,minmax(84px,1fr))] gap-2">
-        <Kv label="開盤" cls={colorOf((q.open || 0) - (q.prev_close || 0))}>
-          {fmt(q.open)}
-        </Kv>
-        <Kv label="最高" cls="text-rose-400">
-          {fmt(q.high)}
-        </Kv>
-        <Kv label="最低" cls="text-emerald-400">
-          {fmt(q.low)}
-        </Kv>
-        <Kv label="昨收" tip="前一個交易日的收盤價，漲跌幅以它為基準">
-          {fmt(q.prev_close)}
-        </Kv>
-        <Kv
-          label={`成交量（${q.volume_unit || ''}）`}
-          tip={tw ? '台股 1 張 = 1000 股' : `${marketName(q.symbol)}以股為單位（實際交易所可能有每手最少股數）`}
-        >
-          {fmt(q.volume, 0)}
-        </Kv>
-        <Kv label="量比" tip="今日成交量 ÷ 近 20 日均量（盤中偏低屬正常）">
-          {volRatio == null ? '--' : `${fmt(volRatio, 2)}x`}
-        </Kv>
-        {tw && (
-          <Kv label="漲停 / 跌停" tip="台股單日漲跌幅限制 ±10%，委託價不能超出此範圍">
-            <span className="text-[13px]">
-              <span className="text-rose-400">{fmt(q.limit_up)}</span> / <span className="text-emerald-400">{fmt(q.limit_down)}</span>
-            </span>
-          </Kv>
-        )}
-        <Kv label="日內振幅" tip="(最高 - 最低) ÷ 昨收">
-          {amp == null ? '--' : `${fmt(amp)}%`}
-        </Kv>
-        <Kv label="最小跳動" tip={tw ? '台股每個價位的最小變動單位（股票與 ETF 不同）' : '美股報價單位'}>
-          {tw && q.price != null ? fmt(twTick(q.price, etf)) : '0.01'}
-        </Kv>
-      </div>
+    // 一排 5 張；內容區不夠寬時橫向捲動，不折成兩排（避免把下面的卡片往下推）
+    <section aria-label="今日開高低量" data-tour="watch-stats" className="flex gap-3 overflow-x-auto pb-1">
+      <Kpi
+        hero
+        icon="◉"
+        label={`成交量（${q.volume_unit || ''}）`}
+        tip={tw ? '台股 1 張 = 1000 股' : `${marketName(q.symbol)}以股為單位（實際交易所可能有每手最少股數）`}
+        value={fmt(q.volume, 0)}
+        sub={
+          <span title="今日成交量 ÷ 近 20 日均量（盤中偏低屬正常）">量比 {volRatio == null ? '--' : `${fmt(volRatio, 2)}x`}</span>
+        }
+      />
+      <Kpi
+        icon="↗"
+        label="開盤"
+        value={fmt(q.open)}
+        cls={colorOf((q.open || 0) - (q.prev_close || 0))}
+        sub={<span title="前一個交易日的收盤價，漲跌幅以它為基準">昨收 {fmt(q.prev_close)}</span>}
+      />
+      <Kpi icon="▲" label="最高" value={fmt(q.high)} cls="text-rose-400" sub={tw ? <span title="台股單日漲幅限制 +10%">漲停 {fmt(q.limit_up)}</span> : '—'} />
+      <Kpi icon="▼" label="最低" value={fmt(q.low)} cls="text-emerald-400" sub={tw ? <span title="台股單日跌幅限制 −10%">跌停 {fmt(q.limit_down)}</span> : '—'} />
+      {/* 最小跳動放在振幅卡的小字（5 張卡在側欄展開＋清單展開時剛好排得下一排） */}
+      <Kpi
+        icon="↔"
+        label="日內振幅"
+        tip="(最高 − 最低) ÷ 昨收"
+        value={amp == null ? '--' : `${fmt(amp)}%`}
+        sub={
+          <span title={tw ? '台股每個價位的最小變動單位（股票與 ETF 不同）' : '美股報價單位'}>
+            最小跳動 {tw && q.price != null ? fmt(twTick(q.price, etf)) : '0.01'}
+          </span>
+        }
+      />
+    </section>
+  );
+}
+
+// 今日區間、52 週區間：原本在開高低量卡底部，改放在五檔卡底部（美股沒有五檔時也照樣顯示）
+function Ranges({ q, intraday }: { q: any; intraday: any }) {
+  return (
+    <div className="mt-2">
       <Rng label="今日區間（低—高）" low={q.low} high={q.high} value={q.price} />
       <Rng label="52 週區間（低—高）" low={intraday?.week52_low} high={intraday?.week52_high} value={q.price} />
     </div>
@@ -341,4 +368,4 @@ function HoldBody({ holdings, quotes, fx, selected, price, onPick, onSell }: { h
   );
 }
 
-export { DepthBody, HoldBody, Kv, NewsBody, Rng, StatsBody };
+export { DepthBody, HoldBody, Kv, NewsBody, Ranges, Rng, StatsKpis };

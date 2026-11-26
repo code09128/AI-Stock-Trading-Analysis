@@ -10,7 +10,9 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 const POOLS = [
   ['mine', '我的自選＋持股'],
   ['tw_hot', '台股熱門族群'],
+  ['tw_all', '台股全產業'],
   ['us_core', '美股核心'],
+  ['us_all', '美股全產業'],
 ];
 const SIZES = [
   [
@@ -247,7 +249,9 @@ function HeatmapPanel({
     setWidth(el.clientWidth);
     return () => ro.disconnect();
   }, []);
-  const height = width < 640 ? 440 : 560;
+  // 全產業範圍族群多（16～17 群），拉高才放得下每一群的標題列
+  const allPool = pool === 'tw_all' || pool === 'us_all';
+  const height = width < 640 ? (allPool ? 560 : 440) : allPool ? 720 : 560;
 
   // 版面：沒有面積資料的給最小值（仍顯示，靠 hover 看原因）；持股模式只留有持股的
   const layout = useMemo(() => {
@@ -306,7 +310,11 @@ function HeatmapPanel({
           <button
             type="button"
             key={k}
-            onClick={() => setPool(k)}
+            onClick={() => {
+              setPool(k);
+              // 全產業範圍：用成交金額或市值時權值股（台積電、NVIDIA）會佔掉大半張圖，小產業擠成一條，先切成等權重；之後可以再自己切回
+              if ((k === 'tw_all' || k === 'us_all') && pool !== k) setSizeBy('equal');
+            }}
             className={`px-2.5 py-1 rounded-lg border cursor-pointer ${pool === k ? 'bg-sky-500/20 border-sky-400 text-white' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'}`}
           >
             {label}

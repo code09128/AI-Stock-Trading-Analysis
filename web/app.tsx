@@ -30,7 +30,7 @@ import { bootPreload } from './boot_loader';
 import { ZoomControl, pageAway, postJob } from './desktop_bridge';
 import { buildExportReport, downloadText, stamp } from './export_report';
 
-const { useState, useEffect, useCallback, useMemo, useRef } = React;
+const { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } = React;
 
 
 // 提示框的圖示：訊息開頭已經有圖示（✅／⚠️／ℹ️…）就用它並依類型上色，沒有才補 ✅，避免出現兩個圖示
@@ -586,6 +586,43 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   const expanded = isMobile || sidebarOpen; // 手機選單一律顯示文字
+  // 側欄「目前頁面」的滑動標籤：量出選中按鈕在 nav 裡的位置，設 top／height，靠 CSS transition 滑過去。
+  // 收合、換頁、視窗或縮放改變（ResizeObserver）都重新量；手機版是抽屜，不用標籤。
+  const navRef = useRef<HTMLElement | null>(null);
+  const navIndRef = useRef<HTMLSpanElement | null>(null);
+  // instant：直接放到定位不滑動（頁面剛載入、收合／展開、視窗大小改變），只有換頁時才滑過去
+  const placeNavInd = useCallback((instant = false) => {
+    const ind = navIndRef.current;
+    const btn = navRef.current?.querySelector<HTMLElement>('.ta-nav[aria-current="page"]');
+    if (!ind) return;
+    if (!btn) {
+      ind.style.opacity = '0';
+      return;
+    }
+    if (instant) ind.style.transition = 'none';
+    ind.style.opacity = '1';
+    ind.style.top = `${btn.offsetTop}px`;
+    ind.style.height = `${btn.offsetHeight}px`;
+    if (instant) {
+      void ind.offsetHeight; // 先套用新位置，再把 transition 還回去
+      ind.style.transition = '';
+    }
+  }, []);
+  const navLayoutKey = `${sidebarOpen}|${isMobile}`;
+  const prevNavLayout = useRef('');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeTab 改變時選中的按鈕會換，要重新量
+  useLayoutEffect(() => {
+    const instant = prevNavLayout.current !== navLayoutKey; // 第一次或收合／展開：直接放好
+    prevNavLayout.current = navLayoutKey;
+    placeNavInd(instant);
+  }, [placeNavInd, activeTab, navLayoutKey]);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => placeNavInd(true));
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [placeNavInd, isMobile]);
   // 切頁（含個股頁的三個分頁）時回到頁面頂端，避免停在上一頁捲到的位置
   useEffect(() => {
     document.querySelector('main')?.parentElement?.scrollTo?.({ top: 0 });
@@ -823,16 +860,17 @@ function App() {
       )}
       <aside
         data-tour="sidebar"
-        className={`flex flex-col bg-slate-900 border-r border-slate-800 transition-all duration-200 ${
+        className={`flex flex-col transition-all duration-200 ${
           isMobile
-            ? `fixed inset-y-0 left-0 z-50 w-64 shadow-2xl ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`
-            : `shrink-0 ${sidebarOpen ? 'w-56' : 'w-[76px]'}`
+            ? `bg-slate-900 border-r border-slate-800 fixed inset-y-0 left-0 z-50 w-64 shadow-2xl ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`
+            : // 桌面：整合側欄（樣式在 index.html 的 .ta-side）。展開＝和右邊內容面板連成一體；收合＝浮動膠囊
+              `ta-side shrink-0 ${sidebarOpen ? 'w-56' : 'ta-side-pill w-[64px]'}`
         }`}
         aria-label="功能導覽"
         aria-hidden={isMobile && !menuOpen ? 'true' : undefined}
         {...({ inert: isMobile && !menuOpen ? '' : undefined } as Record<string, unknown>)}
       >
-        <div className="flex items-center gap-3 px-3 h-14 border-b border-slate-800 shrink-0">
+        <div className={`flex items-center gap-3 h-14 shrink-0 ${expanded ? 'px-3 border-b border-slate-800' : 'justify-center'}`}>
           <div className="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20">
             <NavIcon name="candles" className="w-5 h-5" />
           </div>
@@ -843,7 +881,9 @@ function App() {
             </div>
           )}
         </div>
-        <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-3">
+        <nav ref={navRef} className={`relative flex-1 overflow-y-auto overflow-x-hidden py-2 ${expanded ? 'px-2 space-y-3' : 'px-0 space-y-1.5'}`}>
+          {/* 目前頁面的滑動標籤：展開時接到內容面板、收合時是亮色圓形（只有桌面版） */}
+          {!isMobile && <span ref={navIndRef} className="ta-side-ind" aria-hidden="true" />}
           {groups.map((g) => (
             <div key={g} className="space-y-0.5">
               {expanded ? (
@@ -860,15 +900,18 @@ function App() {
                     title={`${item.title}：${item.subtitle}`}
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => goTab(item.id)}
-                    className={`ta-nav w-full flex rounded-xl transition cursor-pointer ${
-                      expanded ? 'items-center gap-3 px-3 py-2 text-sm' : 'flex-col items-center gap-0.5 px-1 py-2 text-[11px]'
+                    aria-label={expanded ? undefined : item.short}
+                    className={`ta-nav flex transition cursor-pointer ${
+                      expanded
+                        ? 'w-full rounded-xl items-center gap-3 px-3 py-2 text-sm'
+                        : 'w-9 h-9 mx-auto rounded-full items-center justify-center'
                     } ${isActive ? 'ta-nav-active text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                   >
                     <span className="shrink-0">
                       <NavIcon name={item.icon} />
                     </span>
-                    {/* 收合成圖示欄時，文字改放在圖示下方（短標籤），不再只剩圖示 */}
-                    <span className={expanded ? 'truncate' : 'leading-tight text-center'}>{item.short}</span>
+                    {/* 收合成膠囊時只留圖示（名稱在 title 提示與 aria-label） */}
+                    {expanded && <span className="truncate">{item.short}</span>}
                   </button>
                 );
               })}
@@ -902,7 +945,7 @@ function App() {
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className={`flex-1 min-w-0 flex flex-col ${isMobile ? '' : 'ta-surface'}`}>
         {/* 頂部列：目前頁面 + 大盤指數 + 工具 */}
         <header className="shrink-0 relative z-30 bg-slate-900/95 border-b border-slate-800 px-3 md:px-4 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2 md:gap-2.5">

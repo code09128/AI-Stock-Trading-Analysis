@@ -51,8 +51,19 @@ function usePriceFlash(price: number | null | undefined, key?: string): 'up' | '
   return flash;
 }
 
+// 自選列的拖動排序：有傳 drag 才能拖（排序選「我的順序」時），列左邊顯示 ⠿
+type RowDrag = {
+  dragging?: boolean;
+  over?: boolean;
+  onDragStart: (e: any) => void;
+  onDragEnd: () => void;
+  onDragOver: (e: any) => void;
+  onDrop: (e: any) => void;
+};
+
 // bell：這檔有提醒時在代號旁顯示 🔔（'fired'＝有已觸發的，多一個驚嘆號）
-function Row({ sym, quote: rawQuote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag, bell }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any; bell?: 'on' | 'fired' }) {
+// compact：排行用的緊湊列（上下內距小、不顯示當日小 K 棒）
+function Row({ sym, quote: rawQuote, active, onClick, action, actionBelow, rank, nameOverride, sub, spark, tag, bell, drag, compact }: { sym: any; quote?: any; active?: boolean; onClick?: any; action?: any; actionBelow?: boolean; rank?: number; nameOverride?: any; sub?: any; spark?: any; tag?: any; bell?: 'on' | 'fired'; drag?: RowDrag; compact?: boolean }) {
   // 盤前沒有成交價時顯示試撮價或昨收（見 ui.shownQuote，只影響畫面）
   const quote = rawQuote ? shownQuote(rawQuote) : rawQuote;
   const chg = quote?.change;
@@ -66,20 +77,28 @@ function Row({ sym, quote: rawQuote, active, onClick, action, actionBelow, rank,
       aria-current={active ? 'true' : undefined}
       onClick={onClick}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
-      className={`group rounded-xl border cursor-pointer transition-[transform,background-color,border-color] duration-200 hover:translate-x-[3px] px-3.5 py-3 ${
-        active ? 'ta-row-on border-transparent' : 'border-transparent bg-white/5 hover:bg-white/10'
-      }`}
-      style={
-        flash === 'up'
-          ? { background: 'var(--up-bg)' }
-          : flash === 'down'
-            ? { background: 'var(--down-bg)' }
-            : undefined
-      }
+      draggable={drag ? true : undefined}
+      onDragStart={drag?.onDragStart}
+      onDragEnd={drag?.onDragEnd}
+      onDragOver={drag?.onDragOver}
+      onDrop={drag?.onDrop}
+      className={`group rounded-xl border cursor-pointer transition-[transform,background-color,border-color] duration-200 hover:translate-x-[3px] ${compact ? 'py-1.5' : 'py-3'} ${
+        drag ? 'pl-2 pr-3.5' : 'px-3.5'
+      } ${active ? 'ta-row-on border-transparent' : 'border-transparent bg-white/5 hover:bg-white/10'} ${drag?.dragging ? 'opacity-40' : ''}`}
+      style={{
+        ...(flash === 'up' ? { background: 'var(--up-bg)' } : flash === 'down' ? { background: 'var(--down-bg)' } : {}),
+        // 拖到這列上方時：上緣一條強調色線，表示會放在這列前面
+        ...(drag?.over ? { boxShadow: '0 -2px 0 rgb(var(--accent-500))' } : {}),
+      }}
     >
       <div className="flex items-center gap-3">
-        {rank && <span className="text-[11px] font-semibold text-slate-300 bg-white/5 rounded-md w-6 h-6 inline-flex items-center justify-center shrink-0">{rank}</span>}
-        <MiniCandle quote={quote?.error ? null : quote} />
+        {drag && (
+          <span aria-hidden="true" title="拖動調整順序" className="-mr-1.5 text-slate-500 group-hover:text-slate-300 cursor-grab select-none text-[13px] leading-none">
+            ⠿
+          </span>
+        )}
+        {rank &&<span className="text-[11px] font-semibold text-slate-300 bg-white/5 rounded-md w-6 h-6 inline-flex items-center justify-center shrink-0">{rank}</span>}
+        {!compact && <MiniCandle quote={quote?.error ? null : quote} />}
         <div className="min-w-0 flex-1">
           <b className="block text-[13.5px] text-white truncate">{nameOverride || quote?.name || sym}</b>
           <small className="flex items-center gap-1.5 mt-0.5 text-[11.5px] text-slate-400 min-w-0">
@@ -132,7 +151,8 @@ function Row({ sym, quote: rawQuote, active, onClick, action, actionBelow, rank,
         {spark && <span className="shrink-0"><Sparkline values={spark} w={56} /></span>}
         {!actionBelow && action && <span className="shrink-0 flex items-center gap-1.5 pl-1">{action}</span>}
       </div>
-      {actionBelow && action && <div className="mt-1.5">{action}</div>}
+      {/* 列下方的動作（持股列的分析／回測／加碼／賣出／移除）：滑過、鍵盤選到或選中那一列才出現（index.html 的 .ta-reveal-row） */}
+      {actionBelow && action && <div className="ta-reveal-row mt-1.5">{action}</div>}
     </div>
   );
 }

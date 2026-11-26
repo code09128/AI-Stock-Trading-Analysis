@@ -2,10 +2,15 @@
 // 持股清單（分析、回測、帶入加碼／賣出委託、移除）、新增與 CSV 匯入、送去組合風控
 import { bus } from '../bus';
 import { notifySaved } from '../sync_store';
-import { Tip, baseCode, colorOf, currencyOf, fmt, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { Tip, baseCode, colorOf, currencyOf, fmt, isTW, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
 import { logHoldingBuys, setHoldings as TA_setHoldings } from '../portfolio_store';
 import { Row } from './watch_parts';
 import { Donut, topSlices } from './mini_charts';
+
+// 代號格式粗檢：台股 4～6 位數（可帶一個字母，如 00849B）、有其他市場後綴（.HK、.T…）、或英文字母開頭的美股代號。
+// 只擋明顯打錯的（例如代號欄只打了「1」就送出，會留下一筆假持股和下單紀錄）；
+// 格式對但實際不存在的代號照收，報價會顯示抓取失敗。
+const looksLikeSymbol = (s: string) => isTW(s) || marketOf(s) !== 'US' || /^[A-Z][A-Z0-9.-]{0,9}$/.test(s);
 
 const { useState, useEffect, useMemo } = React;
 
@@ -33,9 +38,12 @@ function HoldingsPanel({
   useEffect(() => {
     if (!prefill) return;
     setHoldForm((f) => ({ ...f, ...prefill, broker: prefill.broker || '' }));
+    setAddOpen(true);
     onPrefillUsed?.();
   }, [prefill, onPrefillUsed]);
   const [csvText, setCsvText] = useState('');
+  const [reconOpen, setReconOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   // 持股損益：市值可選「即時價」或「昨收」（銀行／券商的參考市值多用昨收，方便對帳）
   const [holdBasis, setHoldBasis] = useState(() => readLS('tw_us_hold_basis_v1', 'live'));
   const [divReceived, setDivReceived] = useState(() => readLS('tw_us_div_received_v1', ''));
@@ -116,6 +124,10 @@ function HoldingsPanel({
       say('⚠️ 沒有新增：請填代號、股數（正數）與成本價');
       return;
     }
+    if (!looksLikeSymbol(sym)) {
+      say(`⚠️ 沒有新增：「${sym}」不像股票代號（台股 4～6 位數字，例如 2330、00849B；美股用英文代號，例如 NVDA）`);
+      return;
+    }
     const sameEntry = (h) => h.symbol === sym && (h.broker || '').trim() === broker;
     const old = holdings.find(sameEntry);
     let next: typeof holdings;
@@ -155,6 +167,7 @@ function HoldingsPanel({
       .filter((l) => l.length > 0);
 
     const parsedRows = [];
+    const badSyms: string[] = [];
     for (const line of lines) {
       if (/^(代號|symbol|ticker|股票代號|商品代碼)/i.test(line)) continue;
       const rawParts = line.split(/[\t,;]/).map((x) => x.replace(/^["']|["']$/g, '').trim());
@@ -198,6 +211,10 @@ function HoldingsPanel({
           .trim(),
       );
 
+      if (sym && !looksLikeSymbol(sym)) {
+        badSyms.push(sym);
+        continue;
+      }
       if (sym && shares > 0 && cost >= 0) {
         parsedRows.push({
           symbol: sym,
@@ -208,6 +225,7 @@ function HoldingsPanel({
       }
     }
 
+    if (badSyms.length) say(`⚠️ 略過 ${badSyms.length} 列代號格式不對：${badSyms.slice(0, 5).join('、')}`);
     if (!parsedRows.length) {
       say('⚠️ 沒有匯入：沒有讀到有效列。格式：代號,股數,成本價[,券商]（每行一檔）');
       return;
@@ -294,139 +312,155 @@ function HoldingsPanel({
           </div>
         </div>
       )}
-      {allocSlices.length > 0 && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3" data-tour="hold-alloc">
-          <div className="text-[11px] text-slate-400 mb-2">
-            持股占比（依台幣市值）
-            <Tip text="每一檔的市值占總市值的比例；同一檔放在不同券商會合併。只算已取得報價與匯率的持股，前 6 檔各自一塊，其餘合併成「其他」。" />
-          </div>
-          <Donut items={allocSlices} center={`${allocSlices.filter((s) => s.label !== '其他').length}`} sub="檔" label="持股占比圓餅圖" />
-        </div>
-      )}
       {holdRows.length > 0 && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs mono space-y-0.5">
-          <div className="flex justify-between">
-            <span className="text-slate-400">
-              總成本
-              <Tip text="各檔「成本價 × 股數」加總。銀行／券商的「投資金額」常是扣款金額加總、不含手續費，若你的成本價含手續費會略高。要完全一致可把成本價改成「投資金額 ÷ 股數」。" />
-            </span>
-            <span className="text-slate-200">{fmt(holdTotals.cost, 0)}</span>
-          </div>
-          {[
-            [
-              '帳戶現金',
-              acctCash,
-              setAcctCash,
-              '例如 3595',
-              '帳戶裡還沒買成股票的現金（銀行「投資組合內容」最下面的「現金」）。會加進總資產。',
-            ],
-            [
-              '投資金額',
-              invested,
-              setInvested,
-              '例如 123500',
-              '你實際投入（扣款）的總金額。填了就用銀行的算法：損益＝(持股市值＋帳戶現金) − 投資金額。',
-            ],
-            [
-              '已領現金配息',
-              divReceived,
-              setDivReceived,
-              '例如 10632',
-              '已入帳的現金股利總額（台幣），用來算含息報酬率。',
-            ],
-          ].map(([label, val, setter, ph, tip]) => (
-            <div key={label} className="flex justify-between items-center gap-2">
-              <span className="text-slate-400 font-sans">
-                {label}
-                <Tip text={tip} />
-              </span>
-              <input
-                value={val}
-                onChange={(e) => setter(e.target.value.replace(/[^\d.]/g, ''))}
-                placeholder={ph}
-                aria-label={label}
-                className="w-28 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-right text-white"
-              />
+        // 占比圓餅與對帳（總成本、帳戶現金、投資金額、已領配息、市值算法、匯率）收在這裡，點開才展開，持股列不會被往下推
+        <details
+          className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2"
+          open={reconOpen}
+          onToggle={(e) => setReconOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer text-[11.5px] text-slate-400 hover:text-slate-200 flex items-center gap-2 list-none">
+            <span>持股占比・對帳細節</span>
+            <span className="mono text-slate-500 truncate">總成本 {fmt(holdTotals.cost, 0)}</span>
+            <span aria-hidden="true" className="ml-auto">{reconOpen ? '▴' : '▾'}</span>
+          </summary>
+          <div className="mt-2 space-y-2">
+        {allocSlices.length > 0 && (
+          <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3" data-tour="hold-alloc">
+            <div className="text-[11px] text-slate-400 mb-2">
+              持股占比（依台幣市值）
+              <Tip text="每一檔的市值占總市值的比例；同一檔放在不同券商會合併。只算已取得報價與匯率的持股，前 6 檔各自一塊，其餘合併成「其他」。" />
             </div>
-          ))}
-          {(() => {
-            const cash = Number(acctCash) || 0;
-            const div = Number(divReceived) || 0;
-            const base = Number(invested) > 0 ? Number(invested) : holdTotals.cost;
-            const total = holdTotals.value + cash;
-            const pnl = Number(invested) > 0 ? total - base : holdTotals.pnl;
-            if (!base || (!cash && !div && !(Number(invested) > 0))) return null;
-            const row = (label, v, tip) => (
-              <div className="flex justify-between">
+            <Donut items={allocSlices} center={`${allocSlices.filter((s) => s.label !== '其他').length}`} sub="檔" label="持股占比圓餅圖" />
+          </div>
+        )}
+        {holdRows.length > 0 && (
+          <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs mono space-y-0.5">
+            <div className="flex justify-between">
+              <span className="text-slate-400">
+                總成本
+                <Tip text="各檔「成本價 × 股數」加總。銀行／券商的「投資金額」常是扣款金額加總、不含手續費，若你的成本價含手續費會略高。要完全一致可把成本價改成「投資金額 ÷ 股數」。" />
+              </span>
+              <span className="text-slate-200">{fmt(holdTotals.cost, 0)}</span>
+            </div>
+            {[
+              [
+                '帳戶現金',
+                acctCash,
+                setAcctCash,
+                '例如 3595',
+                '帳戶裡還沒買成股票的現金（銀行「投資組合內容」最下面的「現金」）。會加進總資產。',
+              ],
+              [
+                '投資金額',
+                invested,
+                setInvested,
+                '例如 123500',
+                '你實際投入（扣款）的總金額。填了就用銀行的算法：損益＝(持股市值＋帳戶現金) − 投資金額。',
+              ],
+              [
+                '已領現金配息',
+                divReceived,
+                setDivReceived,
+                '例如 10632',
+                '已入帳的現金股利總額（台幣），用來算含息報酬率。',
+              ],
+            ].map(([label, val, setter, ph, tip]) => (
+              <div key={label} className="flex justify-between items-center gap-2">
                 <span className="text-slate-400 font-sans">
                   {label}
                   <Tip text={tip} />
                 </span>
-                <span className={`font-bold ${colorOf(v)}`}>
-                  {v > 0 ? '+' : ''}
-                  {fmt(v, 0)}（{fmt((v / base) * 100)}%）
-                </span>
+                <input
+                  value={val}
+                  onChange={(e) => setter(e.target.value.replace(/[^\d.]/g, ''))}
+                  placeholder={ph}
+                  aria-label={label}
+                  className="w-28 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-right text-white"
+                />
               </div>
-            );
-            return (
-              <div className="pt-1 border-t border-slate-800 space-y-0.5">
-                {cash > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-400 font-sans">總資產（持股＋現金）</span>
-                    <span className="text-white font-bold">{fmt(total, 0)}</span>
-                  </div>
-                )}
-                {Number(invested) > 0 &&
-                  row(
-                    '參考損益（依投資金額）',
-                    pnl,
-                    '(持股市值＋帳戶現金) − 投資金額，÷ 投資金額。和銀行／券商的「參考損益」「總投資報酬率」算法相同。',
-                  )}
-                {div > 0 &&
-                  row(
-                    '含息損益',
-                    pnl + div,
-                    '再加上已入帳的現金配息，對應「投資報酬率（含已入帳配息）」。',
-                  )}
-              </div>
-            );
-          })()}
-          <div className="flex items-center gap-1 pt-1 font-sans">
-            <span className="text-[10px] text-slate-400 mr-1">
-              市值計算
-              <Tip text="即時價：盤中隨成交變動。昨收：用前一個交易日收盤價，多數銀行／券商的「參考市值」是這個，對帳時請切到昨收。" />
-            </span>
-            {[
-              ['live', '即時價'],
-              ['prev', '昨收'],
-            ].map(([k, label]) => (
-              <button
-                type="button"
-                key={k}
-                onClick={() => setHoldBasis(k)}
-                className={`px-2 py-0.5 rounded text-[11px] border cursor-pointer ${
-                  holdBasis === k
-                    ? 'bg-sky-600 border-sky-500 text-white'
-                    : 'border-slate-700 text-slate-400 hover:text-white'
-                }`}
-              >
-                {label}
-              </button>
             ))}
+            {(() => {
+              const cash = Number(acctCash) || 0;
+              const div = Number(divReceived) || 0;
+              const base = Number(invested) > 0 ? Number(invested) : holdTotals.cost;
+              const total = holdTotals.value + cash;
+              const pnl = Number(invested) > 0 ? total - base : holdTotals.pnl;
+              if (!base || (!cash && !div && !(Number(invested) > 0))) return null;
+              const row = (label, v, tip) => (
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-sans">
+                    {label}
+                    <Tip text={tip} />
+                  </span>
+                  <span className={`font-bold ${colorOf(v)}`}>
+                    {v > 0 ? '+' : ''}
+                    {fmt(v, 0)}（{fmt((v / base) * 100)}%）
+                  </span>
+                </div>
+              );
+              return (
+                <div className="pt-1 border-t border-slate-800 space-y-0.5">
+                  {cash > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 font-sans">總資產（持股＋現金）</span>
+                      <span className="text-white font-bold">{fmt(total, 0)}</span>
+                    </div>
+                  )}
+                  {Number(invested) > 0 &&
+                    row(
+                      '參考損益（依投資金額）',
+                      pnl,
+                      '(持股市值＋帳戶現金) − 投資金額，÷ 投資金額。和銀行／券商的「參考損益」「總投資報酬率」算法相同。',
+                    )}
+                  {div > 0 &&
+                    row(
+                      '含息損益',
+                      pnl + div,
+                      '再加上已入帳的現金配息，對應「投資報酬率（含已入帳配息）」。',
+                    )}
+                </div>
+              );
+            })()}
+            <div className="flex items-center gap-1 pt-1 font-sans">
+              <span className="text-[10px] text-slate-400 mr-1">
+                市值計算
+                <Tip text="即時價：盤中隨成交變動。昨收：用前一個交易日收盤價，多數銀行／券商的「參考市值」是這個，對帳時請切到昨收。" />
+              </span>
+              {[
+                ['live', '即時價'],
+                ['prev', '昨收'],
+              ].map(([k, label]) => (
+                <button
+                  type="button"
+                  key={k}
+                  onClick={() => setHoldBasis(k)}
+                  className={`px-2 py-0.5 rounded text-[11px] border cursor-pointer ${
+                    holdBasis === k
+                      ? 'bg-sky-600 border-sky-500 text-white'
+                      : 'border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {holdCurrencies
+                ? `海外持股以即時匯率換算台幣：${holdCurrencies
+                    .split(',')
+                    .map((c) => `${c} ${fx?.[c] ?? '--'}`)
+                    .join(
+                      '、',
+                    )}${holdCurrencies.includes('GBp') ? '（GBp＝英國便士，0.01 英鎊）' : ''}`
+                : '全部為台股'}
+              {fxWarn && <span className="text-amber-300">（⚠️ {fxWarn}）</span>}
+              {holdTotals.missing ? `；${holdTotals.missing} 檔查無即時價未計入` : ''}
+            </div>
           </div>
-          <div className="text-[10px] text-slate-500">
-            {holdCurrencies
-              ? `海外持股以即時匯率換算台幣：${holdCurrencies
-                  .split(',')
-                  .map((c) => `${c} ${fx?.[c] ?? '--'}`)
-                  .join(
-                    '、',
-                  )}${holdCurrencies.includes('GBp') ? '（GBp＝英國便士，0.01 英鎊）' : ''}`
-              : '全部為台股'}
-            {fxWarn && <span className="text-amber-300">（⚠️ {fxWarn}）</span>}
-            {holdTotals.missing ? `；${holdTotals.missing} 檔查無即時價未計入` : ''}
+        )}
           </div>
-        </div>
+        </details>
       )}
       {holdRows.map((r, idx) => (
         <Row
@@ -522,88 +556,98 @@ function HoldingsPanel({
           }
         />
       ))}
-      <div className="rounded-xl border border-slate-800 p-3 space-y-2.5 bg-slate-900/50">
-        <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
-          <span>新增 / 累加持股部位</span>
-          <Tip text="成本價＝每股買進價格。若在不同券商持有同一標的，可填寫「券商」獨立分開管理；若未填或同券商，系統會自動加權平均累加股數與成本。" />
-        </div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <label className="block text-[11px] text-slate-400">
-            <span className="block mb-1">標的代號</span>
-            <input
-              value={holdForm.symbol || ''}
-              onChange={(e) => setHoldForm({ ...holdForm, symbol: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && addHolding()}
-              placeholder="如 2330 / 0050"
-              aria-label="持股代號"
-              className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
-            />
-          </label>
-          <label className="block text-[11px] text-sky-400 font-medium">
-            <span className="block mb-1">券商 / 帳戶 (選填)</span>
-            <input
-              value={holdForm.broker || ''}
-              onChange={(e) => setHoldForm({ ...holdForm, broker: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && addHolding()}
-              placeholder="如 元大 / 富邦"
-              aria-label="持股券商"
-              className="w-full bg-slate-950 border border-sky-600/50 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none placeholder:text-slate-500"
-            />
-          </label>
-          <label className="block text-[11px] text-slate-400">
-            <span className="block mb-1">持有股數</span>
-            <input
-              value={holdForm.shares || ''}
-              onChange={(e) => setHoldForm({ ...holdForm, shares: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && addHolding()}
-              placeholder="如 1000"
-              aria-label="持股股數"
-              className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
-            />
-          </label>
-          <label className="block text-[11px] text-slate-400">
-            <span className="block mb-1">買進每股成本</span>
-            <input
-              value={holdForm.cost || ''}
-              onChange={(e) => setHoldForm({ ...holdForm, cost: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && addHolding()}
-              placeholder="如 100 或 41.7"
-              aria-label="持股成本價"
-              className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
-            />
-          </label>
-        </div>
-        <button
-          type="button"
-          onClick={addHolding}
-          className="w-full py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer shadow-sm"
-        >
-          ＋ 加入 / 累加持股
-        </button>
-      </div>
-      <details className="rounded-xl border border-slate-800 p-2 text-xs">
-        <summary className="cursor-pointer text-slate-300">貼上券商 CSV 批次匯入</summary>
-        <textarea
-          value={csvText}
-          onChange={(e) => setCsvText(e.target.value)}
-          rows={4}
-          placeholder={
-            '每行一檔：代號,股數,成本價[,券商]\n0050,1000,100,元大\n0050,130,41.7,富邦\nNVDA,10,120.5'
-          }
-          aria-label="持股 CSV"
-          className="w-full mt-2 bg-slate-950 border border-slate-700 rounded p-2 mono text-xs text-white"
-        />
-        <div className="flex items-center justify-between mt-1">
+      {/* 新增持股與 CSV 匯入：沒有持股時直接展開；有持股時收起來，點開才展開 */}
+      <details
+        className="rounded-xl border border-slate-800 px-3 py-2"
+        open={addOpen || holdRows.length === 0}
+        onToggle={(e) => setAddOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary className="cursor-pointer text-[11.5px] text-slate-400 hover:text-slate-200 list-none">＋ 新增持股／CSV 匯入</summary>
+        <div className="mt-2 space-y-2">
+        <div className="rounded-xl border border-slate-800 p-3 space-y-2.5 bg-slate-900/50">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+            <span>新增 / 累加持股部位</span>
+            <Tip text="成本價＝每股買進價格。若在不同券商持有同一標的，可填寫「券商」獨立分開管理；若未填或同券商，系統會自動加權平均累加股數與成本。" />
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <label className="block text-[11px] text-slate-400">
+              <span className="block mb-1">標的代號</span>
+              <input
+                value={holdForm.symbol || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, symbol: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 2330 / 0050"
+                aria-label="持股代號"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
+              />
+            </label>
+            <label className="block text-[11px] text-sky-400 font-medium">
+              <span className="block mb-1">券商 / 帳戶 (選填)</span>
+              <input
+                value={holdForm.broker || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, broker: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 元大 / 富邦"
+                aria-label="持股券商"
+                className="w-full bg-slate-950 border border-sky-600/50 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <label className="block text-[11px] text-slate-400">
+              <span className="block mb-1">持有股數</span>
+              <input
+                value={holdForm.shares || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, shares: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 1000"
+                aria-label="持股股數"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
+              />
+            </label>
+            <label className="block text-[11px] text-slate-400">
+              <span className="block mb-1">買進每股成本</span>
+              <input
+                value={holdForm.cost || ''}
+                onChange={(e) => setHoldForm({ ...holdForm, cost: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addHolding()}
+                placeholder="如 100 或 41.7"
+                aria-label="持股成本價"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs mono text-white focus:border-sky-400 focus:outline-none"
+              />
+            </label>
+          </div>
           <button
             type="button"
-            onClick={importCsv}
-            className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 cursor-pointer"
+            onClick={addHolding}
+            className="w-full py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold cursor-pointer shadow-sm"
           >
-            匯入持股
+            ＋ 加入 / 累加持股
           </button>
-          <span className="text-[10px] text-slate-500">
-            末行空格自動清除・支援分券商或同券商自動累加
-          </span>
+        </div>
+        <details className="rounded-xl border border-slate-800 p-2 text-xs">
+          <summary className="cursor-pointer text-slate-300">貼上券商 CSV 批次匯入</summary>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            rows={4}
+            placeholder={
+              '每行一檔：代號,股數,成本價[,券商]\n0050,1000,100,元大\n0050,130,41.7,富邦\nNVDA,10,120.5'
+            }
+            aria-label="持股 CSV"
+            className="w-full mt-2 bg-slate-950 border border-slate-700 rounded p-2 mono text-xs text-white"
+          />
+          <div className="flex items-center justify-between mt-1">
+            <button
+              type="button"
+              onClick={importCsv}
+              className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 cursor-pointer"
+            >
+              匯入持股
+            </button>
+            <span className="text-[10px] text-slate-500">
+              末行空格自動清除・支援分券商或同券商自動累加
+            </span>
+          </div>
+        </details>
         </div>
       </details>
       {holdRows.length > 0 && (
