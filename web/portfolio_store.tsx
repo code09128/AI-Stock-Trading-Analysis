@@ -142,6 +142,28 @@ const logHoldingBuys = (items, source, prevHoldings) => {
     })),
   ]);
 };
+// 從我的持股直接移除（不是賣出）也記一筆 source＝移除持股 的 SELL：不記的話這檔的買進還留在下單紀錄，
+// 之後重新新增同一檔時，下單紀錄合計股數會比持股多（舊版就這樣留下對不起來的紀錄）。
+// 不寫交易紀錄、不算損益（removed: true）；價格用成本價只是讓金額欄有數字。prevHoldings：移除前的持股（給 withInitial 用）
+const logHoldingRemoval = (h, prevHoldings) => {
+  const orders = withInitial(load().orders, prevHoldings, h.symbol);
+  setOrders([
+    ...orders,
+    {
+      id: orderId(),
+      time: nowText(),
+      symbol: h.symbol,
+      name: '',
+      side: 'SELL',
+      price: Number(h.cost) || 0,
+      shares: Number(h.shares) || 0,
+      fees: 0,
+      order_type: h.broker ? `券商 ${h.broker}` : '',
+      source: '移除持股',
+      removed: true,
+    },
+  ]);
+};
 const saveRules = (rules, source) =>
   save('rules', {
     rules,
@@ -311,4 +333,4 @@ const orderLogRows = (orders: any[], journal: any[], holdings: any[]) => {
   return [...orders, ...legacy, ...initial].sort((a, b) => String(b.time).localeCompare(String(a.time)));
 };
 
-export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, logHoldingBuys, saveRules, fillOrder, orderLogRows, RulesReminder };
+export { nextTradeId, dedupeIds, usePortfolio, load as loadPortfolio, setHoldings, setJournal, setOrders, logHoldingBuys, logHoldingRemoval, saveRules, fillOrder, orderLogRows, RulesReminder };

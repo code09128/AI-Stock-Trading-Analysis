@@ -3,7 +3,7 @@
 import { bus } from '../bus';
 import { notifySaved, notifySavedLater } from '../sync_store';
 import { Tip, baseCode, colorOf, currencyOf, fmt, isTW, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
-import { logHoldingBuys, setHoldings as TA_setHoldings } from '../portfolio_store';
+import { logHoldingBuys, logHoldingRemoval, setHoldings as TA_setHoldings } from '../portfolio_store';
 import { Row } from './watch_parts';
 import { Donut, topSlices } from './mini_charts';
 
@@ -564,19 +564,21 @@ function HoldingsPanel({
               </button>
               <button
                 type="button"
-                title="直接移除（不記錄交易）"
+                title="直接移除（不記錄交易、不算損益，下單紀錄記一筆「移除持股」）"
                 onClick={(e) => {
                   e.stopPropagation();
                   // 刪除沒辦法復原：先確認（要記錄賣出請改按「賣出」）
                   if (
                     !window.confirm(
-                      `確定移除持股 ${r.symbol}${r.broker ? `（${r.broker}）` : ''}（${fmt(r.shares, 4)} 股）？\n不會寫入交易紀錄；要記錄賣出請改按「賣出」。`,
+                      `確定移除持股 ${r.symbol}${r.broker ? `（${r.broker}）` : ''}（${fmt(r.shares, 4)} 股）？\n不會寫入交易紀錄、不算損益，下單紀錄會記一筆「移除持股」；要記錄賣出請改按「賣出」。`,
                     )
                   ) {
                     say('ℹ️ 已取消，持股沒有變動');
                     return;
                   }
+                  const removed = holdings[r.rowIndex];
                   setHoldings(holdings.filter((_, i) => i !== r.rowIndex));
+                  if (removed) logHoldingRemoval(removed, holdings);
                   notifySaved(
                     `已移除持股 ${r.symbol}${r.broker ? `（${r.broker}）` : ''}`,
                   );

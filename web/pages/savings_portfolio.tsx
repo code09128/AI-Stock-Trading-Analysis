@@ -2,7 +2,8 @@
 // 多檔 ETF 照比例定期定額，算組合的三種參考報酬率、年化波動、最大回撤、與加權指數比較、
 // 過去 N 年實際回測（每月照比例投入、不賣出），可存多組並排比較、一鍵帶入我的持股
 // 公式都在後端 src/portfolio/savings_plan.py（/api/savings/portfolio）
-import { colorOf, fmt, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { baseCode, colorOf, fmt, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
+import { usePortfolio } from '../portfolio_store';
 import { Donut, topSlices } from './mini_charts';
 import { savingsUI } from './savings_plan';
 import { postJob } from '../desktop_bridge';
@@ -84,6 +85,12 @@ function allocation(p, s) {
   });
   return { rows, sum, monthly, initial, split, over: sum > 100.0001, currency: curOf(p) };
 }
+// 由「帶入我的持股」建立的組合依哪種比例（'cost'／'value'）；舊版沒有 fromHoldings 欄位，用名稱判斷
+const holdBasisOf = (port) => {
+  if (port?.fromHoldings) return port.fromHoldings;
+  const m = /^我的持股（依(成本|市值)）/.exec(String(port?.name || ''));
+  return m ? (m[1] === '成本' ? 'cost' : 'value') : null;
+};
 const upDown = (v) => (v == null ? 'text-slate-400' : colorOf(v));
 
 function usePersist(key, defaults) {
@@ -250,6 +257,22 @@ function PortfolioTab() {
   const p = s.list.find((x) => x.id === s.active) || s.list[0];
   const alloc = allocation(p, s);
   const hasHeld = p.items.some((it) => it.held);
+  // 帶入持股的組合是快照：之後持股有增減（賣掉、移除、新買）就提醒重新帶入，避免拿舊持股試算
+  const { holdings: liveHoldings } = usePortfolio();
+  const pBasis = holdBasisOf(p);
+  const snapAt = p.syncedAt || p.items.find((it) => it.held?.at)?.held?.at || '';
+  const snapDiff = (() => {
+    if (!pBasis) return null;
+    const live = new Set(
+      liveHoldings.filter((h) => h?.symbol && Number(h.shares) > 0).map((h) => baseCode(normSym(h.symbol))),
+    );
+    const inPort = new Set<string>(
+      p.items.map((it) => baseCode(normSym(String(it.symbol || '')))).filter(Boolean),
+    );
+    const gone = [...inPort].filter((k) => !live.has(k));
+    const added = [...live].filter((k) => !inPort.has(k));
+    return gone.length || added.length ? { gone, added } : null;
+  })();
 
   const patchP = (patch) =>
     set((old) => ({ list: old.list.map((x) => (x.id === p.id ? { ...x, ...patch } : x)) }));
@@ -355,9 +378,13 @@ function PortfolioTab() {
         return;
       }
       const today = localDate();
-      addPortfolio({
-        id: newId(),
-        name: `我的持股（依${basis === 'cost' ? '成本' : '市值'}）`,
+      // 已經有同一種比例的「我的持股」組合就更新它（保留每月金額、期初與比較設定），不再多出一個同名的舊快照
+      const existing = s.list.find((x) => holdBasisOf(x) === basis);
+      const port = {
+        ...(existing || { id: newId(), cash: 0, monthly: monthlyOf(p, s), initial: initialOf(p, s) }),
+        name: existing?.name || `我的持股（依${basis === 'cost' ? '成本' : '市值'}）`,
+        fromHoldings: basis,
+        syncedAt: today,
         items: list
           .sort((a, b) => by(b) - by(a))
           .map((m) => ({
@@ -370,12 +397,12 @@ function PortfolioTab() {
               at: today,
             },
           })),
-        cash: 0,
-        monthly: monthlyOf(p, s),
-        initial: initialOf(p, s),
-      });
+      };
+      if (existing)
+        set((old) => ({ list: old.list.map((x) => (x.id === existing.id ? port : x)), active: existing.id }));
+      else addPortfolio(port);
       setNote(
-        `已把 ${h.rows.length} 筆持股（合併成 ${list.length} 檔）依${basis === 'cost' ? `投入成本 ${fmt(base, 0)} 元` : `目前市值 ${fmt(base, 0)} 元（${h.basis === 'prev' ? '昨收' : '即時價'}）`}換算成比例${h.missing ? `；${h.missing} 筆沒有報價或匯率，用成本價或不計入` : ''}。要照每月實際扣款金額，直接在「每月金額」欄填。`,
+        `${existing ? '已更新原本的組合：' : ''}已把 ${h.rows.length} 筆持股（合併成 ${list.length} 檔）依${basis === 'cost' ? `投入成本 ${fmt(base, 0)} 元` : `目前市值 ${fmt(base, 0)} 元（${h.basis === 'prev' ? '昨收' : '即時價'}）`}換算成比例${h.missing ? `；${h.missing} 筆沒有報價或匯率，用成本價或不計入` : ''}。要照每月實際扣款金額，直接在「每月金額」欄填。`,
       );
     } catch (e) {
       setNote(`⚠️ ${e.message}`);
@@ -409,7 +436,7 @@ function PortfolioTab() {
     <>
       <Card
         title="① 投資組合配置"
-        tip="先填期初投入與每月定額，再填每檔的比例或每月金額（兩個都能填，填一個另一個自動算；跟銀行、券商設定定期定額一樣）。比例合計不到 100% 的部分是「未分配」，當作現金不投入。還沒上市的期間，它的比例依比例分給其他標的。「帶入時持股」是按「帶入我的持股」當下的股數、成本與市值，不會自動更新。"
+        tip="先填期初投入與每月定額，再填每檔的比例或每月金額（兩個都能填，填一個另一個自動算；跟銀行、券商設定定期定額一樣）。比例合計不到 100% 的部分是「未分配」，當作現金不投入。還沒上市的期間，它的比例依比例分給其他標的。「帶入時持股」是按「帶入我的持股」當下的股數、成本與市值，不會自動更新；持股有變時會提醒，再按一次會更新同一個組合（不會多出新組合）。"
         extra={
           <>
             <Btn onClick={() => setPickBasis((v) => !v)}>帶入我的持股</Btn>
@@ -462,6 +489,29 @@ function PortfolioTab() {
           </div>
         )}
         {note && <div className="text-xs text-slate-400">{note}</div>}
+        {pBasis && (
+          <div
+            role={snapDiff ? 'status' : undefined}
+            className={`text-[11.5px] rounded-lg px-3 py-1.5 ${snapDiff ? 'border border-amber-500/30 bg-amber-500/5 text-amber-100' : 'text-slate-500'}`}
+          >
+            這個組合是{snapAt ? ` ${snapAt} ` : ''}帶入的持股快照，不會自動更新。
+            {snapDiff && (
+              <>
+                之後持股有變：
+                {snapDiff.gone.length > 0 && `已不在持股 ${snapDiff.gone.join('、')}`}
+                {snapDiff.gone.length > 0 && snapDiff.added.length > 0 && '；'}
+                {snapDiff.added.length > 0 && `新增 ${snapDiff.added.join('、')}`}。
+                <button
+                  type="button"
+                  onClick={() => fromHoldings(pBasis)}
+                  className="ml-2 underline cursor-pointer text-amber-200 hover:text-amber-50"
+                >
+                  重新帶入
+                </button>
+              </>
+            )}
+          </div>
+        )}
         {/* 1. 組合名稱與金額設定：先決定每月扣多少，下面各檔的金額才換算得出來 */}
         {/* 寬螢幕一列排完；窄一點時組合名稱自己一列，三個數字一列（標籤才不會被擠成兩行而對不齊） */}
         <div className="grid grid-cols-3 xl:grid-cols-5 gap-3 items-end">

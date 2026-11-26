@@ -39,6 +39,7 @@ function OrderLogPage() {
       const c = currencyOf(normSym(String(r.symbol)));
       const t = m.get(c) || { buy: 0, sell: 0, fees: 0, pnl: 0, nb: 0, ns: 0 };
       const amt = (Number(r.price) || 0) * (Number(r.shares) || 0);
+      if (r.removed) continue; // 從持股移除不是成交：不算進賣出金額與損益
       if (r.side === 'BUY') {
         t.buy += amt;
         t.nb += 1;
@@ -53,10 +54,29 @@ function OrderLogPage() {
     return [...m.entries()];
   }, [shown]);
 
+  // 每檔「紀錄合計股數（買進－賣出－移除）」對不上目前持股的，列出來提醒：
+  // 舊版從持股直接移除時沒有記錄，之後再新增同一檔，下單紀錄就會多出那批舊買進。
+  // 有「舊紀錄」（從交易紀錄補上、沒有對應買進）的那檔本來就對不上，不列；誤差小於 0.001 股當作相同
+  const drift = useMemo(() => {
+    const net = new Map<string, number>();
+    const skip = new Set<string>();
+    for (const r of rows) {
+      const k = key(r.symbol);
+      if (r.legacy && !r.initial) skip.add(k);
+      net.set(k, (net.get(k) || 0) + (r.side === 'BUY' ? 1 : -1) * (Number(r.shares) || 0));
+    }
+    const held = new Map<string, number>();
+    for (const h of holdings) held.set(key(h.symbol), (held.get(key(h.symbol)) || 0) + (Number(h.shares) || 0));
+    return [...new Set([...net.keys(), ...held.keys()])]
+      .filter((k) => !skip.has(k) && Math.abs((net.get(k) || 0) - (held.get(k) || 0)) > 1e-3)
+      .map((k) => ({ symbol: k, logged: net.get(k) || 0, held: held.get(k) || 0 }));
+  }, [rows, holdings]);
+  const n4 = (v) => fmt(v, Number.isInteger(Math.round(v * 1e4) / 1e4) ? 0 : 4);
+
   const remove = (r) => {
     if (
       !window.confirm(
-        `確定刪除這筆下單紀錄（${r.time} ${r.symbol} ${r.side === 'BUY' ? '買進' : '賣出'}）？\n只會刪掉這頁的紀錄，我的持股與交易紀錄不會變動。刪除後沒辦法復原。`,
+        `確定刪除這筆下單紀錄（${r.time} ${r.symbol} ${r.side === 'BUY' ? '買進' : r.removed ? '移除持股' : '賣出'}）？\n只會刪掉這頁的紀錄，我的持股與交易紀錄不會變動。刪除後沒辦法復原。`,
       )
     ) {
       bus.toast?.('ℹ️ 已取消，下單紀錄沒有變動');
@@ -116,6 +136,25 @@ function OrderLogPage() {
 
       <PCard title="逐筆成交" sub={`${shown.length} 筆`}>
         <div className="px-4 pb-4 space-y-3">
+          {drift.length > 0 && (
+            <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11.5px] text-amber-100 space-y-1">
+              <div>
+                下單紀錄和我的持股股數對不起來（通常是以前從持股直接移除、又重新新增同一檔，舊的買進還留著）：
+                {drift.map((d) => (
+                  <button
+                    key={d.symbol}
+                    type="button"
+                    onClick={() => setQ(d.symbol)}
+                    title="只列這檔的紀錄"
+                    className="ml-2 underline decoration-dotted cursor-pointer text-amber-200 hover:text-amber-50"
+                  >
+                    {d.symbol} 紀錄 {n4(d.logged)} 股／持股 {n4(d.held)} 股
+                  </button>
+                ))}
+              </div>
+              <div className="text-slate-400">點代號只列那檔，把多出來的舊紀錄刪掉即可；刪這頁的紀錄不會改動持股與交易紀錄。</div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {[
               ['ALL', '全部'],
@@ -182,7 +221,7 @@ function OrderLogPage() {
                             </span>
                           ) : (
                             r.source && (
-                              <span className="ml-1 text-[10px] text-amber-300/80" title="在我的持股新增或匯入的部位，不是模擬成交，沒有手續費">
+                              <span className="ml-1 text-[10px] text-amber-300/80" title={r.removed ? '在我的持股按 ✕ 直接移除，不是成交，不算損益' : '在我的持股新增或匯入的部位，不是模擬成交，沒有手續費'}>
                                 {r.source}
                               </span>
                             )
@@ -194,9 +233,13 @@ function OrderLogPage() {
                           {r.order_type && <div className="text-[10px] text-slate-500">{r.order_type}</div>}
                         </td>
                         <td className="pr-2">
-                          <span className={r.side === 'BUY' ? 'ta-up-chip px-1.5 rounded' : 'ta-down-chip px-1.5 rounded'}>
-                            {r.side === 'BUY' ? '買進' : '賣出'}
-                          </span>
+                          {r.removed ? (
+                            <span className="px-1.5 rounded bg-slate-700/60 text-slate-300">移除</span>
+                          ) : (
+                            <span className={r.side === 'BUY' ? 'ta-up-chip px-1.5 rounded' : 'ta-down-chip px-1.5 rounded'}>
+                              {r.side === 'BUY' ? '買進' : '賣出'}
+                            </span>
+                          )}
                         </td>
                         <td className="pr-2 text-right font-mono">{fmt(r.price, 2)}</td>
                         <td className="pr-2 text-right font-mono">{fmt(r.shares, Number.isInteger(Number(r.shares)) ? 0 : 4)}</td>
@@ -208,6 +251,8 @@ function OrderLogPage() {
                               {r.source || r.initial ? '建立持股' : '加入持股'}
                               <span className="text-slate-500">（目前 {fmt(held, Number.isInteger(held) ? 0 : 4)} 股）</span>
                             </span>
+                          ) : r.removed ? (
+                            <span className="text-slate-400">從我的持股移除（不算損益）</span>
                           ) : (
                             <span>
                               <span className={`font-mono ${colorOf(r.net_pnl)}`}>
@@ -261,6 +306,7 @@ function OrderLogPage() {
           <p className="text-[11px] text-slate-500 leading-relaxed">
             刪除這頁的紀錄不會改動我的持股與交易紀錄；要修改或刪除已平倉交易請到「交易檢討」。
             「手動新增」「CSV 匯入」是在我的持股建立的部位（用成本價、不計手續費）；「期初持股」是更早就在持股裡、沒有逐筆紀錄的部位（第一次加碼、賣出或新增那檔時，會用當時的股數與成本存成一筆）；
+            「移除持股」是在我的持股按 ✕ 直接移除的部位，不是成交，不算進賣出金額與損益；
             「舊紀錄」是這版以前的模擬賣出，從交易紀錄補上，只有日期。還沒存成紀錄的期初持股與舊紀錄不能在這裡刪除。紀錄只存在你這台電腦（data/userdata.json）。
           </p>
         </div>
