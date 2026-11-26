@@ -2,7 +2,7 @@
 import { bus } from '../bus';
 import { notifySaved, notifySavedLater } from '../sync_store';
 import { DEFAULT_WATCH, LS_CART, LS_WATCH, marketSessionOpen, baseCode, colorOf, currencyOf, feeDiscount, fmt, intlFee, intlFeeCfg, isOnTick, isTW, localDate, marketName, marketOf, normSym, readLS, shownQuote, TRIAL_TIP, twFee, twSellTaxRate, twTick, tzOf, writeLS } from '../ui';
-import { fillOrder, usePortfolio } from '../portfolio_store';
+import { fillOrder, setHoldings, usePortfolio } from '../portfolio_store';
 import { RefreshButton } from '../refresh_button';
 import { Row, StarToggle, usePriceFlash } from './watch_parts';
 import { SearchPalette } from './search_palette';
@@ -654,6 +654,17 @@ function WatchPage({ active = 'watch', goTab, techPanel, newsPanel, m1Ticker, m1
           if (listTab === 'watch' && sortKey === 'default' && to) {
             e.preventDefault();
             moveWatch(list[i], to, e.key === 'ArrowDown');
+          } else if (listTab === 'hold' && to) {
+            // 持股：和上／下一列（同一檔分券商時以第一列為準）交換位置
+            e.preventDefault();
+            const a = holdings.findIndex((h) => baseCode(h.symbol) === baseCode(list[i]));
+            const b = a + (e.key === 'ArrowDown' ? 1 : -1);
+            if (a >= 0 && b >= 0 && b < holdings.length) {
+              const next = [...holdings];
+              [next[a], next[b]] = [next[b], next[a]];
+              setHoldings(next);
+              notifySavedLater('hold-order', '已調整持股順序');
+            }
           }
           return;
         }

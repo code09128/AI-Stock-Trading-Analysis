@@ -1,7 +1,7 @@
 // 我的持股：市值／成本／損益總覽（可切即時價或昨收、填帳戶現金／投資金額／已領配息以便和銀行對帳）、
 // 持股清單（分析、回測、帶入加碼／賣出委託、移除）、新增與 CSV 匯入、送去組合風控
 import { bus } from '../bus';
-import { notifySaved } from '../sync_store';
+import { notifySaved, notifySavedLater } from '../sync_store';
 import { Tip, baseCode, colorOf, currencyOf, fmt, isTW, localDate, marketOf, normSym, readLS, signed, writeLS } from '../ui';
 import { logHoldingBuys, setHoldings as TA_setHoldings } from '../portfolio_store';
 import { Row } from './watch_parts';
@@ -43,6 +43,16 @@ function HoldingsPanel({
   }, [prefill, onPrefillUsed]);
   const [csvText, setCsvText] = useState('');
   const [reconOpen, setReconOpen] = useState(false);
+  // 拖動排序（跟自選一樣按住 ⠿ 拖到別列放開）：持股的排列順序就是資料裡的順序，各頁共用
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const moveHolding = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    const next = holdings.filter((_, i) => i !== from);
+    next.splice(to > from ? to - 1 : to, 0, holdings[from]); // 放到目標列的前面
+    setHoldings(next);
+    notifySavedLater('hold-order', '已調整持股順序');
+  };
   const [addOpen, setAddOpen] = useState(false);
   // 持股損益：市值可選「即時價」或「昨收」（銀行／券商的參考市值多用昨收，方便對帳）
   const [holdBasis, setHoldBasis] = useState(() => readLS('tw_us_hold_basis_v1', 'live'));
@@ -478,6 +488,30 @@ function HoldingsPanel({
           spark={sparks[r.symbol]}
           active={baseCode(selected) === baseCode(r.symbol)}
           onClick={() => onSelect(r.symbol)}
+          drag={{
+            dragging: dragIdx === r.rowIndex,
+            over: overIdx === r.rowIndex && dragIdx !== r.rowIndex,
+            onDragStart: (e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', String(r.rowIndex));
+              setDragIdx(r.rowIndex);
+            },
+            onDragEnd: () => {
+              setDragIdx(null);
+              setOverIdx(null);
+            },
+            onDragOver: (e) => {
+              if (dragIdx == null) return;
+              e.preventDefault();
+              if (overIdx !== r.rowIndex) setOverIdx(r.rowIndex);
+            },
+            onDrop: (e) => {
+              e.preventDefault();
+              if (dragIdx != null) moveHolding(dragIdx, r.rowIndex);
+              setDragIdx(null);
+              setOverIdx(null);
+            },
+          }}
           actionBelow
           sub={`${r.broker ? `【${r.broker}】` : ''}${Number.isInteger(r.shares) ? fmt(r.shares, 0) : fmt(r.shares, 4)} 股・成本 ${fmt(r.cost)}・${
             signed(r.pnlPct, 2, '%')
