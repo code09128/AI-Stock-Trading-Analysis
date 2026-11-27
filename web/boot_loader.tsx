@@ -36,18 +36,20 @@ const getJSON = async (url: string, body?: unknown): Promise<any> => {
 function makeList() {
   const splash = document.getElementById('splash');
   if (!splash) return null;
+  // 步驟清單與按鈕放進中間的卡片（舊版 index.html 沒有卡片時放在 #splash 裡）
+  const box = splash.querySelector('.sp-card') || splash;
   const msg = document.getElementById('splash-msg');
   const ver = document.createElement('div');
   ver.className = 'sp-ver';
   splash.querySelector('.sp-sub')?.after(ver);
   const list = document.createElement('ul');
   list.className = 'sp-steps';
-  splash.appendChild(list);
+  box.appendChild(list);
   const skip = document.createElement('button');
   skip.type = 'button';
   skip.className = 'sp-skip';
   skip.textContent = '直接進入（剩下的在背景繼續載入）';
-  splash.appendChild(skip);
+  box.appendChild(skip);
   return { list, msg, skip, ver, splash };
 }
 

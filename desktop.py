@@ -22,7 +22,7 @@ from src.server.config import WEB_DIR, get_app_dir, get_resource_dir
 
 APP_NAME = "股票交易分析系統"
 DEFAULT_PORT = 8088
-SPLASH_FALLBACK = '<div id="splash" style="position:fixed;inset:0;background:#0d1117"></div>'
+SPLASH_FALLBACK = '<div id="splash" style="position:fixed;inset:0;background:#070a13"></div>'
 _NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 連本機不要走系統代理
 
 
@@ -70,7 +70,7 @@ def _splash_html(msg: str) -> str:
     except (OSError, AttributeError):
         css, body = "", SPLASH_FALLBACK
     return (f'<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">{css}</head>'
-            f'<body style="margin:0;background:#0d1117">{body}</body></html>')
+            f'<body style="margin:0;background:#070a13">{body}</body></html>')
 
 
 def _error_html(err: str) -> str:
